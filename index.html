@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
   <meta name="description" content="Рабочая панель шеф-бариста сети спешелти-кофеен">
   <meta name="theme-color" content="#ffbf56">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
   <title>03 Работа</title>
   <style>
     :root {
@@ -56,6 +58,18 @@
       font-weight: 750;
     }
     .app-header h1 { font-size: 19px; }
+    .install-app {
+      margin-left: auto;
+      min-height: 44px;
+      border: 1px solid #bb781e;
+      border-radius: 10px;
+      background: #fff4df;
+      color: var(--on-accent);
+      padding: 6px 10px;
+      font-weight: 650;
+      font-size: .83rem;
+    }
+    .install-app:focus-visible { outline-color: var(--on-accent); }
     main { padding: 18px 16px calc(138px + var(--safe-bottom)); }
     .page-heading { margin-bottom: 16px; }
     .page-heading h2 { font-size: 29px; line-height: 1.16; letter-spacing: -.035em; }
@@ -242,7 +256,10 @@
     <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   </svg>
   <header class="app-header">
-    <div class="wrap header-inner"><span class="mark" aria-hidden="true">03</span><h1>Работа</h1></div>
+    <div class="wrap header-inner">
+      <span class="mark" aria-hidden="true">03</span><h1>Работа</h1>
+      <button type="button" class="install-app" id="install-app" hidden>Установить</button>
+    </div>
   </header>
   <main class="wrap">
     <p id="app-error" class="error" role="alert" hidden></p>
@@ -602,6 +619,38 @@
         render();
       }
     });
+
+    const installApp = $('#install-app');
+    let installPrompt;
+
+    window.addEventListener('beforeinstallprompt', event => {
+      event.preventDefault();
+      installPrompt = event;
+      installApp.hidden = false;
+    });
+
+    installApp.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      const prompt = installPrompt;
+      installPrompt = null;
+      installApp.hidden = true;
+      try {
+        await prompt.prompt();
+      } catch (error) {
+        console.warn('Не удалось открыть окно установки.', error);
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installPrompt = null;
+      installApp.hidden = true;
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(error => {
+        console.warn('Не удалось включить офлайн-доступ.', error);
+      });
+    }
 
     route();
   </script>
