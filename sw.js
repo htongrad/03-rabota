@@ -1,11 +1,11 @@
 'use strict';
 
 const cachePrefix = 'panel-03-shell-';
-const cacheName = cachePrefix + 'v1';
+const cacheName = cachePrefix + 'v2';
 const scope = new URL(self.registration.scope);
 const home = scope.href;
 const index = new URL('index.html', scope).href;
-const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png']
+const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css', 'quality.js']
   .map(path => new URL(path, scope).href);
 
 self.addEventListener('install', event => {
@@ -26,30 +26,31 @@ self.addEventListener('activate', event => {
   })());
 });
 
+async function refresh(request, cacheKey) {
+  const cache = await caches.open(cacheName).catch(() => null);
+  let response;
+  try {
+    response = await fetch(request);
+  } catch {
+    return await cache?.match(cacheKey) || Response.error();
+  }
+
+  const cacheable = request.mode !== 'navigate' || response.headers.get('content-type')?.includes('text/html');
+  if (cache && response.ok && cacheable) {
+    await cache.put(cacheKey, response.clone()).catch(() => {});
+  }
+  return response;
+}
+
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
   const canonical = url.origin + url.pathname;
 
-  if (event.request.mode === 'navigate' && (canonical === home || canonical === index)) {
-    event.respondWith((async () => {
-      const cache = await caches.open(cacheName).catch(() => null);
-      let response;
-      try {
-        response = await fetch(event.request);
-      } catch {
-        return await cache?.match(home) || Response.error();
-      }
-
-      if (cache && response.ok && response.headers.get('content-type')?.includes('text/html')) {
-        await cache.put(home, response.clone()).catch(() => {});
-      }
-      return response;
-    })());
+  if (request.mode === 'navigate' && (canonical === home || canonical === index)) {
+    event.respondWith(refresh(request, home));
   } else if (staticAssets.includes(url.href)) {
-    event.respondWith((async () => {
-      const cache = await caches.open(cacheName);
-      return await cache.match(event.request) || fetch(event.request);
-    })());
+    event.respondWith(refresh(request, url.href));
   }
 });
