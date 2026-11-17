@@ -265,6 +265,7 @@
     return;
   }
 
+  window.panel03Backup = core;
   const dialog = document.querySelector('#backup-dialog');
   const message = document.querySelector('#backup-message');
   const preview = document.querySelector('#backup-preview');
@@ -273,9 +274,10 @@
   let pending = null;
   let current = null;
   let generation = 0;
+  let afterRestore = null;
 
   function status(messageText) { message.textContent = messageText; }
-  function reset() { pending = null; current = null; preview.replaceChildren(); restore.hidden = true; status(''); }
+  function reset() { afterRestore = null; pending = null; current = null; preview.replaceChildren(); restore.hidden = true; status(''); }
   function showTip(button, tip) {
     button.addEventListener('click', () => {
       document.querySelector('#backup-help-text').textContent = tip;
@@ -318,14 +320,7 @@
     } catch (problem) { status(problem.message); }
   });
 
-  input.addEventListener('change', async () => {
-    const chosen = ++generation;
-    reset();
-    const file = input.files[0];
-    if (!file) return;
-    try {
-      const data = parseBackup(await file.text());
-      if (chosen !== generation) return;
+  function previewCandidate(data, restored = null) {
       const before = snapshot(localStorage);
       const result = merge(before, data.records);
       const paragraph = document.createElement('p');
@@ -347,6 +342,28 @@
       current = before;
       restore.hidden = false;
       status('Формат и связи проверены.');
+      afterRestore = restored;
+  }
+
+  window.addEventListener('panel-03:backup-candidate', event => {
+    try {
+      generation++;
+      reset();
+      const data = parseBackup(JSON.stringify(event.detail.backup));
+      previewCandidate(data, event.detail.restored);
+      if (!dialog.open) dialog.showModal();
+    } catch (problem) { status(problem.message); }
+  });
+
+  input.addEventListener('change', async () => {
+    const chosen = ++generation;
+    reset();
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const data = parseBackup(await file.text());
+      if (chosen !== generation) return;
+      previewCandidate(data);
     } catch (problem) { if (chosen === generation) status(problem.message); }
   });
 
@@ -361,6 +378,11 @@
       const run = () => commit(localStorage, baseline, incoming);
       const result = navigator.locks ? await navigator.locks.request('panel-03-restore', run) : run();
       status('Готово. Добавлено: ' + result.added + '. Уже было: ' + result.retained + '.');
+      if (afterRestore) {
+        try { afterRestore(); }
+        catch { status('Данные восстановлены. Настройки отправки не сохранены: проверь подключение Google перед отправкой.'); }
+      }
+      afterRestore = null;
       pending = null;
       current = null;
       restore.hidden = true;

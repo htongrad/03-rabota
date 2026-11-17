@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=12">
+  <link rel="stylesheet" href="./quality.css?v=13">
   <title>03 Работа</title>
   <style>
     :root {
@@ -269,6 +269,15 @@
     <section data-page="overview">
       <div class="page-heading"><h2>Обзор</h2><p class="quiet" id="today-label"></p></div>
       <div class="stack">
+        <section class="module stack" aria-label="Резервная копия Google">
+          <h3>Копия на Google Диске</h3>
+          <p id="google-overview-text" role="status">Проверяю состояние копии…</p>
+          <p id="google-last-sync" class="quiet"></p>
+          <div class="quality-actions">
+            <button type="button" id="google-overview-connect" class="action primary" hidden>Подключить Google</button>
+            <button type="button" id="google-overview-open" class="action">Настройки копии</button>
+          </div>
+        </section>
         <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
         <section class="module"><h3>Сегодня</h3><div id="events-today"></div></section>
         <section class="module"><h3>До конца недели</h3><div id="events-week"></div></section>
@@ -535,6 +544,8 @@
         <details class="module">
           <summary>Резервное копирование рабочих данных</summary>
           <div class="guide-copy">
+            <p>Шеф-бариста подключает Google через меню панели и выбирает папку «03 РАБОТА». Панель отправляет изменения автоматически, пока открыта, есть интернет и действует доступ Google. В обзоре проверяет состояние отправки и время последней успешной копии.</p>
+            <p>Если доступ истёк, нажимает «Подключить Google». Если копию обновил другой браузер, сначала восстанавливает её и проверяет объединённые записи. На новом устройстве восстановление запускает вручную. Закрытая панель не отправляет данные по расписанию.</p>
             <p>Шеф-бариста сохраняет резервную копию данных панели перед сменой устройства, очисткой браузера и существенными изменениями рабочих записей.</p>
             <p>Для восстановления выбирает файл копии и проверяет показанный панелью состав данных. Панель добавляет отсутствующие записи вместе с необходимыми связями. Совпадающие записи сохраняют текущую версию.</p>
             <p>После восстановления шеф-бариста проверяет основные рабочие записи и дату последней копии.</p>
@@ -589,8 +600,42 @@
   <dialog id="app-menu-dialog" aria-labelledby="app-menu-title">
     <div class="stack">
       <h2 id="app-menu-title">Меню</h2>
+      <button type="button" id="google-open" class="action">Google Диск</button>
       <button type="button" id="backup-open" class="action">Копии данных</button>
       <button type="button" id="app-menu-close" class="action">Закрыть</button>
+    </div>
+  </dialog>
+  <dialog id="google-dialog" aria-labelledby="google-title">
+    <div class="stack">
+      <h2 id="google-title">Копия на Google Диске</h2>
+      <p id="google-status" role="status"></p>
+      <p id="google-folder-status" class="quiet"></p>
+      <details>
+        <summary>Настройки подключения</summary>
+        <form id="google-config" class="stack">
+          <p class="quiet">Можно заполнить поля из «Личного», если обе панели открываются в одном Chrome.</p>
+          <button type="button" id="google-use-personal" class="action">Заполнить из «Личного»</button>
+          <div class="quality-field">
+            <div class="quality-actions"><label for="google-client-id">Client ID</label><button type="button" class="quality-help" aria-label="Пояснение: Client ID" data-google-help="Идентификатор веб-клиента OAuth из проекта Google Cloud. Используй тот же проект, что и для «Личного»."><span>?</span></button></div>
+            <input id="google-client-id" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <div class="quality-field">
+            <div class="quality-actions"><label for="google-project-number">Номер проекта</label><button type="button" class="quality-help" aria-label="Пояснение: Номер проекта" data-google-help="Числовой номер проекта Google Cloud. Он нужен для доступа к папке через Google Picker."><span>?</span></button></div>
+            <input id="google-project-number" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <div class="quality-field">
+            <div class="quality-actions"><label for="google-api-key">API key для выбора папки</label><button type="button" class="quality-help" aria-label="Пояснение: API key для выбора папки" data-google-help="Ключ Google Picker из того же проекта. Ограничь ключ адресом https://htongrad.github.io/* и API Google Picker."><span>?</span></button></div>
+            <input id="google-api-key" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <button type="submit" class="action primary">Сохранить настройки</button>
+        </form>
+      </details>
+      <div class="quality-actions"><button type="button" id="google-connect" class="action">Подключить Google</button><button type="button" class="quality-help" aria-label="Пояснение: Подключить Google" data-google-help="Открывает окно Google. Доступ действует ограниченное время и остаётся только в этой вкладке. При повторном подключении отправка продолжится автоматически."><span>?</span></button></div>
+      <div class="quality-actions"><button type="button" id="google-folder" class="action">Выбрать папку</button><button type="button" class="quality-help" aria-label="Пояснение: Выбрать папку" data-google-help="Один раз выбери папку «03 РАБОТА» в Google Диске. Панель запомнит её. На новом устройстве сначала восстанови найденную копию."><span>?</span></button></div>
+      <div class="quality-actions"><button type="button" id="google-sync-now" class="action">Отправить сейчас</button><button type="button" class="quality-help" aria-label="Пояснение: Отправить сейчас" data-google-help="Проверяет версию копии и отправляет все рабочие данные. Автоматическая отправка действует, пока панель открыта и доступ Google не истёк."><span>?</span></button></div>
+      <div class="quality-actions"><button type="button" id="google-restore" class="action">Восстановить с Диска</button><button type="button" class="quality-help" aria-label="Пояснение: Восстановить с Диска" data-google-help="Показывает состав копии перед восстановлением. Добавляет отсутствующие записи, сохраняя текущие версии совпадающих. После подтверждения разрешает отправку объединённых данных."><span>?</span></button></div>
+      <div class="quality-actions"><button type="button" id="google-disconnect" class="action">Отключить доступ</button><button type="button" class="quality-help" aria-label="Пояснение: Отключить доступ" data-google-help="Завершает доступ в этой вкладке. Сохранённые настройки, локальные записи и копия на Диске остаются."><span>?</span></button></div>
+      <button type="button" id="google-close" class="action">Закрыть</button>
     </div>
   </dialog>
   <dialog id="backup-dialog" aria-labelledby="backup-title">
@@ -623,7 +668,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=12"></script>
+  <script src="./backup.js?v=13"></script>
   <script>
     'use strict';
 
@@ -936,6 +981,7 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=12"></script>
+  <script src="./quality.js?v=13"></script>
+  <script src="./google-sync.js?v=13"></script>
 </body>
 </html>

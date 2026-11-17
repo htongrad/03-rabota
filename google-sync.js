@@ -1,0 +1,399 @@
+(() => {
+  'use strict';
+
+  const stateKey = 'panel-03:google';
+  const api = 'https://www.googleapis.com/drive/v2/files';
+  const upload = 'https://www.googleapis.com/upload/drive/v2/files';
+  const scope = 'https://www.googleapis.com/auth/drive.file';
+  const folderName = '03 РАБОТА';
+  const fileName = 'Работа — резервная копия.json';
+  const tag = 'rabota03';
+  const core = window.panel03Backup;
+  const $ = selector => document.querySelector(selector);
+  let token = '';
+  let expires = 0;
+  let tokenClient;
+  let authLoading;
+  let busy = false;
+  let connecting = false;
+  let message = '';
+  let retryAfter = 0;
+  let cachedLocal = '';
+  let localHash = '';
+  let dirtySince = 0;
+  let remotePoll = 0;
+  let monitoring = false;
+
+  function read() {
+    const value = JSON.parse(localStorage.getItem(stateKey));
+    if (value && (typeof value !== 'object' || Array.isArray(value))) throw Error('Настройки Google повреждены.');
+    return value || {};
+  }
+  function update(changes) {
+    const next = { ...read(), ...changes };
+    localStorage.setItem(stateKey, JSON.stringify(next));
+    return next;
+  }
+  function ready() { return Boolean(token && Date.now() < expires); }
+  const metaFields = 'id,etag,version,title,mimeType,parents(id),labels(trashed),properties';
+  const encode = encodeURIComponent;
+  const query = data => '?' + new URLSearchParams(data);
+  function conflict() {
+    update({ paused: true });
+    throw Error('Копия на Диске обновлена другим браузером. Сначала восстанови её.');
+  }
+
+  async function request(url, options = {}, allow404 = false) {
+    if (!ready()) throw Error('Доступ Google истёк. Нажми «Подключить Google».');
+    const response = await fetch(url, {
+      ...options, headers: { Authorization: 'Bearer ' + token, ...options.headers }
+    });
+    if (response.status === 401) { token = ''; expires = 0; }
+    if (response.status === 412) conflict();
+    if (response.status === 404 && allow404) return null;
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw Error('Google ' + response.status + (error?.error?.message ? ' · ' + error.error.message : ''));
+    }
+    return response;
+  }
+
+  async function metadata(id, allow404 = false) {
+    const response = await request(api + '/' + encode(id) + query({ fields: metaFields }), {}, allow404);
+    return response ? response.json() : null;
+  }
+
+  function verifyFile(info, settings) {
+    if (info.labels?.trashed || info.mimeType !== 'application/json' ||
+        !info.parents?.some(parent => parent.id === settings.folder) ||
+        !info.properties?.some(property => property.key === 'panelBackup' && property.value === tag)) {
+      throw Error('Копия перемещена, удалена или имеет другой формат. Проверь выбранную папку.');
+    }
+  }
+
+  async function findFile(settings) {
+    if (settings.fileId) {
+      const info = await metadata(settings.fileId);
+      verifyFile(info, settings);
+      return info;
+    }
+    const list = [];
+    let pageToken = '';
+    do {
+      const params = {
+        q: "trashed = false and '" + settings.folder + "' in parents and properties has { key='panelBackup' and value='" + tag + "' and visibility='PRIVATE' }",
+        fields: 'nextPageToken,items(' + metaFields + ')', maxResults: '100',
+        ...(pageToken ? { pageToken } : {})
+      };
+      const result = await (await request(api + query(params))).json();
+      list.push(...(result.items || []));
+      pageToken = result.nextPageToken;
+    } while (pageToken);
+    if (list.length > 1) throw Error('В папке несколько копий панели 03. Уточни файлы на Диске перед отправкой.');
+    if (list[0]) verifyFile(list[0], settings);
+    return list[0] || null;
+  }
+
+  async function download(info) {
+    const response = await request(api + '/' + encode(info.id) + '?alt=media', { headers: { 'If-Match': info.etag } });
+    const backup = core.parseBackup(await response.text());
+    const after = await metadata(info.id);
+    if (after.etag !== info.etag) conflict();
+    return backup;
+  }
+
+  async function digest(text) {
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  function script(url) {
+    return new Promise((resolve, reject) => {
+      const element = document.createElement('script');
+      element.src = url;
+      element.onload = resolve;
+      element.onerror = () => { element.remove(); reject(Error('Не удалось загрузить Google. Проверь интернет.')); };
+      document.head.append(element);
+    });
+  }
+
+  async function prepare() {
+    if (authLoading) return authLoading;
+    authLoading = (async () => {
+      if (!window.google?.accounts?.oauth2) await script('https://accounts.google.com/gsi/client');
+      const settings = read();
+      tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: settings.clientId,
+        scope: 'openid ' + scope,
+        callback: result => {
+          connecting = false;
+          if (result.error || !window.google.accounts.oauth2.hasGrantedAllScopes(result, 'openid', scope)) {
+            message = 'Разреши доступ к выбранным файлам Google Диска для резервирования.';
+            paint();
+            return;
+          }
+          token = result.access_token;
+          expires = Date.now() + Number(result.expires_in) * 1000 - 30000;
+          run(async () => {
+            try {
+              const profile = await (await request('https://openidconnect.googleapis.com/v1/userinfo')).json();
+              const current = read();
+              if (!profile.sub || (current.account && current.account !== profile.sub)) throw Error('Выбери тот же аккаунт Google, который подключал ранее.');
+              update({ account: profile.sub });
+            } catch (error) { token = ''; throw error; }
+            await sync();
+          });
+        },
+        error_callback: () => { connecting = false; message = 'Окно Google закрыто или заблокировано.'; paint(); }
+      });
+    })().finally(() => { authLoading = null; });
+    return authLoading;
+  }
+
+  async function pickFolder() {
+    if (!window.google?.picker) {
+      if (!window.gapi) await script('https://apis.google.com/js/api.js');
+      await new Promise((resolve, reject) => window.gapi.load('picker', { callback: resolve, onerror: reject, timeout: 15000, ontimeout: () => reject(Error('Выбор папки недоступен.')) }));
+    }
+    const settings = read();
+    const folder = await new Promise((resolve, reject) => {
+      const view = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true);
+      new window.google.picker.PickerBuilder().addView(view).setOAuthToken(token)
+        .setAppId(settings.projectNumber).setDeveloperKey(settings.apiKey).setOrigin(location.origin)
+        .setTitle('Выбери папку «' + folderName + '»').setCallback(result => {
+          if (result.action === window.google.picker.Action.PICKED) resolve(result.docs?.[0]);
+          if (result.action === window.google.picker.Action.CANCEL) resolve(null);
+          if (result.action === window.google.picker.Action.ERROR) reject(Error('Не удалось открыть папку.'));
+        }).build().setVisible(true);
+    });
+    if (!folder) { message = 'Выбор папки отменён.'; return; }
+    if (folder.name?.trim() !== folderName || !/^[\w-]+$/.test(folder.id)) throw Error('Выбери папку с названием «' + folderName + '».');
+    const info = await metadata(folder.id);
+    if (info.mimeType !== 'application/vnd.google-apps.folder' || info.title?.trim() !== folderName || info.labels?.trashed) throw Error('Проверь название и доступ к папке.');
+    if (settings.folder !== folder.id) {
+      update({ folder: folder.id, fileId: null, etag: null, pending: null, paused: false, hash: null, lastSync: null });
+    }
+    await sync();
+  }
+
+  async function syncUnlocked() {
+    const settings = read();
+    if (!settings.folder) { message = 'Google подключён. Выбери папку «03 РАБОТА».'; return; }
+    if (settings.paused) { message = 'Отправка приостановлена. Восстанови актуальную копию с Диска.'; return; }
+
+    if (settings.pending) {
+      const info = await metadata(settings.pending.id, true);
+      if (info) {
+        verifyFile(info, settings);
+        const remote = await download(info);
+        const remoteHash = await digest(JSON.stringify(remote.records));
+        if (remote.sync?.commit !== settings.pending.commit || remoteHash !== settings.pending.hash) conflict();
+        update({ fileId: info.id, etag: info.etag, hash: remoteHash, pending: null, lastSync: new Date().toISOString() });
+      } else if (settings.fileId) throw Error('Сохранённая копия недоступна. Проверь доступ к файлу.');
+      // A lost response must retry the same preallocated id, never create a second file.
+    }
+
+    const current = read();
+    const existing = await findFile(current);
+    if (existing && (!current.fileId || existing.id !== current.fileId || existing.etag !== current.etag)) conflict();
+    const backup = core.exportData(localStorage);
+    const hash = await digest(JSON.stringify(backup.records));
+    if (existing && hash === current.hash) { message = 'Копия актуальна.'; remotePoll = Date.now(); return; }
+
+    const commit = crypto.randomUUID();
+    const id = existing?.id || current.pending?.id || (await (await request(api + '/generateIds' + query({ maxResults: '1', space: 'drive' }))).json()).ids?.[0];
+    if (!id) throw Error('Google не выдал идентификатор для копии.');
+    backup.sync = { commit };
+    update({ pending: { id, commit, hash } });
+    let response;
+    if (existing) {
+      if (!existing.etag) throw Error('Google не вернул версию файла. Отправка остановлена.');
+      response = await request(upload + '/' + encode(id) + query({ uploadType: 'media', fields: metaFields }), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': existing.etag }, body: JSON.stringify(backup)
+      });
+    } else {
+      const boundary = 'rabota03_' + crypto.randomUUID();
+      const meta = { id, title: fileName, parents: [{ id: current.folder }], mimeType: 'application/json',
+        properties: [{ key: 'panelBackup', value: tag, visibility: 'PRIVATE' }] };
+      const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
+        '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + JSON.stringify(backup) + '\r\n--' + boundary + '--';
+      response = await request(upload + query({ uploadType: 'multipart', fields: metaFields }), {
+        method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body
+      });
+    }
+    const saved = await response.json();
+    if (!saved.id || !saved.etag) throw Error('Google не подтвердил версию копии. Повторная отправка сначала проверит результат.');
+    update({ fileId: saved.id, etag: saved.etag, pending: null, hash, lastSync: new Date().toISOString() });
+    remotePoll = Date.now();
+    message = 'Копия успешно обновлена.';
+  }
+
+  async function sync() {
+    const send = () => syncUnlocked();
+    if (navigator.locks) return navigator.locks.request(stateKey, send);
+    return send();
+  }
+
+  async function run(task) {
+    if (busy) return;
+    busy = true;
+    message = 'Проверяю копию на Google Диске…';
+    paint();
+    try { await task(); retryAfter = 0; }
+    catch (error) { message = error.message || 'Операция не завершена.'; retryAfter = Date.now() + 30000; }
+    finally { busy = false; paint(); }
+  }
+
+  async function restoreRemote() {
+    const settings = read();
+    if (!settings.folder) throw Error('Выбери папку «03 РАБОТА».');
+    const info = await findFile(settings);
+    if (!info) throw Error('В выбранной папке пока нет копии панели.');
+    const backup = await download(info);
+    update({ paused: true });
+    const previewMeta = { id: info.id, etag: info.etag };
+    $('#google-dialog').close();
+    window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: {
+      backup,
+      restored: () => {
+        update({ fileId: previewMeta.id, etag: previewMeta.etag, hash: null, paused: false, pending: null });
+        message = 'Копия восстановлена. Обновлю её после проверки изменений.';
+        dirtySince = Date.now() - 4000;
+        paint();
+      }
+    } }));
+    message = 'Проверь состав копии и нажми «Восстановить».';
+  }
+
+  function paint() {
+    let settings;
+    try { settings = read(); } catch { return; }
+    const enabled = Boolean(settings.folder);
+    const localPending = Boolean(localHash && localHash !== settings.hash);
+    const summary = busy ? 'Отправка копии…' :
+      settings.paused ? 'Копия на Диске требует восстановления.' :
+      !enabled ? 'Резервная копия Google ещё не настроена.' :
+      !ready() ? 'Для отправки изменений подключи Google.' :
+      localPending ? 'Есть изменения для отправки.' : 'Копия на Диске актуальна.';
+    $('#google-overview-text').textContent = summary;
+    $('#google-last-sync').textContent = settings.lastSync ? 'Последняя отправка: ' + new Date(settings.lastSync).toLocaleString('ru-RU') : '';
+    $('#google-status').textContent = message || summary;
+    $('#google-connect').hidden = ready();
+    $('#google-overview-connect').hidden = ready() || !settings.clientId;
+    $('#google-folder').disabled = busy || !ready();
+    $('#google-sync-now').disabled = busy || !ready() || !enabled || settings.paused;
+    $('#google-restore').disabled = busy || !ready() || !enabled;
+    $('#google-connect').disabled = connecting || busy || !settings.clientId || !tokenClient;
+    $('#google-overview-connect').disabled = $('#google-connect').disabled;
+    $('#google-disconnect').disabled = busy || connecting;
+    $('#google-folder-status').textContent = enabled ? 'Папка «03 РАБОТА» запомнена.' : 'После подключения выбери папку «03 РАБОТА».';
+    for (const item of $('#google-config').querySelectorAll('input,button')) item.disabled = busy || connecting;
+  }
+
+  function configValues() {
+    const settings = read();
+    $('#google-client-id').value = settings.clientId || '';
+    $('#google-project-number').value = settings.projectNumber || '';
+    $('#google-api-key').value = settings.apiKey || '';
+  }
+
+  function connect() {
+    if (!tokenClient || busy || connecting) return;
+    connecting = true;
+    message = '';
+    paint();
+    tokenClient.requestAccessToken({ prompt: '' });
+  }
+
+  $('#google-config').addEventListener('submit', event => {
+    event.preventDefault();
+    try {
+      const clientId = $('#google-client-id').value.replace(/^https?:\/\//i, '').trim();
+      const projectNumber = $('#google-project-number').value.replace(/\s/g, '');
+      const apiKey = $('#google-api-key').value.trim();
+      if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) throw Error('Вставь Client ID, заканчивающийся на .apps.googleusercontent.com.');
+      if (!/^\d+$/.test(projectNumber)) throw Error('Укажи числовой номер проекта Google Cloud.');
+      if (!/^[\w-]+$/.test(apiKey)) throw Error('Укажи API key для Google Picker.');
+      const old = read();
+      if ((old.folder || old.account) && old.clientId && (old.clientId !== clientId || old.projectNumber !== projectNumber)) {
+        throw Error('Для сохранения доступа к существующей копии используй прежний Client ID и номер проекта.');
+      }
+      update({ clientId, projectNumber, apiKey });
+      tokenClient = null;
+      prepare().then(() => { message = 'Настройки сохранены. Нажми «Подключить Google».'; paint(); }).catch(error => { message = error.message; paint(); });
+    } catch (error) { message = error.message; }
+    paint();
+  });
+
+  $('#google-use-personal').addEventListener('click', () => {
+    try {
+      const old = JSON.parse(localStorage.getItem('lichnoe:google:v1'));
+      if (!old?.clientId || !old.projectNumber || !old.apiKey) throw Error('Открой «Личное» в этом же Chrome или скопируй настройки вручную.');
+      $('#google-client-id').value = old.clientId;
+      $('#google-project-number').value = old.projectNumber;
+      $('#google-api-key').value = old.apiKey;
+      message = 'Поля заполнены из «Личного». Нажми «Сохранить настройки».';
+    } catch (error) { message = error.message; }
+    paint();
+  });
+
+  function openGoogle() {
+    $('#app-menu-dialog').close();
+    configValues();
+    if (!$('#google-dialog').open) $('#google-dialog').showModal();
+    paint();
+  }
+
+  for (const button of document.querySelectorAll('[data-google-help]')) {
+    button.addEventListener('click', () => {
+      $('#backup-help-text').textContent = button.dataset.googleHelp;
+      $('#backup-help').showModal();
+    });
+  }
+
+  $('#google-open').addEventListener('click', openGoogle);
+  $('#google-overview-open').addEventListener('click', openGoogle);
+  $('#google-close').addEventListener('click', () => $('#google-dialog').close());
+  $('#google-connect').addEventListener('click', connect);
+  $('#google-overview-connect').addEventListener('click', connect);
+  $('#google-folder').addEventListener('click', () => run(pickFolder));
+  $('#google-sync-now').addEventListener('click', () => run(sync));
+  $('#google-restore').addEventListener('click', () => run(restoreRemote));
+  $('#google-disconnect').addEventListener('click', () => {
+    token = ''; expires = 0;
+    message = 'Доступ в этой вкладке отключён. Рабочие данные сохранены в браузере.';
+    paint();
+  });
+
+  async function monitor() {
+    if (monitoring || busy || connecting || document.hidden) return;
+    monitoring = true;
+    try {
+      const signature = JSON.stringify(core.snapshot(localStorage));
+      if (signature !== cachedLocal) {
+        localHash = await digest(signature);
+        cachedLocal = signature;
+        dirtySince = Date.now();
+      }
+      const settings = read();
+      paint();
+      if (navigator.onLine === false || !ready() || !settings.folder || settings.paused || Date.now() < retryAfter) return;
+      if ((localHash !== settings.hash && Date.now() - dirtySince >= 3000) || settings.pending || Date.now() - remotePoll > 60000) {
+        await run(sync);
+      }
+    } catch (error) { message = error.message; paint(); }
+    finally { monitoring = false; }
+  }
+
+  window.addEventListener('online', () => { retryAfter = 0; dirtySince = Date.now() - 4000; monitor(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) monitor(); });
+  window.addEventListener('storage', () => monitor());
+  window.addEventListener('panel-03:work-changed', () => monitor());
+  setInterval(monitor, 5000);
+  try {
+    configValues();
+    if (read().clientId) prepare().then(paint).catch(error => { message = error.message; paint(); });
+    monitor();
+    paint();
+  } catch (error) { message = error.message; }
+})();
