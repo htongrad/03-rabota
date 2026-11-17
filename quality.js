@@ -1224,6 +1224,7 @@
     tuning: 'Настройка', tasting: 'Дегустация', training: 'Обучение', spoilage: 'Порча', other: 'Другое'
   };
   const quantityFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 });
+  const stockEpsilon = 1e-9;
 
   function readStock() {
     const raw = localStorage.getItem(stockKey);
@@ -1347,7 +1348,7 @@
   }
 
   function stockQuantity(number, unit) {
-    return quantityFormat.format(Math.abs(number) < 1e-9 ? 0 : number) + ' ' + unit;
+    return quantityFormat.format(Math.abs(number) < stockEpsilon ? 0 : number) + ' ' + unit;
   }
 
   function reconcileStock(check, supply, economy, cards, sales, writeOffs) {
@@ -1361,7 +1362,7 @@
     }
 
     if (!Number.isFinite(actual)) missing('Фактический расход выходит за пределы расчёта');
-    if (actual < 0) missing('Фактический расход отрицательный. Проверь остатки и движения');
+    if (actual < -stockEpsilon) missing('Фактический расход отрицательный. Проверь остатки и движения');
     if (check.coverage !== 'complete') missing('Полнота продаж за период не подтверждена');
     let expected = 0;
     for (const row of sales.filter(inPeriod)) {
