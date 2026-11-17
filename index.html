@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=11">
+  <link rel="stylesheet" href="./quality.css?v=12">
   <title>03 Работа</title>
   <style>
     :root {
@@ -261,6 +261,7 @@
     <div class="wrap header-inner">
       <span class="mark" aria-hidden="true">03</span><h1>Работа</h1>
       <button type="button" class="install-app" id="install-app" hidden>Установить</button>
+      <button type="button" id="app-menu" class="menu-button" aria-label="Меню панели">⋯</button>
     </div>
   </header>
   <main class="wrap">
@@ -531,6 +532,14 @@
             <p>При переносе срока изменяет дату в исходной записи или через календарь. После выполнения фиксирует результат в соответствующем журнале. Закрытое действие исчезает из списка предстоящих работ, а история его выполнения сохраняется в журнале.</p>
           </div>
         </details>
+        <details class="module">
+          <summary>Резервное копирование рабочих данных</summary>
+          <div class="guide-copy">
+            <p>Шеф-бариста сохраняет резервную копию данных панели перед сменой устройства, очисткой браузера и существенными изменениями рабочих записей.</p>
+            <p>Для восстановления выбирает файл копии и проверяет показанный панелью состав данных. Панель добавляет отсутствующие записи вместе с необходимыми связями. Совпадающие записи сохраняют текущую версию.</p>
+            <p>После восстановления шеф-бариста проверяет основные рабочие записи и дату последней копии.</p>
+          </div>
+        </details>
       </div>
     </section>
   </main>
@@ -577,6 +586,44 @@
     <p id="quality-tooltip-text"></p>
     <button id="quality-tooltip-close" type="button" class="action">Понятно</button>
   </dialog>
+  <dialog id="app-menu-dialog" aria-labelledby="app-menu-title">
+    <div class="stack">
+      <h2 id="app-menu-title">Меню</h2>
+      <button type="button" id="backup-open" class="action">Копии данных</button>
+      <button type="button" id="app-menu-close" class="action">Закрыть</button>
+    </div>
+  </dialog>
+  <dialog id="backup-dialog" aria-labelledby="backup-title">
+    <div class="stack">
+      <h2 id="backup-title">Копии данных</h2>
+      <div class="quality-actions">
+        <button type="button" id="backup-export" class="action primary">Сохранить копию</button>
+        <button type="button" id="backup-export-help" class="quality-help" aria-label="Пояснение к сохранению"><span>?</span></button>
+      </div>
+      <div class="quality-field">
+        <div class="quality-heading">
+          <label for="backup-file">Выбрать копию для восстановления</label>
+          <button type="button" id="backup-file-help" class="quality-help" aria-label="Пояснение к выбору копии"><span>?</span></button>
+        </div>
+        <input id="backup-file" type="file" accept=".json,application/json">
+      </div>
+      <div id="backup-preview" class="stack"></div>
+      <p id="backup-message" role="status"></p>
+      <div class="quality-actions">
+        <button type="button" id="backup-restore" class="action primary" hidden>Восстановить</button>
+        <button type="button" id="backup-restore-help" class="quality-help" aria-label="Пояснение к восстановлению"><span>?</span></button>
+      </div>
+      <button type="button" id="backup-close" class="action">Закрыть</button>
+    </div>
+  </dialog>
+  <dialog id="backup-help" aria-labelledby="backup-help-title">
+    <div class="stack">
+      <h2 id="backup-help-title">Копии данных</h2>
+      <p id="backup-help-text"></p>
+      <button type="button" id="backup-help-close" class="action">Понятно</button>
+    </div>
+  </dialog>
+  <script src="./backup.js?v=12"></script>
   <script>
     'use strict';
 
@@ -889,6 +936,6 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=11"></script>
+  <script src="./quality.js?v=12"></script>
 </body>
 </html>

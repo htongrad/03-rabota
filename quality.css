@@ -42,3 +42,9 @@ a.action { display:inline-flex; align-items:center; text-decoration:none; }
 #working-deadlines .quality-criterion { overflow-wrap:anywhere; }
 [data-id], [data-journal-id], [data-training-id] { scroll-margin-top:16px; }
 .calendar-work { margin-top:14px; padding-top:8px; border-top:1px solid var(--line); }
+.menu-button { margin-left:auto; min-width:44px; min-height:44px; border:1px solid #bb781e; border-radius:10px; background:#fff4df; color:#312015; font-size:24px; }
+.header-inner:has(#install-app:not([hidden])) .menu-button { margin-left:0; }
+#backup-preview, #backup-message, #backup-help-text { overflow-wrap:anywhere; line-height:1.45; }
+#backup-message:empty { display:none; }
+#backup-file { padding:8px; min-height:44px; width:100%; }
+#backup-file::file-selector-button { font:inherit; min-height:36px; }
