@@ -1063,13 +1063,18 @@
     }, 'Сохранить продажи', 'Сохраняет одну строку на день, точку, напиток и порцию. Повторный ввод обновляет эту строку.');
   }
 
-  function costForSale(row, cards, economy) {
+  function saleRecipe(row, cards) {
     const explicit = cards.find(card => card.id === row.cardId);
     const candidates = explicit ? [explicit] : cards.filter(card =>
       normalized(historicalVersion(card, row.date)?.title || '') === normalized(row.drink));
     const card = candidates.length === 1 ? candidates[0] : null;
     const version = card && historicalVersion(card, row.date);
     const portion = version?.portions.find(item => normalized(item.name) === normalized(row.portion));
+    return { card, version, portion };
+  }
+
+  function costForSale(row, cards, economy) {
+    const { card, version, portion } = saleRecipe(row, cards);
     if (!portion) return { cost: null, card, reason: version ? 'В техкарте на эту дату нет такого размера порции.' : 'На дату продажи нет однозначно подходящей техкарты.' };
     const count = row.quantity + (row.returned ?? 0);
     if (count === 0) return { cost: 0, card, version };
@@ -1214,6 +1219,259 @@
     }
   }
 
+  const stockKey = 'panel-03:stock';
+  const writeOffReasons = {
+    tuning: 'Настройка', tasting: 'Дегустация', training: 'Обучение', spoilage: 'Порча', other: 'Другое'
+  };
+  const quantityFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 });
+
+  function readStock() {
+    const raw = localStorage.getItem(stockKey);
+    return { raw, data: raw === null ? { writeOffs: [], checks: [] } : JSON.parse(raw) };
+  }
+
+  function saveStock(snapshot, group, row) {
+    if (localStorage.getItem(stockKey) !== snapshot.raw) {
+      throw Error('Журнал изменился в другой вкладке. Открой запись заново.');
+    }
+    const rows = snapshot.data[group].filter(item => item.id !== row.id);
+    localStorage.setItem(stockKey, JSON.stringify({ ...snapshot.data, [group]: [...rows, row] }));
+    return row.id;
+  }
+
+  function stockError(problem) {
+    $('#stock-message').textContent = problem instanceof DOMException ? 'Не удалось сохранить запись в браузере.' : problem.message;
+  }
+
+  function stockForm(title, draw, save, tip) {
+    try {
+      const supplies = readEconomy().data.supplies;
+      if (!supplies.length) throw Error('Добавь закупочную позицию в разделе «Закупочные цены».');
+      showEditor(title, body => draw(body, supplies, readStock()), save, tip);
+    } catch (problem) {
+      stockError(problem);
+    }
+  }
+
+  function stockIdentity(body, supplies, previous) {
+    const point = field('Точка', 'Укажи название кофейни так же, как в дневных записях о продажах.', { value: previous?.point });
+    const supply = field('Закупочная позиция', 'Выбери конкретное сырьё или упаковку из справочника закупок.', {
+      choices: { '': 'Выбери позицию', ...Object.fromEntries(supplies.map(item => [item.id, item.name])) },
+      value: previous?.supply
+    });
+    body.append(point.wrapper, supply.wrapper);
+    return { point, supply };
+  }
+
+  function stockNumber(label, tip, amount) {
+    const input = field(label, tip, { type: 'number', value: amount });
+    input.control.min = '0';
+    return input;
+  }
+
+  function stockAmount(input, positive = false) {
+    const number = input.control.valueAsNumber;
+    if (!Number.isFinite(number) || number < 0 || (positive && number === 0)) {
+      const label = $('label', input.wrapper).textContent;
+      throw Error('Проверь поле «' + label + '» и укажи ' + (positive ? 'число больше нуля.' : 'число от нуля.'));
+    }
+    return number;
+  }
+
+  function openWriteOff(previous) {
+    stockForm(previous ? 'Изменить списание' : 'Списание сырья', (body, supplies, snapshot) => {
+      const { point, supply } = stockIdentity(body, supplies, previous);
+      const date = field('Дата списания', 'День, когда сырьё фактически израсходовали или списали.', { type: 'date', value: previous?.date ?? dateKey() });
+      const amount = stockNumber('Количество', 'Фактическое количество сырья или упаковки вне продаж.', previous?.amount);
+      const unit = field('Единица измерения', 'Единица списания, например г, кг, мл, л или шт.', { value: previous?.unit });
+      const reason = field('Причина', 'Выбери, почему сырьё израсходовано вне продаж. Приготовленные возвраты вносятся в продажи.', {
+        choices: { '': 'Выбери причину', ...writeOffReasons }, value: previous?.reason
+      });
+      const note = field('Комментарий', 'Добавь пояснение к записи. Для причины «Другое» укажи, на что ушло сырьё.', { multiline: true, required: false, value: previous?.note });
+      const pair = el('div', '', 'quality-pair');
+      pair.append(amount.wrapper, unit.wrapper);
+      body.append(date.wrapper, pair, reason.wrapper, note.wrapper);
+      return () => {
+        const day = value(date);
+        if (!dateIsValid(day)) throw Error('Укажи дату списания.');
+        const category = requireText(reason);
+        if (category === 'other') requireText(note);
+        const row = {
+          id: previous?.id ?? crypto.randomUUID(), point: requireText(point), supply: requireText(supply), date: day,
+          amount: stockAmount(amount, true), unit: requireText(unit), reason: category, note: value(note)
+        };
+        return saveStock(snapshot, 'writeOffs', row);
+      };
+    }, 'Сохранить списание', 'Добавляет запись в журнал. Сверка учтёт её по дате, точке и закупочной позиции.');
+  }
+
+  function openStockCheck(previous) {
+    stockForm(previous ? 'Изменить сверку' : 'Сверка расхода', (body, supplies, snapshot) => {
+      const { point, supply } = stockIdentity(body, supplies, previous);
+      const from = field('Период с', 'Первый день периода включительно. Начальный остаток берётся до операций этого дня.', { type: 'date', value: previous?.from ?? dateKey() });
+      const to = field('Период по', 'Последний день периода включительно. Конечный остаток берётся после операций этого дня.', { type: 'date', value: previous?.to ?? dateKey() });
+      const unit = field('Единица сверки', 'Используй одну единицу для остатков и движений. Продажи и списания будут приведены к ней.', { value: previous?.unit });
+      supply.control.addEventListener('change', () => {
+        if (value(unit)) return;
+        const selected = supplies.find(item => item.id === value(supply));
+        if (selected) unit.control.value = priceFor(selected, value(to))?.unit ?? '';
+      });
+      const inputs = {
+        opening: stockNumber('Начальный остаток', 'Фактическое количество перед первым днём периода.', previous?.opening),
+        closing: stockNumber('Конечный остаток', 'Фактическое количество после последнего дня периода.', previous?.closing),
+        received: stockNumber('Поставки', 'Сумма поступлений от поставщиков за выбранный период.', previous?.received ?? 0),
+        incoming: stockNumber('Перемещения на точку', 'Количество, полученное с других точек за период.', previous?.incoming ?? 0),
+        outgoing: stockNumber('Перемещения с точки', 'Количество, переданное на другие точки за период.', previous?.outgoing ?? 0),
+        returned: stockNumber('Возвраты поставщику', 'Количество сырья, отправленное обратно поставщику за период.', previous?.returned ?? 0)
+      };
+      const coverage = field('Данные о продажах', 'Подтверди, когда в панель внесены все продажи точки за этот период, либо сверено, что продаж не было.', {
+        choices: { open: 'Ещё не подтверждены', complete: 'Все продажи учтены' }, value: previous?.coverage ?? 'open'
+      });
+      const note = field('Причина или следующее действие', 'Если расхождение уже объяснено, запиши причину. Иначе запиши, какие данные нужно проверить.', { multiline: true, required: false, value: previous?.note });
+      const dates = el('div', '', 'quality-pair');
+      dates.append(from.wrapper, to.wrapper);
+      body.append(dates, unit.wrapper);
+      const quantities = el('div', '', 'quality-pair');
+      for (const input of Object.values(inputs)) quantities.append(input.wrapper);
+      body.append(quantities, coverage.wrapper, note.wrapper);
+      return () => {
+        if (!dateIsValid(value(from)) || !dateIsValid(value(to)) || value(from) > value(to)) throw Error('Укажи корректный период сверки.');
+        const quantities = Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, stockAmount(input)]));
+        const row = {
+          id: previous?.id ?? crypto.randomUUID(), point: requireText(point), supply: requireText(supply),
+          from: value(from), to: value(to), unit: requireText(unit), coverage: value(coverage), note: value(note), ...quantities
+        };
+        return saveStock(snapshot, 'checks', row);
+      };
+    }, 'Сохранить сверку', 'Сохраняет остатки, движения и заметку. Результат пересчитывается по записям о продажах и списаниях за этот период.');
+  }
+
+  function stockQuantity(number, unit) {
+    return quantityFormat.format(Math.abs(number) < 1e-9 ? 0 : number) + ' ' + unit;
+  }
+
+  function reconcileStock(check, supply, economy, cards, sales, writeOffs) {
+    const inPeriod = row => row.date >= check.from && row.date <= check.to && normalized(row.point) === normalized(check.point);
+    const actual = check.opening + check.received + check.incoming - check.outgoing - check.returned - check.closing;
+    const gaps = new Map();
+    function missing(label) { gaps.set(label, (gaps.get(label) ?? 0) + 1); }
+    function converted(amount, unit, date) {
+      if (amount === 0) return 0;
+      return convertAmount(amount, unit, check.unit, priceFor(supply, date)?.density);
+    }
+
+    if (!Number.isFinite(actual)) missing('Фактический расход выходит за пределы расчёта');
+    if (actual < 0) missing('Фактический расход отрицательный. Проверь остатки и движения');
+    if (check.coverage !== 'complete') missing('Полнота продаж за период не подтверждена');
+    let expected = 0;
+    for (const row of sales.filter(inPeriod)) {
+      const count = row.quantity + (row.returned ?? 0);
+      if (count === 0 && row.returned !== null) continue;
+      const { card, portion } = saleRecipe(row, cards);
+      if (!portion) {
+        missing('Нет техкарты или размера порции на дату продажи');
+        continue;
+      }
+      for (const ingredient of portion.ingredients) {
+        const key = linkKey(card.id, portion.name, ingredient);
+        const linked = economy.links.find(item => item.key === key)?.supply;
+        if (!linked || !economy.supplies.some(item => item.id === linked)) {
+          missing('Ингредиент в техкарте не связан с закупочной позицией');
+          continue;
+        }
+        if (linked !== supply.id) continue;
+        if (row.returned === null) missing('В продажах не указано количество приготовленных возвратов');
+        const amount = converted(ingredient.amount * count, ingredient.unit, row.date);
+        if (amount === null || !Number.isFinite(amount)) missing('Нельзя привести расход по техкарте к единице сверки');
+        else expected += amount;
+      }
+    }
+
+    let logged = 0;
+    for (const row of writeOffs.filter(item => item.supply === supply.id && inPeriod(item))) {
+      const amount = converted(row.amount, row.unit, row.date);
+      if (amount === null || !Number.isFinite(amount)) missing('Нельзя привести списание к единице сверки');
+      else logged += amount;
+    }
+    const explanation = expected + logged;
+    if (!Number.isFinite(explanation)) missing('Расчётный расход выходит за пределы расчёта');
+    return { actual, expected, logged, explanation, difference: actual - explanation, gaps };
+  }
+
+  function renderWriteOff(row, supply, keepOpen) {
+    const card = el('details', '', 'module quality-record');
+    card.dataset.stockItem = row.id;
+    card.open = keepOpen.has(row.id);
+    const summary = el('summary', (supply?.name || 'Закупочная позиция недоступна') + ' · ' + stockQuantity(row.amount, row.unit));
+    summary.append(el('p', formatDate(row.date) + ' · ' + row.point, 'quiet'));
+    const body = el('div', '', 'quality-details');
+    line(body, 'Причина:', writeOffReasons[row.reason]);
+    line(body, 'Комментарий:', row.note);
+    body.append(action('Изменить списание', 'Открывает эту запись для исправления.', () => openWriteOff(row)));
+    card.append(summary, body);
+    return card;
+  }
+
+  function renderCheck(row, supply, economy, cards, sales, writeOffs, keepOpen) {
+    const card = el('details', '', 'module quality-record');
+    card.dataset.stockItem = row.id;
+    card.open = keepOpen.has(row.id);
+    const summary = el('summary', (supply?.name || 'Закупочная позиция недоступна') + ' · ' + row.point);
+    summary.append(el('p', formatDate(row.from) + ' — ' + formatDate(row.to), 'quiet'));
+    const body = el('div', '', 'quality-details');
+    if (supply) {
+      const result = reconcileStock(row, supply, economy, cards, sales, writeOffs);
+      body.append(heading(result.gaps.size ? 'Сверка неполная' : 'Результат сверки',
+        'Фактический расход равен начальному остатку плюс поставки и входящие перемещения, минус исходящие перемещения, возвраты поставщику и конечный остаток. Из фактического расхода вычитаются продажи по техкартам и списания.'));
+      const qty = value => Number.isFinite(value) ? stockQuantity(value, row.unit) : 'проверь данные';
+      line(body, 'Фактический расход:', qty(result.actual));
+      line(body, 'Расход по продажам и приготовленным возвратам:', qty(result.expected));
+      line(body, 'Расход по журналу списаний:', qty(result.logged));
+      line(body, 'Объяснённый расход по внесённым данным:', qty(result.explanation));
+      if (result.gaps.size) {
+        const list = el('ul', '', 'quality-steps');
+        for (const [reason, count] of result.gaps) list.append(el('li', reason + (count > 1 ? ' (' + count + ')' : '')));
+        body.append(list);
+      } else {
+        line(body, 'Необъяснённое расхождение:', qty(result.difference));
+      }
+    } else {
+      body.append(el('p', 'Для сверки нужна закупочная позиция.', 'error'));
+    }
+    line(body, 'Причина или следующее действие:', row.note);
+    body.append(action('Изменить сверку', 'Открывает остатки, движения и примечание. Результат пересчитывается по текущему журналу.', () => openStockCheck(row)));
+    card.append(summary, body);
+    return card;
+  }
+
+  function renderStock(id = '') {
+    const journal = $('#stock-writeoffs');
+    if (!journal) return;
+    const checks = $('#stock-checks');
+    const keepOpen = new Set(Array.from(document.querySelectorAll('[data-stock-item][open]'), item => item.dataset.stockItem));
+    if (id) keepOpen.add(id);
+    journal.replaceChildren();
+    checks.replaceChildren();
+    $('#stock-message').textContent = '';
+    try {
+      const { data } = readStock();
+      const { data: economy } = readEconomy();
+      const sales = readSales().rows;
+      const cards = readCatalog().cards;
+      const supply = row => economy.supplies.find(item => item.id === row.supply);
+      for (const row of data.writeOffs.sort((a, b) => b.date.localeCompare(a.date))) {
+        journal.append(renderWriteOff(row, supply(row), keepOpen));
+      }
+      for (const row of data.checks.sort((a, b) => b.to.localeCompare(a.to))) {
+        checks.append(renderCheck(row, supply(row), economy, cards, sales, data.writeOffs, keepOpen));
+      }
+      if (!data.writeOffs.length) journal.append(el('p', 'Списаний пока нет.', 'quiet'));
+      if (!data.checks.length) checks.append(el('p', 'Сверок пока нет.', 'quiet'));
+    } catch (problem) {
+      stockError(problem);
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -1223,6 +1481,9 @@
     catch (problem) { $('#techcards-message').textContent = problem.message; }
   }, 'action primary'));
   $('#sales-start')?.append(action('Добавить продажи', 'Открывает дневной ввод из кассового отчёта. Для существующей строки будут подставлены её данные.', openSalesIdentity, 'action primary'));
+  $('#stock-writeoff-start')?.append(action('Записать списание', 'Открывает запись расхода сырья вне продаж.', () => openWriteOff(), 'action primary'));
+  $('#stock-check-start')?.append(action('Новая сверка', 'Сравнивает расход по остаткам с продажами и журналом списаний за выбранный период.', () => openStockCheck(), 'action primary'));
+  $('#economy-stock-link')?.after(help('Списания и сверка', 'Открывает журнал расхода вне продаж и сверку по остаткам.'));
   $('#economy-sales-link')?.after(help('Продажи и отчёт', 'Показывает выручку, прямую себестоимость, фудкост и маржинальность по точкам и периодам.'));
   $('#economy-price-start')?.append(action('Новая закупочная позиция', 'Добавляет сырьё или упаковку и первую цену, по которой их можно учитывать в расчёте.', () => openPriceEditor(), 'action primary'));
   $('#economy-calculation-title')?.append(heading('Себестоимость порции', 'Расчёт по составу действующей техкарты и закупочным ценам на выбранную дату.'));
@@ -1237,6 +1498,7 @@
         if (location.hash === '#techcards') renderCards(id);
         else if (location.hash === '#economy') renderEconomy(id);
         else if (location.hash === '#sales') renderSales();
+        else if (location.hash === '#stock') renderStock(id);
         else render(id);
       }
     } catch (problem) {
@@ -1251,13 +1513,16 @@
     if (event.key === null || event.key === cardKey || event.key === economyKey || event.key === salesKey) {
       if (location.hash === '#sales') renderSales();
     }
+    if (location.hash === '#stock' && [null, cardKey, economyKey, salesKey, stockKey].includes(event.key)) renderStock();
   });
   window.addEventListener('hashchange', () => {
     if (location.hash === '#economy') renderEconomy();
     if (location.hash === '#sales') renderSales();
+    if (location.hash === '#stock') renderStock();
   });
   render();
   renderCards();
   if (location.hash === '#economy') renderEconomy();
   if (location.hash === '#sales') renderSales();
+  if (location.hash === '#stock') renderStock();
 })();

@@ -33,3 +33,5 @@ a.action { display:inline-flex; align-items:center; text-decoration:none; }
 #sales-message:empty { display:none; }
 #sales-report .module { overflow-wrap:anywhere; }
 #sales-report .quality-pair { border-top:1px solid var(--line); padding-top:6px; }
+#stock-message:empty { display:none; }
+#stock-checks .quality-details { overflow-wrap:anywhere; }

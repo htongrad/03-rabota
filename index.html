@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=5">
+  <link rel="stylesheet" href="./quality.css?v=6">
   <title>03 Работа</title>
   <style>
     :root {
@@ -315,6 +315,7 @@
       <div class="stack">
         <p id="economy-message" class="error" role="alert"></p>
         <div class="quality-actions"><a class="action" id="economy-sales-link" href="#sales">Продажи и отчёт</a></div>
+        <div class="quality-actions"><a class="action" id="economy-stock-link" href="#stock">Списания и сверка</a></div>
         <details class="module">
           <summary>Закупочные цены</summary>
           <div class="quality-details stack">
@@ -338,6 +339,22 @@
         <section class="stack" aria-label="Дневные записи">
           <h3>Дневные записи</h3>
           <div id="sales-rows" class="stack"></div>
+        </section>
+      </div>
+    </section>
+    <section data-page="stock" hidden>
+      <div class="page-heading"><a class="quality-back" href="#economy">← Экономика</a><h2>Списания и сверка</h2></div>
+      <div class="stack">
+        <p id="stock-message" class="error" role="alert"></p>
+        <section class="stack" aria-label="Списания">
+          <h3>Списания</h3>
+          <div id="stock-writeoff-start"></div>
+          <div id="stock-writeoffs" class="stack"></div>
+        </section>
+        <section class="stack" aria-label="Сверка расхода">
+          <h3>Сверка расхода</h3>
+          <div id="stock-check-start"></div>
+          <div id="stock-checks" class="stack"></div>
         </section>
       </div>
     </section>
@@ -404,6 +421,14 @@
             <p>Шеф-бариста анализирует продажи напитков по точкам, размерам порций и периодам. Берёт количество порций и выручку после скидок и возвратов из отчёта кассы. Отдельно учитывает приготовленные порции, по которым был оформлен возврат, если эти данные доступны.</p>
             <p>Панель рассчитывает прямую себестоимость по техкарте и закупочным ценам на дату продажи. Маржинальный доход равен выручке за вычетом прямой себестоимости. Фудкост — доля прямой себестоимости в выручке. Маржинальность — доля маржинального дохода в выручке. Оба процента рассчитываются при положительной выручке.</p>
             <p>Записи с неполными данными остаются в отчёте по продажам. Фудкост и маржинальность за период рассчитываются по суммам тех строк, для которых известна себестоимость. В отчёте отдельно показывается покрытие расчёта.</p>
+          </div>
+        </details>
+        <details class="module">
+          <summary>Списания и сверка расхода сырья</summary>
+          <div class="guide-copy">
+            <p>Шеф-бариста фиксирует списания и расход сырья вне продаж, например при настройке, дегустации, обучении или порче. Для каждой записи указывает дату, точку, ингредиент, количество, единицу измерения и причину.</p>
+            <p>Для сверки определяет фактический расход по начальному и конечному остаткам с учётом поставок, перемещений и возвратов поставщику. Расчётный расход по продажам определяет по количеству приготовленных порций и техкартам, действовавшим на даты продаж. К нему добавляет зарегистрированный расход вне продаж.</p>
+            <p>Приготовленные возвращённые порции, уже учтённые в продажах, включаются в расчёт один раз. Если данных для сверки недостаточно, шеф-бариста отмечает, чего не хватает. По необъяснённому расхождению проверяет остатки, движения и записи о расходе, затем фиксирует причину или следующее действие.</p>
           </div>
         </details>
       </div>
@@ -607,9 +632,9 @@
 
     function route() {
       const hash = location.hash.slice(1);
-      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'instruction'].includes(hash) ? hash : 'overview';
+      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'stock', 'instruction'].includes(hash) ? hash : 'overview';
       for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== current;
-      const tab = ({ techcards: 'quality', economy: 'overview', sales: 'overview' })[current] || current;
+      const tab = ({ techcards: 'quality', economy: 'overview', sales: 'overview', stock: 'overview' })[current] || current;
       for (const link of document.querySelectorAll('.nav a')) {
         if (link.hash === '#' + tab) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
@@ -762,6 +787,6 @@
 
     route();
   </script>
-  <script src="./quality.js?v=5"></script>
+  <script src="./quality.js?v=6"></script>
 </body>
 </html>
