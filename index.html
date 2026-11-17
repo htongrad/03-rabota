@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=4">
+  <link rel="stylesheet" href="./quality.css?v=5">
   <title>03 Работа</title>
   <style>
     :root {
@@ -314,6 +314,7 @@
       <div class="page-heading"><a class="quality-back" href="#overview">← Обзор</a><h2>Экономика</h2></div>
       <div class="stack">
         <p id="economy-message" class="error" role="alert"></p>
+        <div class="quality-actions"><a class="action" id="economy-sales-link" href="#sales">Продажи и отчёт</a></div>
         <details class="module">
           <summary>Закупочные цены</summary>
           <div class="quality-details stack">
@@ -324,6 +325,19 @@
         <section class="stack" aria-label="Себестоимость порции">
           <div id="economy-calculation-title"></div>
           <div id="economy-calculation" class="stack"></div>
+        </section>
+      </div>
+    </section>
+    <section data-page="sales" hidden>
+      <div class="page-heading"><a class="quality-back" href="#economy">← Экономика</a><h2>Продажи и отчёт</h2></div>
+      <div class="stack">
+        <div id="sales-start"></div>
+        <div id="sales-filters" class="module quality-fields"></div>
+        <p id="sales-message" class="error" role="alert"></p>
+        <div id="sales-report" class="stack"></div>
+        <section class="stack" aria-label="Дневные записи">
+          <h3>Дневные записи</h3>
+          <div id="sales-rows" class="stack"></div>
         </section>
       </div>
     </section>
@@ -382,6 +396,14 @@
           <div class="guide-copy">
             <p>Шеф-бариста рассчитывает прямую себестоимость порции по составу действующей техкарты и закупочным ценам. Для каждого ингредиента фиксирует цену, количество в закупочной упаковке, единицу измерения и дату, с которой действует цена.</p>
             <p>Стоимость ингредиента на порцию определяется по количеству, указанному в техкарте. Расчёт считается полным, когда для каждого ингредиента есть цена и совместимая единица измерения. Шеф-бариста использует расчёт, чтобы оценить влияние изменений рецептуры и закупочных цен на себестоимость напитка.</p>
+          </div>
+        </details>
+        <details class="module">
+          <summary>Продажи, фудкост и маржинальность напитков</summary>
+          <div class="guide-copy">
+            <p>Шеф-бариста анализирует продажи напитков по точкам, размерам порций и периодам. Берёт количество порций и выручку после скидок и возвратов из отчёта кассы. Отдельно учитывает приготовленные порции, по которым был оформлен возврат, если эти данные доступны.</p>
+            <p>Панель рассчитывает прямую себестоимость по техкарте и закупочным ценам на дату продажи. Маржинальный доход равен выручке за вычетом прямой себестоимости. Фудкост — доля прямой себестоимости в выручке. Маржинальность — доля маржинального дохода в выручке. Оба процента рассчитываются при положительной выручке.</p>
+            <p>Записи с неполными данными остаются в отчёте по продажам. Фудкост и маржинальность за период рассчитываются по суммам тех строк, для которых известна себестоимость. В отчёте отдельно показывается покрытие расчёта.</p>
           </div>
         </details>
       </div>
@@ -585,9 +607,9 @@
 
     function route() {
       const hash = location.hash.slice(1);
-      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'instruction'].includes(hash) ? hash : 'overview';
+      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'instruction'].includes(hash) ? hash : 'overview';
       for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== current;
-      const tab = ({ techcards: 'quality', economy: 'overview' })[current] || current;
+      const tab = ({ techcards: 'quality', economy: 'overview', sales: 'overview' })[current] || current;
       for (const link of document.querySelectorAll('.nav a')) {
         if (link.hash === '#' + tab) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
@@ -740,6 +762,6 @@
 
     route();
   </script>
-  <script src="./quality.js?v=4"></script>
+  <script src="./quality.js?v=5"></script>
 </body>
 </html>

@@ -848,6 +848,40 @@
     return JSON.stringify([card, normalized(portion), normalized(ingredient.name), normalized(ingredient.unit)]);
   }
 
+  function estimateIngredient(snapshot, card, portion, ingredient, date) {
+    const key = linkKey(card, portion, ingredient);
+    const linked = snapshot.data.links.find(pair => pair.key === key)?.supply;
+    const supply = snapshot.data.supplies.find(item => item.id === linked);
+    const price = supply ? priceFor(supply, date) : null;
+    const converted = price ? convertAmount(ingredient.amount, ingredient.unit, price.unit, price.density) : null;
+    const cost = converted === null ? null : cents(converted / price.amount * (price.cost / 100));
+    const reason = !supply ? 'Свяжи ингредиент с закупочной позицией.' :
+      !price ? 'На выбранную дату нет действующей цены.' :
+      converted === null ? 'Единицы несовместимы. Проверь единицы или укажи плотность для перевода массы в объём.' :
+      !Number.isSafeInteger(cost) ? 'Сумма выходит за пределы расчёта.' : '';
+    return { key, supply, price, cost: reason ? null : cost, reason };
+  }
+
+  function purchaseLink(snapshot, { key, supply }, refresh, message) {
+    const link = field('Закупочная позиция', 'Связь сохранится для этого напитка, размера порции и ингредиента. При обновлении цены панель пересчитает стоимость.', {
+      choices: { '': 'Не связана', ...Object.fromEntries(snapshot.data.supplies.map(item => [item.id, item.name])) },
+      required: false, value: supply?.id
+    });
+    link.control.addEventListener('change', () => {
+      try {
+        const id = value(link);
+        const links = snapshot.data.links.filter(pair => pair.key !== key);
+        if (id) links.push({ key, supply: id });
+        saveEconomy(snapshot, { ...snapshot.data, links });
+        refresh();
+      } catch (problem) {
+        link.control.value = supply?.id ?? '';
+        message.textContent = problem.message;
+      }
+    });
+    return link;
+  }
+
   function renderCost(snapshot, portion, target, focusLink) {
     if (!dateIsValid(calculation.date)) {
       target.append(el('p', 'Укажи дату закупочных цен.', 'quiet'));
@@ -859,31 +893,12 @@
     const rows = el('div', '', 'stack');
     for (const [index, ingredient] of portion.ingredients.entries()) {
       const item = el('section', '', 'quality-criterion quality-fields');
-      const key = linkKey(calculation.card, portion.name, ingredient);
-      const linked = snapshot.data.links.find(pair => pair.key === key)?.supply;
-      const supply = snapshot.data.supplies.find(item => item.id === linked);
-      const price = supply ? priceFor(supply, calculation.date) : null;
-      const converted = price ? convertAmount(ingredient.amount, ingredient.unit, price.unit, price.density) : null;
-      const cost = converted === null ? null : cents(converted / price.amount * (price.cost / 100));
-      const validCost = cost !== null && Number.isSafeInteger(cost) && Number.isSafeInteger(total + cost);
+      const estimate = estimateIngredient(snapshot, calculation.card, portion.name, ingredient, calculation.date);
+      const { cost, price, reason } = estimate;
+      const validCost = cost !== null && Number.isSafeInteger(total + cost);
       item.append(heading(ingredient.name + ' · ' + ingredient.amount + ' ' + ingredient.unit,
         'Количество берётся из действующей техкарты. Выбери закупочную позицию для этой строки.', 'h4'));
-      const link = field('Закупочная позиция', 'Связь сохранится для этого напитка, размера порции и ингредиента. При обновлении цены панель пересчитает стоимость.', {
-        choices: { '': 'Не связана', ...Object.fromEntries(snapshot.data.supplies.map(item => [item.id, item.name])) },
-        required: false, value: supply?.id
-      });
-      link.control.addEventListener('change', () => {
-        try {
-          const id = value(link);
-          const links = snapshot.data.links.filter(pair => pair.key !== key);
-          if (id) links.push({ key, supply: id });
-          saveEconomy(snapshot, { ...snapshot.data, links });
-          renderEconomy('', index);
-        } catch (problem) {
-          link.control.value = supply?.id ?? '';
-          economyError(problem);
-        }
-      });
+      const link = purchaseLink(snapshot, estimate, () => renderEconomy('', index), $('#economy-message'));
       item.append(link.wrapper);
       if (price) line(item, 'Цена закупки:', money(price.cost) + ' за ' + price.amount + ' ' + price.unit + ' · с ' + formatDate(price.date));
       if (validCost) {
@@ -891,11 +906,7 @@
         line(item, 'На порцию:', money(cost));
       } else {
         missing++;
-        const reason = !supply ? 'Свяжи ингредиент с закупочной позицией.' :
-          !price ? 'На выбранную дату нет действующей цены.' :
-          converted === null ? 'Единицы несовместимы. Проверь единицы или укажи плотность для перевода массы в объём.' :
-          'Проверь количество и цену. Сумма выходит за пределы расчёта.';
-        item.append(el('p', reason, 'error'));
+        item.append(el('p', reason || 'Сумма выходит за пределы расчёта.', 'error'));
       }
       if (focusLink === index) queueMicrotask(() => link.control.focus({ preventScroll: true }));
       rows.append(item);
@@ -951,6 +962,258 @@
     }
   }
 
+  const salesKey = 'panel-03:sales';
+  const reportFilter = { from: '', to: '', point: '' };
+  const percentFormat = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 1 });
+
+  function readSales() {
+    const raw = localStorage.getItem(salesKey);
+    return { raw, rows: raw === null ? [] : JSON.parse(raw) };
+  }
+
+  function historicalVersion(card, date) {
+    return card.versions.reduce((latest, version) => {
+      return version.effective <= date && (!latest || version.effective >= latest.effective) ? version : latest;
+    }, null);
+  }
+
+  function sameSale(left, right) {
+    return left.date === right.date && normalized(left.point) === normalized(right.point) &&
+      normalized(left.portion) === normalized(right.portion) &&
+      (left.cardId && right.cardId ? left.cardId === right.cardId : normalized(left.drink) === normalized(right.drink));
+  }
+
+  function openSalesIdentity() {
+    try {
+      const cards = readCatalog().cards.filter(activeVersion);
+      showEditor('Дневные продажи', body => {
+        const date = dateField('Дата продажи', 'Введи дату строки кассового отчёта. Состав и закупочные цены подбираются на этот день.');
+        const point = field('Точка', 'Название кофейни. Используй одинаковое название для всех её записей.');
+        const card = field('Техкарта', 'Выбери напиток из справочника. Если его там нет, выбери ручной ввод.', {
+          choices: { manual: 'Ручной ввод', ...Object.fromEntries(cards.map(item => [item.id, activeVersion(item).title])) },
+          value: cards[0]?.id ?? 'manual'
+        });
+        const drink = field('Название напитка', 'Название напитка в кассовом отчёте при ручном вводе.');
+        const manualPortion = field('Размер порции', 'Укажи вариант из кассового отчёта. Например, 250 мл.');
+        const portionSlot = el('div');
+        let portion;
+        function update() {
+          const selected = cards.find(item => item.id === value(card));
+          const version = selected && (historicalVersion(selected, value(date)) || activeVersion(selected));
+          const previous = portion && value(portion);
+          setActive(drink.wrapper, !version);
+          setActive(manualPortion.wrapper, !version);
+          portionSlot.replaceChildren();
+          portion = version ? field('Размер порции', 'Выбери размер, проданный по этой строке кассового отчёта.', {
+            choices: Object.fromEntries(version.portions.map(item => [item.name, item.name])),
+            value: version.portions.some(item => item.name === previous) ? previous : version.portions[0].name
+          }) : null;
+          if (portion) portionSlot.append(portion.wrapper);
+        }
+        date.control.addEventListener('change', update);
+        card.control.addEventListener('change', update);
+        body.append(date.wrapper, point.wrapper, card.wrapper, drink.wrapper, manualPortion.wrapper, portionSlot);
+        update();
+        return () => {
+          const day = value(date);
+          if (!dateIsValid(day)) throw Error('Укажи дату продажи.');
+          const selected = cards.find(item => item.id === value(card));
+          const version = selected && (historicalVersion(selected, day) || activeVersion(selected));
+          openSalesAmounts({
+            date: day, point: requireText(point), cardId: selected?.id ?? null,
+            drink: version?.title ?? requireText(drink),
+            portion: requireText(portion || manualPortion)
+          });
+          return null;
+        };
+      }, 'Продолжить', 'Открывает ввод количества и выручки. Если такая строка уже есть, подставляет её значения для правки.');
+    } catch (problem) {
+      $('#sales-message').textContent = problem.message;
+    }
+  }
+
+  function openSalesAmounts(identity) {
+    const snapshot = readSales();
+    const existing = snapshot.rows.find(row => sameSale(row, identity));
+    showEditor(existing ? 'Изменить дневные продажи' : 'Дневные продажи', body => {
+      line(body, 'Дата и точка:', formatDate(identity.date) + ' · ' + identity.point);
+      line(body, 'Напиток:', identity.drink + ' · ' + identity.portion);
+      const quantity = field('Продано порций', 'Количество проданных порций после исключения возвратов. Приготовленные возвращённые порции укажи отдельно.', { type: 'number', value: existing?.quantity });
+      const revenue = field('Выручка после скидок и возвратов, ₽', 'Фактическая выручка по этой строке кассы с учётом скидок и возвратов.', { type: 'number', value: existing ? existing.revenue / 100 : undefined });
+      const returned = field('Приготовленные возвращённые порции', 'Укажи количество приготовленных порций, которые были возвращены, если оно известно. Их себестоимость добавится к затратам. Явный ноль означает, что таких порций не было.', { type: 'number', required: false, value: existing?.returned });
+      for (const count of [quantity, returned]) {
+        count.control.min = '0';
+        count.control.step = '1';
+      }
+      body.append(quantity.wrapper, revenue.wrapper, returned.wrapper);
+      return () => {
+        const sold = quantity.control.valueAsNumber;
+        const refunds = value(returned) ? returned.control.valueAsNumber : null;
+        const total = revenue.control.valueAsNumber;
+        const proceeds = Math.sign(total) * cents(Math.abs(total));
+        if (!Number.isSafeInteger(sold) || sold < 0 || (refunds !== null && (!Number.isSafeInteger(refunds) || refunds < 0))) {
+          throw Error('Количество порций должно быть целым числом от нуля.');
+        }
+        if (!Number.isSafeInteger(proceeds)) throw Error('Укажи выручку числом.');
+        if (localStorage.getItem(salesKey) !== snapshot.raw) throw Error('Продажи изменились в другой вкладке. Открой запись заново.');
+        const row = { ...identity, id: existing?.id ?? crypto.randomUUID(), quantity: sold, revenue: proceeds, returned: refunds };
+        localStorage.setItem(salesKey, JSON.stringify([...snapshot.rows.filter(item => item.id !== row.id), row]));
+        return row.id;
+      };
+    }, 'Сохранить продажи', 'Сохраняет одну строку на день, точку, напиток и порцию. Повторный ввод обновляет эту строку.');
+  }
+
+  function costForSale(row, cards, economy) {
+    const explicit = cards.find(card => card.id === row.cardId);
+    const candidates = explicit ? [explicit] : cards.filter(card =>
+      normalized(historicalVersion(card, row.date)?.title || '') === normalized(row.drink));
+    const card = candidates.length === 1 ? candidates[0] : null;
+    const version = card && historicalVersion(card, row.date);
+    const portion = version?.portions.find(item => normalized(item.name) === normalized(row.portion));
+    if (!portion) return { cost: null, card, reason: version ? 'В техкарте на эту дату нет такого размера порции.' : 'На дату продажи нет однозначно подходящей техкарты.' };
+    const count = row.quantity + (row.returned ?? 0);
+    if (count === 0) return { cost: 0, card, version };
+    const items = portion.ingredients.map(ingredient => ({
+      ingredient, ...estimateIngredient(economy, card.id, portion.name, ingredient, row.date)
+    }));
+    const missing = items.filter(item => item.cost === null);
+    if (missing.length) return { cost: null, version, card, portion, missing, reason: 'Нужны закупочные данные по составу.' };
+    const total = items.reduce((sum, item) => sum + item.cost, 0) * count;
+    return Number.isSafeInteger(total) ? { cost: total, card, version } : { cost: null, card, version, reason: 'Сумма выходит за пределы расчёта.' };
+  }
+
+  function salesTotals(entries) {
+    const result = { quantity: 0, revenue: 0, cost: 0, coveredRevenue: 0, positiveRevenue: 0, coveredPositiveRevenue: 0, coveredRows: 0 };
+    for (const { row, estimate } of entries) {
+      result.quantity += row.quantity;
+      result.revenue += row.revenue;
+      result.positiveRevenue += Math.max(0, row.revenue);
+      if (estimate.cost !== null) {
+        result.cost += estimate.cost;
+        result.coveredRevenue += row.revenue;
+        result.coveredPositiveRevenue += Math.max(0, row.revenue);
+        result.coveredRows++;
+      }
+    }
+    return result;
+  }
+
+  function salesMetrics(title, entries) {
+    const stats = salesTotals(entries);
+    const card = el('section', '', 'module quality-fields');
+    card.append(heading(title, 'Выручка и порции включают все строки. Себестоимость и показатели на её основе считаются по строкам с полными данными.'));
+    line(card, 'Продано порций:', String(stats.quantity));
+    line(card, 'Выручка:', money(stats.revenue));
+    const covered = stats.coveredRows + ' из ' + entries.length;
+    line(card, 'Строк с себестоимостью:', covered);
+    if (stats.positiveRevenue > 0) {
+      line(card, 'Покрытие положительной выручки:', percentFormat.format(stats.coveredPositiveRevenue / stats.positiveRevenue));
+    }
+    if (stats.coveredRows) {
+      if (stats.coveredRows < entries.length) line(card, 'Выручка по рассчитанным строкам:', money(stats.coveredRevenue));
+      line(card, 'Прямая себестоимость:', money(stats.cost));
+      line(card, 'Маржинальный доход:', money(stats.coveredRevenue - stats.cost));
+    } else {
+      line(card, 'Прямая себестоимость и маржинальный доход:', 'нет данных');
+    }
+    const rates = el('div', '', 'quality-pair');
+    const food = el('div');
+    const margin = el('div');
+    food.append(heading('Фудкост', 'Прямая себестоимость сырья и упаковки, делённая на выручку по тем же строкам. Рассчитывается при положительной выручке.', 'h4'));
+    margin.append(heading('Маржинальность', 'Маржинальный доход, делённый на выручку по тем же строкам. Рассчитывается при положительной выручке.', 'h4'));
+    food.append(el('p', stats.coveredRevenue > 0 ? percentFormat.format(stats.cost / stats.coveredRevenue) : '—', 'quality-result'));
+    margin.append(el('p', stats.coveredRevenue > 0 ? percentFormat.format((stats.coveredRevenue - stats.cost) / stats.coveredRevenue) : '—', 'quality-result'));
+    rates.append(food, margin);
+    card.append(rates);
+    return card;
+  }
+
+  function renderSalesRows(entries, economy) {
+    const list = $('#sales-rows');
+    const expanded = new Set(Array.from(list.querySelectorAll('details[open]'), item => item.dataset.sale));
+    list.replaceChildren();
+    for (const { row, estimate } of entries) {
+      const item = el('details', '', 'module quality-record');
+      item.dataset.sale = row.id;
+      item.open = expanded.has(row.id);
+      const summary = el('summary', row.drink + ' · ' + row.portion);
+      summary.append(el('p', formatDate(row.date) + ' · ' + row.point + ' · ' + money(row.revenue), 'quiet'));
+      const body = el('div', '', 'quality-details');
+      line(body, 'Продано порций:', String(row.quantity));
+      line(body, 'Приготовлено и возвращено:', row.returned === null ? 'не указано' : String(row.returned));
+      if (estimate.version) line(body, 'Техкарта:', 'версия ' + estimate.version.number);
+      if (estimate.cost !== null) line(body, 'Прямая себестоимость:', money(estimate.cost));
+      if (estimate.reason) body.append(el('p', estimate.reason, 'error'));
+      for (const missing of estimate.missing || []) {
+        const problem = el('section', '', 'quality-criterion quality-fields');
+        line(problem, missing.ingredient.name + ':', missing.reason);
+        problem.append(purchaseLink(economy, missing, () => renderSales(), $('#sales-message')).wrapper);
+        body.append(problem);
+      }
+      body.append(action('Изменить', 'Открывает количество, выручку и возвраты за этот день для правки.', () => {
+        try { openSalesAmounts(row); }
+        catch (problem) { $('#sales-message').textContent = problem.message; }
+      }));
+      item.append(summary, body);
+      list.append(item);
+    }
+  }
+
+  function renderSales() {
+    const report = $('#sales-report');
+    if (!report) return;
+    const message = $('#sales-message');
+    message.textContent = '';
+    report.replaceChildren();
+    try {
+      const rows = readSales().rows;
+      const cards = readCatalog().cards;
+      const economy = readEconomy();
+      const points = new Map(rows.map(row => [normalized(row.point), row.point]));
+      const filters = $('#sales-filters');
+      filters.replaceChildren();
+      const from = field('Период с', 'Первая дата отчёта, включительно. Пустое поле означает, что нижней границы нет.', { type: 'date', value: reportFilter.from, required: false });
+      const to = field('Период по', 'Последняя дата отчёта, включительно. Пустое поле означает, что верхней границы нет.', { type: 'date', value: reportFilter.to, required: false });
+      const point = field('Точка отчёта', 'Выбери одну кофейню или посмотри сводку по всем точкам.', {
+        choices: { '': 'Все точки', ...Object.fromEntries(points) }, value: reportFilter.point, required: false
+      });
+      for (const [name, input] of Object.entries({ from, to, point })) input.control.addEventListener('change', () => {
+        reportFilter[name] = value(input);
+        renderSales();
+      });
+      const dates = el('div', '', 'quality-pair');
+      dates.append(from.wrapper, to.wrapper);
+      filters.append(dates, point.wrapper);
+      const invalid = reportFilter.from && reportFilter.to && reportFilter.from > reportFilter.to;
+      const matching = invalid ? [] : rows.filter(row =>
+        (!reportFilter.from || row.date >= reportFilter.from) && (!reportFilter.to || row.date <= reportFilter.to) &&
+        (!reportFilter.point || normalized(row.point) === reportFilter.point));
+      const entries = matching.sort((a, b) => b.date.localeCompare(a.date))
+        .map(row => ({ row, estimate: costForSale(row, cards, economy) }));
+      renderSalesRows(entries, economy);
+      if (invalid) message.textContent = 'Начальная дата должна быть не позже конечной.';
+      else if (!entries.length) report.append(el('p', 'За выбранный период записей нет.', 'quiet'));
+      else {
+        report.append(salesMetrics('Итог за период', entries));
+        const groups = new Map();
+        for (const entry of entries) {
+          const { row } = entry;
+          const key = JSON.stringify([entry.estimate.card?.id || row.cardId || normalized(row.drink), normalized(row.portion)]);
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(entry);
+        }
+        for (const items of groups.values()) {
+          const { drink, portion } = items[0].row;
+          report.append(salesMetrics(drink + ' · ' + portion, items));
+        }
+      }
+    } catch (problem) {
+      $('#sales-rows').replaceChildren();
+      message.textContent = 'Отчёт недоступен. Проверь сохранённые данные и разрешения браузера.';
+      console.warn(problem);
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -959,6 +1222,8 @@
     try { openCardEditor(); }
     catch (problem) { $('#techcards-message').textContent = problem.message; }
   }, 'action primary'));
+  $('#sales-start')?.append(action('Добавить продажи', 'Открывает дневной ввод из кассового отчёта. Для существующей строки будут подставлены её данные.', openSalesIdentity, 'action primary'));
+  $('#economy-sales-link')?.after(help('Продажи и отчёт', 'Показывает выручку, прямую себестоимость, фудкост и маржинальность по точкам и периодам.'));
   $('#economy-price-start')?.append(action('Новая закупочная позиция', 'Добавляет сырьё или упаковку и первую цену, по которой их можно учитывать в расчёте.', () => openPriceEditor(), 'action primary'));
   $('#economy-calculation-title')?.append(heading('Себестоимость порции', 'Расчёт по составу действующей техкарты и закупочным ценам на выбранную дату.'));
   $('#quality-techcards-link')?.after(help('Техкарты', 'Открывает действующие рецептуры, черновики и архив версий.'));
@@ -971,6 +1236,7 @@
         editor.close();
         if (location.hash === '#techcards') renderCards(id);
         else if (location.hash === '#economy') renderEconomy(id);
+        else if (location.hash === '#sales') renderSales();
         else render(id);
       }
     } catch (problem) {
@@ -982,11 +1248,16 @@
     if (event.key === null || event.key.startsWith(prefix)) render();
     if (event.key === null || event.key === cardKey) renderCards();
     if (event.key === null || event.key === cardKey || event.key === economyKey) renderEconomy();
+    if (event.key === null || event.key === cardKey || event.key === economyKey || event.key === salesKey) {
+      if (location.hash === '#sales') renderSales();
+    }
   });
   window.addEventListener('hashchange', () => {
     if (location.hash === '#economy') renderEconomy();
+    if (location.hash === '#sales') renderSales();
   });
   render();
   renderCards();
   if (location.hash === '#economy') renderEconomy();
+  if (location.hash === '#sales') renderSales();
 })();
