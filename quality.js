@@ -717,6 +717,240 @@
     }, 'Продолжить', 'Открывает форму проверки с критериями выбранной порции или с ручным вводом.');
   }
 
+  const economyKey = 'panel-03:economy';
+  const rubles = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' });
+  const units = new Map([
+    ['мг', ['mass', .001]], ['г', ['mass', 1]], ['гр', ['mass', 1]], ['кг', ['mass', 1000]],
+    ['мл', ['volume', 1]], ['л', ['volume', 1000]],
+    ['шт', ['count', 1]], ['шт.', ['count', 1]], ['штука', ['count', 1]]
+  ]);
+  let calculation = { card: '', portion: '', date: dateKey() };
+
+  function readEconomy() {
+    const raw = localStorage.getItem(economyKey);
+    const data = raw === null ? { supplies: [], links: [] } : JSON.parse(raw);
+    return { raw, data };
+  }
+
+  function saveEconomy(snapshot, data) {
+    if (localStorage.getItem(economyKey) !== snapshot.raw) {
+      throw Error('Данные экономики изменились в другой вкладке. Открой запись заново.');
+    }
+    localStorage.setItem(economyKey, JSON.stringify(data));
+  }
+
+  function dateIsValid(date) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && dateKey(new Date(date + 'T12:00:00')) === date;
+  }
+
+  function economyError(problem) {
+    $('#economy-message').textContent = problem instanceof DOMException ? 'Не удалось сохранить данные в браузере.' : problem.message;
+  }
+
+  function money(cents) { return rubles.format(cents / 100); }
+  function cents(sum) { return Math.round((sum + Number.EPSILON * Math.abs(sum)) * 100); }
+
+  function priceFor(supply, date) {
+    return supply.prices.reduce((latest, price) => {
+      return price.date <= date && (!latest || price.date >= latest.date) ? price : latest;
+    }, null);
+  }
+
+  function convertAmount(amount, from, to, density) {
+    const first = normalized(from);
+    const second = normalized(to);
+    const [fromType, fromScale] = units.get(first) || [];
+    const [toType, toScale] = units.get(second) || [];
+    if (first === second) return amount;
+    if (!fromType || !toType) return null;
+    if (fromType === toType) return amount * fromScale / toScale;
+    if (!(density > 0)) return null;
+    if (fromType === 'volume' && toType === 'mass') return amount * fromScale * density / toScale;
+    if (fromType === 'mass' && toType === 'volume') return amount * fromScale / density / toScale;
+    return null;
+  }
+
+  function openPriceEditor(id) {
+    try {
+      const snapshot = readEconomy();
+      const supplied = snapshot.data.supplies.find(item => item.id === id);
+      showEditor(supplied ? 'Новая закупочная цена' : 'Закупочная цена', body => {
+        if (supplied) body.append(heading(supplied.name, 'Новая цена добавится в историю этого сырья.'));
+        const name = supplied ? null : field('Сырьё или упаковка', 'Укажи наименование закупочной позиции. Например, конкретное зерно или стакан 250 мл.');
+        const price = numberField('Цена упаковки, ₽', 'Укажи полную закупочную цену упаковки в рублях. Используй одну и ту же основу цен для всех позиций. Нулевая цена допустима.');
+        price.control.min = '0';
+        const amount = numberField('Количество в упаковке', 'Укажи количество, за которое платишь эту цену. Например, 1 для пакета 1 кг или 50 для упаковки из 50 стаканов.');
+        const unit = field('Единица закупки', 'Укажи единицу количества в упаковке, например кг, г, л, мл или шт.');
+        const date = dateField('Действует с', 'Цена применяется начиная с этой даты. Новая запись за ту же дату уточняет цену в расчёте и сохраняет прежнюю в истории.');
+        const density = field('Плотность, г/мл', 'Заполни, если в закупке и техкарте используются масса и объём. Укажи сколько граммов весит 1 мл именно этого сырья.', { type: 'number', required: false });
+        if (name) body.append(name.wrapper);
+        body.append(price.wrapper, amount.wrapper, unit.wrapper, date.wrapper, density.wrapper);
+        const previous = supplied ? priceFor(supplied, '9999-12-31') : null;
+        if (previous) {
+          amount.control.value = String(previous.amount);
+          unit.control.value = previous.unit;
+          density.control.value = previous.density ?? '';
+        }
+        return () => {
+          const cost = price.control.valueAsNumber;
+          const pack = amount.control.valueAsNumber;
+          const ratio = value(density) ? density.control.valueAsNumber : null;
+          const effective = value(date);
+          const title = supplied?.name ?? requireText(name);
+          if (!Number.isFinite(cost) || cost < 0 || !Number.isSafeInteger(cents(cost))) throw Error('Укажи закупочную цену от нуля.');
+          if (!Number.isFinite(pack) || pack <= 0) throw Error('Количество в упаковке должно быть больше нуля.');
+          if (ratio !== null && (!Number.isFinite(ratio) || ratio <= 0)) throw Error('Плотность должна быть больше нуля.');
+          if (!dateIsValid(effective)) throw Error('Укажи дату начала действия цены.');
+          if (!supplied && snapshot.data.supplies.some(item => normalized(item.name) === normalized(title))) {
+            throw Error('Закупочная позиция с таким названием уже есть. Добавь новую цену в её карточке.');
+          }
+          const entry = { cost: cents(cost), amount: pack, unit: requireText(unit), date: effective, density: ratio };
+          const supply = supplied ? { ...supplied, prices: [...supplied.prices, entry] } :
+            { id: crypto.randomUUID(), name: title, prices: [entry] };
+          const supplies = supplied ? snapshot.data.supplies.map(item => item.id === supply.id ? supply : item) :
+            [...snapshot.data.supplies, supply];
+          saveEconomy(snapshot, { ...snapshot.data, supplies });
+          return supply.id;
+        };
+      }, 'Сохранить цену', 'Добавляет закупочную цену в историю. Панель применит её к расчётам начиная с указанной даты.');
+    } catch (problem) {
+      economyError(problem);
+    }
+  }
+
+  function renderPrices(supplies, keepOpen) {
+    const list = $('#economy-prices-list');
+    const opened = new Set(Array.from(list.querySelectorAll('[data-supply][open]'), node => node.dataset.supply));
+    if (keepOpen) opened.add(keepOpen);
+    list.replaceChildren();
+    if (!supplies.length) list.append(el('p', 'Закупочных цен пока нет.', 'quiet'));
+    for (const supply of supplies) {
+      const card = el('details', '', 'quality-criterion');
+      card.dataset.supply = supply.id;
+      card.open = opened.has(supply.id);
+      const summary = el('summary', supply.name);
+      const recent = priceFor(supply, dateKey());
+      summary.append(el('p', recent ? money(recent.cost) + ' за ' + recent.amount + ' ' + recent.unit : 'Цена ещё не действует', 'quiet'));
+      const body = el('div', '', 'quality-details');
+      body.append(action('Добавить цену', 'Записывает новую цену для этой закупочной позиции. Старые цены остаются в истории.', () => openPriceEditor(supply.id)));
+      body.append(heading('История цен', 'Список записей по датам начала действия. Более поздняя запись за ту же дату уточняет расчёт.', 'h4'));
+      const recentFirst = [...supply.prices].reverse().sort((a, b) => b.date.localeCompare(a.date));
+      for (const price of recentFirst) {
+        const density = price.density ? ' · ' + price.density + ' г/мл' : '';
+        line(body, formatDate(price.date) + ':', money(price.cost) + ' за ' + price.amount + ' ' + price.unit + density);
+      }
+      card.append(summary, body);
+      list.append(card);
+    }
+  }
+
+  function linkKey(card, portion, ingredient) {
+    return JSON.stringify([card, normalized(portion), normalized(ingredient.name), normalized(ingredient.unit)]);
+  }
+
+  function renderCost(snapshot, portion, target, focusLink) {
+    if (!dateIsValid(calculation.date)) {
+      target.append(el('p', 'Укажи дату закупочных цен.', 'quiet'));
+      return;
+    }
+
+    let total = 0;
+    let missing = 0;
+    const rows = el('div', '', 'stack');
+    for (const [index, ingredient] of portion.ingredients.entries()) {
+      const item = el('section', '', 'quality-criterion quality-fields');
+      const key = linkKey(calculation.card, portion.name, ingredient);
+      const linked = snapshot.data.links.find(pair => pair.key === key)?.supply;
+      const supply = snapshot.data.supplies.find(item => item.id === linked);
+      const price = supply ? priceFor(supply, calculation.date) : null;
+      const converted = price ? convertAmount(ingredient.amount, ingredient.unit, price.unit, price.density) : null;
+      const cost = converted === null ? null : cents(converted / price.amount * (price.cost / 100));
+      const validCost = cost !== null && Number.isSafeInteger(cost) && Number.isSafeInteger(total + cost);
+      item.append(heading(ingredient.name + ' · ' + ingredient.amount + ' ' + ingredient.unit,
+        'Количество берётся из действующей техкарты. Выбери закупочную позицию для этой строки.', 'h4'));
+      const link = field('Закупочная позиция', 'Связь сохранится для этого напитка, размера порции и ингредиента. При обновлении цены панель пересчитает стоимость.', {
+        choices: { '': 'Не связана', ...Object.fromEntries(snapshot.data.supplies.map(item => [item.id, item.name])) },
+        required: false, value: supply?.id
+      });
+      link.control.addEventListener('change', () => {
+        try {
+          const id = value(link);
+          const links = snapshot.data.links.filter(pair => pair.key !== key);
+          if (id) links.push({ key, supply: id });
+          saveEconomy(snapshot, { ...snapshot.data, links });
+          renderEconomy('', index);
+        } catch (problem) {
+          link.control.value = supply?.id ?? '';
+          economyError(problem);
+        }
+      });
+      item.append(link.wrapper);
+      if (price) line(item, 'Цена закупки:', money(price.cost) + ' за ' + price.amount + ' ' + price.unit + ' · с ' + formatDate(price.date));
+      if (validCost) {
+        total += cost;
+        line(item, 'На порцию:', money(cost));
+      } else {
+        missing++;
+        const reason = !supply ? 'Свяжи ингредиент с закупочной позицией.' :
+          !price ? 'На выбранную дату нет действующей цены.' :
+          converted === null ? 'Единицы несовместимы. Проверь единицы или укажи плотность для перевода массы в объём.' :
+          'Проверь количество и цену. Сумма выходит за пределы расчёта.';
+        item.append(el('p', reason, 'error'));
+      }
+      if (focusLink === index) queueMicrotask(() => link.control.focus({ preventScroll: true }));
+      rows.append(item);
+    }
+    const summary = el('section', '', 'module');
+    summary.setAttribute('aria-live', 'polite');
+    summary.append(heading(missing ? 'Расчёт неполный' : 'Итог за порцию',
+      'Итог — сумма стоимости ингредиентов по строкам. Каждая строка округляется до копеек.'));
+    const result = missing ? 'Посчитанные строки: ' + money(total) + ' · без расчёта: ' + missing : money(total);
+    summary.append(el('p', result, 'quality-result'));
+    target.append(summary, rows);
+  }
+
+  function renderEconomy(keepOpen = '', focusLink) {
+    const container = $('#economy-calculation');
+    if (!container) return;
+    container.replaceChildren();
+    $('#economy-message').textContent = '';
+    try {
+      const snapshot = readEconomy();
+      renderPrices(snapshot.data.supplies, keepOpen);
+      const cards = readCatalog().cards.filter(activeVersion);
+      if (!cards.length) {
+        container.append(el('p', 'Для расчёта нужна действующая техкарта.', 'quiet'));
+        return;
+      }
+
+      const chosen = cards.find(card => card.id === calculation.card) || cards[0];
+      const version = activeVersion(chosen);
+      const portion = version.portions.find(item => item.name === calculation.portion) || version.portions[0];
+      calculation = { ...calculation, card: chosen.id, portion: portion.name };
+      const cardField = field('Напиток', 'Выбери действующую техкарту. Панель возьмёт состав из её текущей версии.', {
+        choices: Object.fromEntries(cards.map(card => [card.id, activeVersion(card).title])), value: chosen.id
+      });
+      const portionField = field('Размер порции', 'Для каждого размера состав и количество ингредиентов берутся отдельно.', {
+        choices: Object.fromEntries(version.portions.map((item, i) => [i, item.name])), value: String(version.portions.indexOf(portion))
+      });
+      const date = field('Дата закупочных цен', 'Панель возьмёт последнюю цену на эту дату или ранее. Рецептура берётся из действующей техкарты.', { type: 'date', value: calculation.date });
+      cardField.control.addEventListener('change', () => {
+        calculation = { ...calculation, card: value(cardField), portion: '' };
+        renderEconomy();
+      });
+      portionField.control.addEventListener('change', () => {
+        calculation.portion = version.portions[Number(value(portionField))].name;
+        renderEconomy();
+      });
+      date.control.addEventListener('change', () => { calculation.date = value(date); renderEconomy(); });
+      container.append(cardField.wrapper, portionField.wrapper, date.wrapper);
+      line(container, 'Техкарта:', 'версия ' + version.number);
+      renderCost(snapshot, portion, container, focusLink);
+    } catch (problem) {
+      economyError(problem);
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -725,6 +959,8 @@
     try { openCardEditor(); }
     catch (problem) { $('#techcards-message').textContent = problem.message; }
   }, 'action primary'));
+  $('#economy-price-start')?.append(action('Новая закупочная позиция', 'Добавляет сырьё или упаковку и первую цену, по которой их можно учитывать в расчёте.', () => openPriceEditor(), 'action primary'));
+  $('#economy-calculation-title')?.append(heading('Себестоимость порции', 'Расчёт по составу действующей техкарты и закупочным ценам на выбранную дату.'));
   $('#quality-techcards-link')?.after(help('Техкарты', 'Открывает действующие рецептуры, черновики и архив версий.'));
   form.addEventListener('submit', event => {
     event.preventDefault();
@@ -734,6 +970,7 @@
       if (id) {
         editor.close();
         if (location.hash === '#techcards') renderCards(id);
+        else if (location.hash === '#economy') renderEconomy(id);
         else render(id);
       }
     } catch (problem) {
@@ -744,7 +981,12 @@
   window.addEventListener('storage', event => {
     if (event.key === null || event.key.startsWith(prefix)) render();
     if (event.key === null || event.key === cardKey) renderCards();
+    if (event.key === null || event.key === cardKey || event.key === economyKey) renderEconomy();
+  });
+  window.addEventListener('hashchange', () => {
+    if (location.hash === '#economy') renderEconomy();
   });
   render();
   renderCards();
+  if (location.hash === '#economy') renderEconomy();
 })();
