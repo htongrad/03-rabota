@@ -19,6 +19,7 @@
   let calendarMessage = '';
   let calendarPoll = 0;
   let calendarRetryAfter = 0;
+  let calendarError = false;
   let authLoading;
   let busy = false;
   let connecting = false;
@@ -267,8 +268,10 @@
       update({ calendarHash: hash });
       calendarPoll = Date.now();
       calendarRetryAfter = 0;
+      calendarError = false;
       calendarMessage = 'Зеркало обновлено. Событий и рабочих действий: ' + count + '.';
     } catch (error) {
+      calendarError = true;
       calendarMessage = error.message || 'Не удалось обновить календарь.';
       calendarRetryAfter = Date.now() + 30000;
     }
@@ -326,7 +329,7 @@
       !ready() || !calendarGranted ? 'Подключи Google для отправки событий.' :
       localHash && localHash !== settings.calendarHash ? 'Есть изменения для календаря.' :
       settings.calendarLastSync ? 'Календарь «03 РАБОТА» обновлён.' : 'Ожидает первой отправки событий.';
-    $('#google-calendar-overview').textContent = calendarRetryAfter > Date.now() ? 'Календарь: ' + calendarMessage : calendarSummary;
+    $('#google-calendar-overview').textContent = settings.paused || !ready() || !calendarGranted ? calendarSummary : calendarError ? 'Календарь: ' + calendarMessage : calendarSummary;
     $('#google-calendar-status').textContent = settings.paused ? calendarSummary : calendarMessage || calendarSummary;
     $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
     $('#google-calendar-zone').textContent = settings.calendarZone ? 'Часовой пояс: ' + settings.calendarZone + '. Событие без окончания занимает один час.' : 'Будет использован часовой пояс календаря «03 РАБОТА».';
@@ -428,7 +431,7 @@
   $('#google-sync-now').addEventListener('click', () => run(sync));
   $('#google-restore').addEventListener('click', () => run(restoreRemote));
   $('#google-disconnect').addEventListener('click', () => {
-    token = ''; expires = 0; calendarGranted = false; calendarMessage = '';
+    token = ''; expires = 0; calendarGranted = false; calendarMessage = ''; calendarError = false; calendarRetryAfter = 0;
     message = 'Доступ в этой вкладке отключён. Рабочие данные сохранены в браузере.';
     paint();
   });

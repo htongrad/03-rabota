@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=15">
+  <link rel="stylesheet" href="./quality.css?v=16">
   <title>03 Работа</title>
   <style>
     :root {
@@ -84,16 +84,6 @@
       padding: 14px;
     }
     .module h3 { font-size: 1.03rem; margin-bottom: 9px; }
-    .link-module {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      background: var(--soft);
-    }
-    .link-module strong, .link-module span { display: block; }
-    .link-module .quiet { margin-top: 3px; }
 
     .bottom {
       position: fixed;
@@ -705,7 +695,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=15"></script>
+  <script src="./backup.js?v=16"></script>
   <script>
     'use strict';
 
@@ -729,7 +719,9 @@
     let selectedDay = dateKey(new Date());
     let visibleMonth = beginningOfMonth(new Date());
     let events = [];
+    let eventOriginals = new Map();
     let editingId = null;
+    let editingOriginal = null;
 
     const editor = $('#event-editor');
     const form = $('#event-form');
@@ -743,20 +735,24 @@
     function readEvents() {
       try {
         const stored = [];
+        const originals = new Map();
         for (const key of Object.keys(localStorage)) {
           if (!key.startsWith(storagePrefix)) continue;
           try {
-            const item = JSON.parse(localStorage.getItem(key));
+            const original = localStorage.getItem(key);
+            const item = JSON.parse(original);
             if (item?.id === key.slice(storagePrefix.length) &&
                 typeof item.title === 'string' && isValidDateKey(item.date) &&
                 typeof item.start === 'string' && typeof item.end === 'string') {
               stored.push(item);
+              originals.set(item.id, original);
             }
           } catch (error) {
             if (!(error instanceof SyntaxError)) throw error;
           }
         }
         events = stored.sort(sortEvents);
+        eventOriginals = originals;
         showError($('#app-error'));
       } catch {
         showError($('#app-error'), 'Хранилище браузера недоступно. Проверь разрешения сайта.');
@@ -910,6 +906,7 @@
 
     function openEditor(event) {
       editingId = event?.id ?? null;
+      editingOriginal = event ? eventOriginals.get(event.id) : null;
       form.reset();
       showError($('#form-error'));
       $('#editor-title').textContent = event ? 'Изменить событие' : 'Новое событие';
@@ -943,6 +940,10 @@
           showError($('#form-error'), 'Событие уже удалено в другой вкладке.');
           return;
         }
+        if (editingId && localStorage.getItem(storagePrefix + id) !== editingOriginal) {
+          showError($('#form-error'), 'Событие изменилось в другой вкладке. Закрой форму и открой запись заново.');
+          return;
+        }
         localStorage.setItem(storagePrefix + id, JSON.stringify({ id, title, date, start, end }));
       } catch {
         showError($('#form-error'), 'Событие не удалось сохранить в браузере.');
@@ -958,6 +959,10 @@
     $('#delete-event').addEventListener('click', () => {
       if (!editingId || !window.confirm('Удалить это событие?')) return;
       try {
+        if (localStorage.getItem(storagePrefix + editingId) !== editingOriginal) {
+          showError($('#form-error'), 'Событие изменилось или удалено в другой вкладке. Закрой форму и открой запись заново.');
+          return;
+        }
         localStorage.removeItem(storagePrefix + editingId);
       } catch {
         showError($('#form-error'), 'Событие не удалось удалить.');
@@ -1036,8 +1041,8 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=15"></script>
-  <script src="./calendar-sync.js?v=15"></script>
-  <script src="./google-sync.js?v=15"></script>
+  <script src="./quality.js?v=16"></script>
+  <script src="./calendar-sync.js?v=16"></script>
+  <script src="./google-sync.js?v=16"></script>
 </body>
 </html>

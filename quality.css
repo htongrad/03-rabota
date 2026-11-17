@@ -23,9 +23,7 @@
 #quality-checks summary { overflow-wrap:anywhere; }
 #quality-tooltip { width:min(100% - 24px,360px); line-height:1.48; }
 #quality-tooltip p { margin-block:8px 14px; }
-.nav { grid-template-columns:repeat(4,minmax(0,1fr)); }
 a.action { display:inline-flex; align-items:center; text-decoration:none; }
-.quality-back { display:inline-flex; align-items:center; min-height:44px; color:var(--focus); }
 .quality-steps { padding-left:22px; margin:0; }
 .quality-details details > summary { padding-inline:3px; }
 #economy-message:empty { display:none; }
