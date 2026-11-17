@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=10">
+  <link rel="stylesheet" href="./quality.css?v=11">
   <title>03 Работа</title>
   <style>
     :root {
@@ -289,8 +289,8 @@
           </div>
           <div id="date-grid" class="calendar-grid" aria-label="Дни месяца"></div>
         </section>
-        <section class="module"><h3 id="day-label" aria-live="polite"></h3><div id="events-day"></div></section>
-        <section class="module"><h3>События месяца</h3><div id="events-month"></div></section>
+        <section class="module"><h3 id="day-label" aria-live="polite"></h3><div id="events-day"></div><div id="calendar-work-day" class="quality-fields calendar-work"></div></section>
+        <section class="module"><h3>События месяца</h3><div id="events-month"></div><div id="calendar-work-month" class="quality-fields calendar-work"></div></section>
       </div>
     </section>
     <section data-page="quality" hidden>
@@ -524,6 +524,13 @@
             <p>После выполнения действия фиксирует результат в исходной записи. Если требуется ещё одна проверка, указывает, что проверить и к какой дате. Для открытого действия без даты определяет следующий шаг и назначает срок.</p>
           </div>
         </details>
+        <details class="module">
+          <summary>Планирование работы в календаре</summary>
+          <div class="guide-copy">
+            <p>Шеф-бариста использует календарь для планирования визитов, обучения, обслуживания и повторных проверок. Рабочие действия с назначенной датой отображаются в календаре автоматически.</p>
+            <p>При переносе срока изменяет дату в исходной записи или через календарь. После выполнения фиксирует результат в соответствующем журнале. Закрытое действие исчезает из списка предстоящих работ, а история его выполнения сохраняется в журнале.</p>
+          </div>
+        </details>
       </div>
     </section>
   </main>
@@ -715,6 +722,7 @@
       $('#day-label').textContent = dateFormat.format(fromKey(selectedDay));
       renderEventList($('#events-day'), monthEvents.filter(event => event.date === selectedDay), false, 'На этот день событий нет.');
       renderEventList($('#events-month'), monthEvents, true, 'В этом месяце событий нет.');
+      window.dispatchEvent(new window.CustomEvent('panel-03:calendar-render', { detail: { day: selectedDay, month: prefix } }));
       if (focusDay && selectedButton) selectedButton.focus({ preventScroll: true });
     }
 
@@ -878,8 +886,9 @@
       });
     }
 
+    window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=10"></script>
+  <script src="./quality.js?v=11"></script>
 </body>
 </html>

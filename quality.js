@@ -251,6 +251,7 @@
     const titleElement = $('#quality-editor-title');
     titleElement.textContent = title;
     const save = $('#quality-save');
+    save.parentElement.hidden = false;
     save.textContent = submit;
     const oldTip = save.nextElementSibling;
     if (oldTip) oldTip.remove();
@@ -2662,6 +2663,70 @@
     if (!filtered.length) container.append(el('p', rows.length ? 'По выбранным фильтрам открытых действий нет.' : 'Открытых действий со сроками нет.', 'quiet'));
   }
 
+  function openCalendarWork(row) {
+    showEditor('Рабочее действие', body => {
+      body.append(heading(row.title, 'Действие связано с записью в рабочем журнале. Срок и результат обновляются вместе с ней.'));
+      line(body, 'Раздел:', deadlineSections[row.section]);
+      line(body, 'Точка:', row.point || 'без привязки');
+      line(body, 'Дата:', formatDate(row.date) + ' · весь день');
+      line(body, 'Действие:', row.detail);
+      line(body, 'Ответственный:', row.owner);
+      body.append(action('Открыть запись', 'Открывает журнал, где можно внести результат или провести повторную проверку.', () => {
+        editor.close();
+        openDeadline(row);
+      }));
+      body.append(action('Перенести дату', 'Изменяет срок в исходной записи, календаре и обзоре.', () => {
+        try { row.schedule(); }
+        catch { error.textContent = 'Запись недоступна. Обнови календарь.'; error.hidden = false; }
+      }));
+      return () => null;
+    });
+    $('#quality-save').parentElement.hidden = true;
+  }
+
+  function renderCalendarWork(day, month) {
+    const dayContainer = $('#calendar-work-day');
+    const monthContainer = $('#calendar-work-month');
+    if (!dayContainer || !monthContainer) return;
+    const { rows, warnings } = collectDeadlines();
+    const dated = rows.filter(row => dateIsValid(row.date) && row.date.startsWith(month + '-'))
+      .sort((left, right) => left.date.localeCompare(right.date) || left.title.localeCompare(right.title, 'ru'));
+    for (const [target, items, withDate] of [
+      [dayContainer, dated.filter(row => row.date === day), false],
+      [monthContainer, dated, true]
+    ]) {
+      target.replaceChildren();
+      target.append(heading('Рабочие действия', 'Сроки из журналов показываются на весь день. Нажми на действие, чтобы открыть запись или перенести дату.', 'h4'));
+      if (warnings.length) target.append(el('p', 'Часть журналов недоступна: ' + warnings.join(', '), 'error'));
+      if (!items.length) {
+        target.append(el('p', 'Открытых рабочих действий нет.', 'quiet'));
+        continue;
+      }
+      const list = el('ul', '', 'event-list');
+      for (const row of items) {
+        const entry = el('li');
+        const control = button('', () => openCalendarWork(row), 'event');
+        const text = el('span');
+        text.append(el('span', row.title, 'event-title'));
+        const context = [withDate ? formatDate(row.date) : '', 'Весь день', deadlineSections[row.section], row.point, row.owner].filter(Boolean).join(' · ');
+        text.append(el('small', context, 'quiet'));
+        const arrow = el('span', '›');
+        arrow.setAttribute('aria-hidden', 'true');
+        control.append(text, arrow);
+        entry.append(control);
+        list.append(entry);
+      }
+      target.append(list);
+    }
+    const dates = new Set(dated.map(row => row.date));
+    for (const button of document.querySelectorAll('#date-grid [data-day]')) {
+      if (!dates.has(button.dataset.day)) continue;
+      button.classList.add('has-events');
+      const label = button.getAttribute('aria-label') || button.dataset.day;
+      if (!label.includes('рабочие действия')) button.setAttribute('aria-label', label + ', есть рабочие действия');
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -2701,7 +2766,8 @@
         else if (location.hash === '#training') renderTraining(id);
         else if (location.hash === '#equipment') renderEquipment(id);
         else if (location.hash === '#suppliers') renderSuppliers(id);
-        else render(id);
+        else if (location.hash !== '#calendar') render(id);
+        window.dispatchEvent(new window.Event('panel-03:work-changed'));
       }
     } catch (problem) {
       error.textContent = problem instanceof DOMException ? 'Не удалось сохранить запись в браузере.' : problem.message;
@@ -2709,6 +2775,7 @@
     }
   });
   window.addEventListener('storage', event => {
+    window.dispatchEvent(new window.Event('panel-03:work-changed'));
     if (!location.hash || location.hash === '#overview') renderDeadlines();
     if (event.key === null || event.key.startsWith(prefix)) render();
     if (event.key === null || event.key === cardKey) renderCards();
@@ -2733,6 +2800,10 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && (!location.hash || location.hash === '#overview')) renderDeadlines();
   });
+  window.addEventListener('panel-03:calendar-render', event => {
+    renderCalendarWork(event.detail.day, event.detail.month);
+  });
+  window.dispatchEvent(new window.Event('panel-03:work-changed'));
   renderDeadlines();
   render();
   renderCards();

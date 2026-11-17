@@ -41,3 +41,4 @@ a.action { display:inline-flex; align-items:center; text-decoration:none; }
 #suppliers-message:empty { display:none; }
 #working-deadlines .quality-criterion { overflow-wrap:anywhere; }
 [data-id], [data-journal-id], [data-training-id] { scroll-margin-top:16px; }
+.calendar-work { margin-top:14px; padding-top:8px; border-top:1px solid var(--line); }
