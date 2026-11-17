@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css">
+  <link rel="stylesheet" href="./quality.css?v=3">
   <title>03 Работа</title>
   <style>
     :root {
@@ -292,12 +292,21 @@
     <section data-page="quality" hidden>
       <div class="page-heading"><h2>Качество</h2><p class="quiet">Проверки напитков по точкам</p></div>
       <div class="stack">
-        <div id="quality-start"></div>
+        <div class="quality-actions" id="quality-start"></div>
+        <div class="quality-actions"><a class="action" id="quality-techcards-link" href="#techcards">Техкарты</a></div>
         <section class="stack" aria-label="Журнал проверок">
           <div id="quality-journal-title"></div>
           <p id="quality-storage-message" class="quiet" role="status"></p>
           <div id="quality-checks" class="stack"></div>
         </section>
+      </div>
+    </section>
+    <section data-page="techcards" hidden>
+      <div class="page-heading"><a class="quality-back" href="#quality">← Качество</a><h2>Техкарты</h2></div>
+      <div class="stack">
+        <div id="techcards-start"></div>
+        <p id="techcards-message" class="quiet" role="status"></p>
+        <div id="techcards-list" class="stack"></div>
       </div>
     </section>
     <section data-page="instruction" hidden>
@@ -342,6 +351,14 @@
             </ol>
           </div>
         </details>
+        <details class="module">
+          <summary>Техкарты и стандарты напитков</summary>
+          <div class="guide-copy">
+            <p>Шеф-бариста разрабатывает и актуализирует техкарты напитков. Для каждого размера порции в техкарте указываются ингредиенты и их количество, порядок приготовления, требования к подаче и критерии проверки качества.</p>
+            <p>Каждый критерий описывает, что именно проверять и как определить соответствие. Для замера указываются единица измерения, допустимые границы и способ замера. Для вкуса, текстуры и подачи указывается конкретный наблюдаемый признак и способ его оценить.</p>
+            <p>При изменении рецептуры или критериев шеф-бариста готовит новую версию техкарты, проверяет её на практике и вводит в работу после согласования. В записи о проверке сохраняются версия техкарты и критерии, которые применялись в момент проверки.</p>
+          </div>
+        </details>
       </div>
     </section>
   </main>
@@ -374,7 +391,7 @@
   </dialog>
   <dialog id="quality-editor" aria-labelledby="quality-editor-title">
     <form id="quality-form">
-      <h2 id="quality-editor-title">Проверка напитка</h2>
+      <h2 id="quality-editor-title" tabindex="-1">Проверка напитка</h2>
       <div id="quality-editor-body" class="quality-fields"></div>
       <p id="quality-error" class="error" role="alert" hidden></p>
       <div class="actions">
@@ -543,10 +560,11 @@
 
     function route() {
       const hash = location.hash.slice(1);
-      const current = ['overview', 'calendar', 'quality', 'instruction'].includes(hash) ? hash : 'overview';
+      const current = ['overview', 'calendar', 'quality', 'techcards', 'instruction'].includes(hash) ? hash : 'overview';
       for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== current;
+      const tab = current === 'techcards' ? 'quality' : current;
       for (const link of document.querySelectorAll('.nav a')) {
-        if (link.hash === '#' + current) link.setAttribute('aria-current', 'page');
+        if (link.hash === '#' + tab) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
       $('#add-event').hidden = !['overview', 'calendar'].includes(current);
@@ -697,6 +715,6 @@
 
     route();
   </script>
-  <script src="./quality.js"></script>
+  <script src="./quality.js?v=3"></script>
 </body>
 </html>
