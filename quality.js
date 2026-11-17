@@ -2472,6 +2472,7 @@
           const attempt = latest(criterion);
           if (attempt.outcome !== 'fail') continue;
           rows.push({
+            key: JSON.stringify(['quality', record.id, index]),
             section: 'quality', point: record.location, owner: attempt.plan?.owner || '',
             date: attempt.plan?.due || '', title: record.drink + ' · ' + criterion.name,
             detail: attempt.plan?.action || 'Уточнить действие по отклонению',
@@ -2496,6 +2497,7 @@
         if (job.state === 'done') continue;
         const device = data.devices.find(item => item.id === job.device);
         rows.push({
+          key: JSON.stringify(['equipment', job.id]),
           section: 'equipment', point: device?.point || '', owner: job.owner,
           date: dueForJob(job) || '', title: (job.state === 'recheck' ? 'Перепроверка · ' : '') + (device?.model || 'Оборудование'),
           detail: job.state === 'recheck' ? job.recheck : job.description,
@@ -2509,6 +2511,7 @@
         const last = item.attempts.at(-1);
         if (last.passed) continue;
         rows.push({
+          key: JSON.stringify(['water', item.id]),
           section: 'water', point: item.point, owner: last.plan?.owner || '',
           date: last.plan?.date || '', title: item.indicator + ' · повторный замер',
           detail: item.sample + ' · ' + (last.plan?.action || 'Уточнить действие'),
@@ -2530,6 +2533,7 @@
           const last = attempts[0];
           if (!last || (last.passed && !last.next)) continue;
           rows.push({
+            key: JSON.stringify(['training', person.id, skill.id]),
             section: 'training', point: person.point, owner: last.reviewer,
             date: last.next || '', title: person.name + ' · ' + skill.name,
             detail: last.exercise || 'Повторная проверка подтверждённого навыка',
@@ -2551,6 +2555,7 @@
         const company = data.suppliers.find(row => row.id === item.supplier)?.name || 'Поставщик';
         const supply = supplies.find(row => row.id === item.supply)?.name || 'Сырьё';
         rows.push({
+          key: JSON.stringify(['suppliers', item.id]),
           section: 'suppliers', point: '', owner: '', date: last.next || '',
           title: company + ' · ' + supply, detail: last.follow || 'Повторная проба',
           route: 'suppliers', id: item.id, selector: '[data-journal-id]',
@@ -2563,6 +2568,12 @@
     });
     return { rows, warnings };
   }
+
+  window.panel03CalendarWork = () => {
+    const { rows, warnings } = collectDeadlines();
+    if (warnings.length) throw Error('Журналы недоступны: ' + warnings.join(', ') + '. Календарь не изменён.');
+    return rows.map(({ key, title, date, detail, point, owner }) => ({ key, title, date, detail, point, owner }));
+  };
 
   function editDeadline(label, original, save, earliest = '') {
     showEditor('Рабочий срок', body => {

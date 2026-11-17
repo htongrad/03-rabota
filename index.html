@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=14">
+  <link rel="stylesheet" href="./quality.css?v=15">
   <title>03 Работа</title>
   <style>
     :root {
@@ -288,12 +288,14 @@
       <div class="page-heading"><h2>Обзор</h2><p class="quiet" id="today-label"></p></div>
       <div class="stack">
         <section class="module stack" aria-label="Резервная копия Google">
-          <h3>Копия на Google Диске</h3>
+          <h3>Google: копия и календарь</h3>
           <p id="google-overview-text" role="status">Проверяю состояние копии…</p>
           <p id="google-last-sync" class="quiet"></p>
+          <p id="google-calendar-overview" class="quiet" role="status">Google Календарь ещё не подключён.</p>
+          <p id="google-calendar-last-sync" class="quiet"></p>
           <div class="quality-actions">
             <button type="button" id="google-overview-connect" class="action primary" hidden>Подключить Google</button>
-            <button type="button" id="google-overview-open" class="action">Настройки копии</button>
+            <button type="button" id="google-overview-open" class="action">Настройки Google</button>
           </div>
         </section>
         <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
@@ -551,6 +553,8 @@
         <details class="module">
           <summary>Планирование работы в календаре</summary>
           <div class="guide-copy">
+            <p>После подключения Google Календаря панель отправляет события и рабочие действия со сроками в календарь «03 РАБОТА». Изменения и удаление выполняются в панели. Прямые записи в Google Календаре остаются самостоятельными и в панель не загружаются. Закрытые рабочие действия убираются из зеркала.</p>
+            <p>События со временем используют часовой пояс календаря «03 РАБОТА». Если окончание не указано, в зеркале событие занимает один час. Рабочие действия из журналов показываются на весь день.</p>
             <p>Шеф-бариста использует календарь для планирования визитов, обучения, обслуживания и повторных проверок. Рабочие действия с назначенной датой отображаются в календаре автоматически.</p>
             <p>При переносе срока изменяет дату в исходной записи или через календарь. После выполнения фиксирует результат в соответствующем журнале. Закрытое действие исчезает из списка предстоящих работ, а история его выполнения сохраняется в журнале.</p>
           </div>
@@ -598,6 +602,7 @@
         <label class="field"><span>Начало</span><input name="start" type="time" required></label>
         <label class="field"><span>Окончание</span><input name="end" type="time"></label>
       </div>
+      <div class="quality-actions"><button type="button" class="quality-help" aria-label="Пояснение: время в Google Календаре" data-google-help="В зеркале используется часовой пояс календаря «03 РАБОТА». Без времени окончания событие занимает один час. Событие на весь день и рабочее действие из журнала показываются на весь день."><span>?</span></button><span class="quiet">Время в Google Календаре</span></div>
       <p id="form-error" class="error" role="alert" hidden></p>
       <div class="actions">
         <button type="button" id="delete-event" class="action danger" hidden>Удалить</button>
@@ -625,14 +630,14 @@
   <dialog id="app-menu-dialog" aria-labelledby="app-menu-title">
     <div class="stack">
       <h2 id="app-menu-title">Меню</h2>
-      <button type="button" id="google-open" class="action">Google Диск</button>
+      <button type="button" id="google-open" class="action">Google Диск и Календарь</button>
       <button type="button" id="backup-open" class="action">Копии данных</button>
       <button type="button" id="app-menu-close" class="action">Закрыть</button>
     </div>
   </dialog>
   <dialog id="google-dialog" aria-labelledby="google-title">
     <div class="stack">
-      <h2 id="google-title">Копия на Google Диске</h2>
+      <h2 id="google-title">Google Диск и Календарь</h2>
       <p id="google-status" role="status"></p>
       <p id="google-folder-status" class="quiet"></p>
       <details>
@@ -660,6 +665,13 @@
       <div class="quality-actions"><button type="button" id="google-sync-now" class="action">Отправить сейчас</button><button type="button" class="quality-help" aria-label="Пояснение: Отправить сейчас" data-google-help="Проверяет версию копии и отправляет все рабочие данные. Автоматическая отправка действует, пока панель открыта и доступ Google не истёк."><span>?</span></button></div>
       <div class="quality-actions"><button type="button" id="google-restore" class="action">Восстановить с Диска</button><button type="button" class="quality-help" aria-label="Пояснение: Восстановить с Диска" data-google-help="Показывает состав копии перед восстановлением. Добавляет отсутствующие записи, сохраняя текущие версии совпадающих. После подтверждения разрешает отправку объединённых данных."><span>?</span></button></div>
       <div class="quality-actions"><button type="button" id="google-disconnect" class="action">Отключить доступ</button><button type="button" class="quality-help" aria-label="Пояснение: Отключить доступ" data-google-help="Завершает доступ в этой вкладке. Сохранённые настройки, локальные записи и копия на Диске остаются."><span>?</span></button></div>
+      <section class="module stack" aria-label="Зеркало Google Календаря">
+        <h3>Календарь «03 РАБОТА»</h3>
+        <p id="google-calendar-status" role="status"></p>
+        <p id="google-calendar-zone" class="quiet"></p>
+        <div class="quality-actions"><button type="button" id="google-calendar-connect" class="action primary">Подключить календарь</button><button type="button" class="quality-help" aria-label="Пояснение: подключение календаря" data-google-help="Запрашивает доступ к списку календарей и событиям твоих календарей. Панель найдёт календарь с точным названием «03 РАБОТА». Сначала настрой резервную копию на Диске. При найденной существующей копии восстанови её перед отправкой событий."><span>?</span></button></div>
+        <div class="quality-actions"><button type="button" id="google-calendar-send" class="action">Отправить события</button><button type="button" class="quality-help" aria-label="Пояснение: отправка событий" data-google-help="Отправляет обычные события и рабочие действия со сроками. Изменение и удаление выполняй в панели. Закрытые рабочие действия убираются из зеркала. События, созданные напрямую в Google Календаре, остаются самостоятельными. Отправка также выполняется автоматически при открытой панели и действующем доступе."><span>?</span></button></div>
+      </section>
       <button type="button" id="google-close" class="action">Закрыть</button>
     </div>
   </dialog>
@@ -693,7 +705,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=14"></script>
+  <script src="./backup.js?v=15"></script>
   <script>
     'use strict';
 
@@ -1024,7 +1036,8 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=14"></script>
-  <script src="./google-sync.js?v=14"></script>
+  <script src="./quality.js?v=15"></script>
+  <script src="./calendar-sync.js?v=15"></script>
+  <script src="./google-sync.js?v=15"></script>
 </body>
 </html>

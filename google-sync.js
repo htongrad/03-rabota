@@ -9,10 +9,16 @@
   const fileName = 'Работа — резервная копия.json';
   const tag = 'rabota03';
   const core = window.panel03Backup;
+  const calendar = window.panel03GoogleCalendar;
   const $ = selector => document.querySelector(selector);
   let token = '';
   let expires = 0;
   let tokenClient;
+  let calendarTokenClient;
+  let calendarGranted = false;
+  let calendarMessage = '';
+  let calendarPoll = 0;
+  let calendarRetryAfter = 0;
   let authLoading;
   let busy = false;
   let connecting = false;
@@ -43,13 +49,17 @@
     throw Error('Копия на Диске обновлена другим браузером. Сначала восстанови её.');
   }
 
-  async function request(url, options = {}, allow404 = false) {
+  async function request(url, options = {}, allow404 = false, acceptedStatuses = []) {
     if (!ready()) throw Error('Доступ Google истёк. Нажми «Подключить Google».');
     const response = await fetch(url, {
       ...options, headers: { Authorization: 'Bearer ' + token, ...options.headers }
     });
     if (response.status === 401) { token = ''; expires = 0; }
-    if (response.status === 412) conflict();
+    if (response.status === 412) {
+      if (url.startsWith('https://www.googleapis.com/calendar/')) throw Error('Событие изменилось во время отправки. Повторю проверку календаря.');
+      conflict();
+    }
+    if (acceptedStatuses.includes(response.status)) return response;
     if (response.status === 404 && allow404) return null;
     if (!response.ok) {
       const error = await response.json().catch(() => null);
@@ -122,30 +132,38 @@
     authLoading = (async () => {
       if (!window.google?.accounts?.oauth2) await script('https://accounts.google.com/gsi/client');
       const settings = read();
-      tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: settings.clientId,
-        scope: 'openid ' + scope,
-        callback: result => {
-          connecting = false;
-          if (result.error || !window.google.accounts.oauth2.hasGrantedAllScopes(result, 'openid', scope)) {
-            message = 'Разреши доступ к выбранным файлам Google Диска для резервирования.';
-            paint();
-            return;
-          }
-          token = result.access_token;
-          expires = Date.now() + Number(result.expires_in) * 1000 - 30000;
-          run(async () => {
-            try {
-              const profile = await (await request('https://openidconnect.googleapis.com/v1/userinfo')).json();
-              const current = read();
-              if (!profile.sub || (current.account && current.account !== profile.sub)) throw Error('Выбери тот же аккаунт Google, который подключал ранее.');
-              update({ account: profile.sub });
-            } catch (error) { token = ''; throw error; }
-            await sync();
-          });
-        },
-        error_callback: () => { connecting = false; message = 'Окно Google закрыто или заблокировано.'; paint(); }
-      });
+      function makeClient(withCalendar) {
+        return window.google.accounts.oauth2.initTokenClient({
+          client_id: settings.clientId,
+          scope: ['openid', scope, ...(withCalendar ? calendar.scopes : [])].join(' '),
+          callback: result => {
+            connecting = false;
+            if (result.error || !window.google.accounts.oauth2.hasGrantedAllScopes(result, 'openid', scope)) {
+              message = 'Разреши доступ к выбранным файлам Google Диска для резервирования.';
+              if (withCalendar) calendarMessage = 'Подключение календаря не завершено. Можно повторить.';
+              paint();
+              return;
+            }
+            token = result.access_token;
+            expires = Date.now() + Number(result.expires_in) * 1000 - 30000;
+            calendarGranted = window.google.accounts.oauth2.hasGrantedAllScopes(result, ...calendar.scopes);
+            if (withCalendar && !calendarGranted) calendarMessage = 'Для зеркала разреши доступ к списку календарей и событиям своих календарей.';
+            run(async () => {
+              try {
+                const profile = await (await request('https://openidconnect.googleapis.com/v1/userinfo')).json();
+                const current = read();
+                if (!profile.sub || (current.account && current.account !== profile.sub)) throw Error('Выбери тот же аккаунт Google, который подключал ранее.');
+                update({ account: profile.sub, ...(withCalendar && calendarGranted ? { calendarEnabled: true } : {}) });
+              } catch (error) { token = ''; calendarGranted = false; throw error; }
+              calendarRetryAfter = 0;
+              await sync();
+            });
+          },
+          error_callback: () => { connecting = false; message = 'Окно Google закрыто или заблокировано.'; paint(); }
+        });
+      }
+      tokenClient = makeClient(false);
+      calendarTokenClient = makeClient(true);
     })().finally(() => { authLoading = null; });
     return authLoading;
   }
@@ -176,7 +194,7 @@
     await sync();
   }
 
-  async function syncUnlocked() {
+  async function syncDriveUnlocked() {
     const settings = read();
     if (!settings.folder) { message = 'Google подключён. Выбери папку «03 РАБОТА».'; return; }
     if (settings.paused) { message = 'Отправка приостановлена. Восстанови актуальную копию с Диска.'; return; }
@@ -228,6 +246,34 @@
     message = 'Копия успешно обновлена.';
   }
 
+  async function syncUnlocked() {
+    await syncDriveUnlocked();
+    const settings = read();
+    if (!settings.calendarEnabled || !calendarGranted || !ready()) return;
+    if (!settings.folder || !settings.fileId || settings.paused) {
+      calendarMessage = 'Сначала настрой копию на Диске и восстанови её, если панель предлагает это.';
+      return;
+    }
+    if (Date.now() < calendarRetryAfter) return;
+    try {
+      calendarMessage = 'Проверяю события календаря…';
+      paint();
+      const records = core.snapshot(localStorage);
+      const hash = await digest(JSON.stringify(records));
+      if (!window.panel03CalendarWork) throw Error('Рабочие журналы ещё не готовы. Обнови панель.');
+      const count = await calendar.mirror({ request, settings, update, digest,
+        events: Object.entries(records).filter(([key]) => key.startsWith('panel-03:event:')).map(([, value]) => value),
+        work: window.panel03CalendarWork() });
+      update({ calendarHash: hash });
+      calendarPoll = Date.now();
+      calendarRetryAfter = 0;
+      calendarMessage = 'Зеркало обновлено. Событий и рабочих действий: ' + count + '.';
+    } catch (error) {
+      calendarMessage = error.message || 'Не удалось обновить календарь.';
+      calendarRetryAfter = Date.now() + 30000;
+    }
+  }
+
   async function sync() {
     const send = () => syncUnlocked();
     if (navigator.locks) return navigator.locks.request(stateKey, send);
@@ -275,6 +321,18 @@
       !enabled ? 'Резервная копия Google ещё не настроена.' :
       !ready() ? 'Для отправки изменений подключи Google.' :
       localPending ? 'Есть изменения для отправки.' : 'Копия на Диске актуальна.';
+    const calendarSummary = !settings.calendarEnabled ? 'Google Календарь ещё не подключён.' :
+      settings.paused ? 'Календарь ожидает восстановления копии с Диска.' :
+      !ready() || !calendarGranted ? 'Подключи Google для отправки событий.' :
+      localHash && localHash !== settings.calendarHash ? 'Есть изменения для календаря.' :
+      settings.calendarLastSync ? 'Календарь «03 РАБОТА» обновлён.' : 'Ожидает первой отправки событий.';
+    $('#google-calendar-overview').textContent = calendarRetryAfter > Date.now() ? 'Календарь: ' + calendarMessage : calendarSummary;
+    $('#google-calendar-status').textContent = settings.paused ? calendarSummary : calendarMessage || calendarSummary;
+    $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
+    $('#google-calendar-zone').textContent = settings.calendarZone ? 'Часовой пояс: ' + settings.calendarZone + '. Событие без окончания занимает один час.' : 'Будет использован часовой пояс календаря «03 РАБОТА».';
+    $('#google-calendar-connect').hidden = Boolean(settings.calendarEnabled && ready() && calendarGranted);
+    $('#google-calendar-connect').disabled = busy || connecting || !settings.clientId || !calendarTokenClient;
+    $('#google-calendar-send').disabled = busy || connecting || !ready() || !calendarGranted || !settings.calendarEnabled || !settings.fileId || settings.paused;
     $('#google-overview-text').textContent = summary;
     $('#google-last-sync').textContent = settings.lastSync ? 'Последняя отправка: ' + new Date(settings.lastSync).toLocaleString('ru-RU') : '';
     $('#google-status').textContent = message || summary;
@@ -302,7 +360,7 @@
     connecting = true;
     message = '';
     paint();
-    tokenClient.requestAccessToken({ prompt: '' });
+    (read().calendarEnabled ? calendarTokenClient : tokenClient).requestAccessToken({ prompt: '' });
   }
 
   $('#google-config').addEventListener('submit', event => {
@@ -320,6 +378,7 @@
       }
       update({ clientId, projectNumber, apiKey });
       tokenClient = null;
+      calendarTokenClient = null;
       prepare().then(() => { message = 'Настройки сохранены. Нажми «Подключить Google».'; paint(); }).catch(error => { message = error.message; paint(); });
     } catch (error) { message = error.message; }
     paint();
@@ -351,6 +410,15 @@
     });
   }
 
+  $('#google-calendar-connect').addEventListener('click', () => {
+    if (!calendarTokenClient || busy || connecting) return;
+    connecting = true;
+    calendarMessage = 'Подтверди доступ к календарю в окне Google.';
+    paint();
+    calendarTokenClient.requestAccessToken({ prompt: '' });
+  });
+  $('#google-calendar-send').addEventListener('click', () => { calendarRetryAfter = 0; run(sync); });
+
   $('#google-open').addEventListener('click', openGoogle);
   $('#google-overview-open').addEventListener('click', openGoogle);
   $('#google-close').addEventListener('click', () => $('#google-dialog').close());
@@ -360,7 +428,7 @@
   $('#google-sync-now').addEventListener('click', () => run(sync));
   $('#google-restore').addEventListener('click', () => run(restoreRemote));
   $('#google-disconnect').addEventListener('click', () => {
-    token = ''; expires = 0;
+    token = ''; expires = 0; calendarGranted = false; calendarMessage = '';
     message = 'Доступ в этой вкладке отключён. Рабочие данные сохранены в браузере.';
     paint();
   });
@@ -378,14 +446,16 @@
       const settings = read();
       paint();
       if (navigator.onLine === false || !ready() || !settings.folder || settings.paused || Date.now() < retryAfter) return;
-      if ((localHash !== settings.hash && Date.now() - dirtySince >= 3000) || settings.pending || Date.now() - remotePoll > 60000) {
+      if ((localHash !== settings.hash && Date.now() - dirtySince >= 3000) || settings.pending || Date.now() - remotePoll > 60000 ||
+          (settings.calendarEnabled && calendarGranted && Date.now() >= calendarRetryAfter &&
+            ((localHash !== settings.calendarHash && Date.now() - dirtySince >= 3000) || Date.now() - calendarPoll > 60000))) {
         await run(sync);
       }
     } catch (error) { message = error.message; paint(); }
     finally { monitoring = false; }
   }
 
-  window.addEventListener('online', () => { retryAfter = 0; dirtySince = Date.now() - 4000; monitor(); });
+  window.addEventListener('online', () => { retryAfter = 0; calendarRetryAfter = 0; dirtySince = Date.now() - 4000; monitor(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) monitor(); });
   window.addEventListener('storage', () => monitor());
   window.addEventListener('panel-03:work-changed', () => monitor());
