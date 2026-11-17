@@ -39,3 +39,5 @@ a.action { display:inline-flex; align-items:center; text-decoration:none; }
 #training .quality-record { overflow-wrap:anywhere; }
 #equipment-message:empty { display:none; }
 #suppliers-message:empty { display:none; }
+#working-deadlines .quality-criterion { overflow-wrap:anywhere; }
+[data-id], [data-journal-id], [data-training-id] { scroll-margin-top:16px; }

@@ -2455,6 +2455,213 @@
     }
   }
 
+  const deadlineSections = { quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const deadlineFilter = { point: '', section: '' };
+
+  function collectDeadlines() {
+    const rows = [];
+    const warnings = [];
+    function load(label, collect) {
+      try { collect(); }
+      catch { warnings.push(label); }
+    }
+    load('Качество', () => {
+      for (const { record, original } of savedRecords()) {
+        for (const [index, criterion] of record.criteria.entries()) {
+          const attempt = latest(criterion);
+          if (attempt.outcome !== 'fail') continue;
+          rows.push({
+            section: 'quality', point: record.location, owner: attempt.plan?.owner || '',
+            date: attempt.plan?.due || '', title: record.drink + ' · ' + criterion.name,
+            detail: attempt.plan?.action || 'Уточнить действие по отклонению',
+            route: 'quality', id: record.id, selector: '[data-id]',
+            schedule: () => editDeadline('Срок исправления', attempt.plan?.due, (date) => {
+              if (localStorage.getItem(prefix + record.id) !== original) throw Error('Проверка изменилась. Открой её заново.');
+              const plan = { ...attempt.plan, due: date };
+              const updated = { ...attempt, plan };
+              const initial = attempt === criterion.initial ? updated : criterion.initial;
+              const repeats = criterion.repeats.map(item => item === attempt ? updated : item);
+              const criteria = record.criteria.map((item, i) => i === index ? { ...item, initial, repeats } : item);
+              localStorage.setItem(prefix + record.id, JSON.stringify({ ...record, criteria }));
+            })
+          });
+        }
+      }
+    });
+    load('Оборудование и вода', () => {
+      const snapshot = readEquipment();
+      const { data } = snapshot;
+      for (const job of data.jobs) {
+        if (job.state === 'done') continue;
+        const device = data.devices.find(item => item.id === job.device);
+        rows.push({
+          section: 'equipment', point: device?.point || '', owner: job.owner,
+          date: dueForJob(job) || '', title: (job.state === 'recheck' ? 'Перепроверка · ' : '') + (device?.model || 'Оборудование'),
+          detail: job.state === 'recheck' ? job.recheck : job.description,
+          route: 'equipment', id: job.id, selector: '[data-journal-id]',
+          schedule: () => editDeadline(job.state === 'recheck' ? 'Дата перепроверки' : 'Срок работы', dueForJob(job), date => {
+            saveEquipment(snapshot, 'jobs', { ...job, [job.state === 'recheck' ? 'next' : 'due']: date });
+          }, job.date)
+        });
+      }
+      for (const item of data.water) {
+        const last = item.attempts.at(-1);
+        if (last.passed) continue;
+        rows.push({
+          section: 'water', point: item.point, owner: last.plan?.owner || '',
+          date: last.plan?.date || '', title: item.indicator + ' · повторный замер',
+          detail: item.sample + ' · ' + (last.plan?.action || 'Уточнить действие'),
+          route: 'equipment', id: item.id, selector: '[data-journal-id]',
+          schedule: () => editDeadline('Дата повторного замера', last.plan?.date, date => {
+            const attempts = item.attempts.map(attempt => attempt === last ? { ...attempt, plan: { ...attempt.plan, date } } : attempt);
+            saveEquipment(snapshot, 'water', { ...item, attempts });
+          }, last.date)
+        });
+      }
+    });
+    load('Обучение', () => {
+      const snapshot = readTraining();
+      const { data } = snapshot;
+      for (const person of data.team) {
+        for (const skill of data.skills) {
+          const attempts = data.attempts.filter(item => item.personId === person.id && item.skillId === skill.id)
+            .reverse().sort((a, b) => b.date.localeCompare(a.date));
+          const last = attempts[0];
+          if (!last || (last.passed && !last.next)) continue;
+          rows.push({
+            section: 'training', point: person.point, owner: last.reviewer,
+            date: last.next || '', title: person.name + ' · ' + skill.name,
+            detail: last.exercise || 'Повторная проверка подтверждённого навыка',
+            route: 'training', id: person.id, selector: '[data-training-id]',
+            schedule: () => editDeadline('Дата повторной проверки', last.next, date => {
+              writeTraining(snapshot, 'attempts', { ...last, next: date });
+            }, last.date)
+          });
+        }
+      }
+    });
+    load('Сырьё и поставщики', () => {
+      const snapshot = readSuppliers();
+      const { data } = snapshot;
+      const supplies = readEconomy().data.supplies;
+      for (const item of data.samples) {
+        const last = item.attempts.at(-1);
+        if (last.decision !== 'repeat') continue;
+        const company = data.suppliers.find(row => row.id === item.supplier)?.name || 'Поставщик';
+        const supply = supplies.find(row => row.id === item.supply)?.name || 'Сырьё';
+        rows.push({
+          section: 'suppliers', point: '', owner: '', date: last.next || '',
+          title: company + ' · ' + supply, detail: last.follow || 'Повторная проба',
+          route: 'suppliers', id: item.id, selector: '[data-journal-id]',
+          schedule: () => editDeadline('Срок повторной пробы', last.next, date => {
+            const attempts = item.attempts.map(attempt => attempt === last ? { ...attempt, next: date } : attempt);
+            writeSuppliers(snapshot, 'samples', { ...item, attempts });
+          }, last.date)
+        });
+      }
+    });
+    return { rows, warnings };
+  }
+
+  function editDeadline(label, original, save, earliest = '') {
+    showEditor('Рабочий срок', body => {
+      const date = field(label, 'Новая дата будет записана в исходном журнале и сразу обновит обзор.', { type: 'date', value: original || dateKey() });
+      if (earliest) date.control.min = earliest;
+      body.append(date.wrapper);
+      return () => {
+        const day = value(date);
+        if (!dateIsValid(day) || (earliest && day < earliest)) throw Error('Укажи дату не раньше исходной записи.');
+        save(day);
+        return 'deadline';
+      };
+    }, 'Сохранить срок', 'Изменяет срок в исходной записи. Результат проверки вносится в её журнале.');
+  }
+
+  function openDeadline(row) {
+    location.hash = '#' + row.route;
+    const renderSource = {
+      quality: () => render(row.id), equipment: () => renderEquipment(row.id),
+      training: () => renderTraining(row.id), suppliers: () => renderSuppliers(row.id)
+    };
+    // Run after route handling, which resets page scrolling.
+    setTimeout(() => {
+      renderSource[row.route]();
+      const record = Array.from(document.querySelectorAll(row.selector)).find(node =>
+        (node.dataset.id || node.dataset.journalId || node.dataset.trainingId) === row.id);
+      if (record) {
+        record.open = true;
+        record.scrollIntoView({ block: 'start' });
+        record.querySelector('summary')?.focus({ preventScroll: true });
+      }
+    }, 0);
+  }
+
+  function deadlineGroup(day, today, end) {
+    if (!day || !dateIsValid(day)) return 'Без срока';
+    if (day < today) return 'Просрочено';
+    if (day === today) return 'Сегодня';
+    if (day <= end) return 'Ближайшие 7 дней';
+    return 'Позже';
+  }
+
+  function renderDeadlines() {
+    const container = $('#working-deadlines');
+    if (!container) return;
+    container.replaceChildren();
+    const { rows, warnings } = collectDeadlines();
+    const date = dateKey();
+    const week = new Date(date + 'T12:00:00');
+    week.setDate(week.getDate() + 7);
+    const end = dateKey(week);
+    container.append(heading('Рабочие сроки', 'Открытые действия из журналов. Нажми «Открыть запись» для результата или «Изменить срок» для переноса даты.'));
+    const filters = el('div', '', 'quality-fields');
+    const points = new Map(rows.filter(row => row.point).map(row => [normalized(row.point), row.point]));
+    const point = field('Точка для сроков', 'Выбери точку. Общие пробы поставщиков находятся в варианте «Без привязки к точке».', {
+      choices: { '': 'Все точки', ...Object.fromEntries(points), unassigned: 'Без привязки к точке' }, value: deadlineFilter.point, required: false
+    });
+    const section = field('Раздел для сроков', 'Ограничивает список одним рабочим направлением.', {
+      choices: { '': 'Все разделы', ...deadlineSections }, value: deadlineFilter.section, required: false
+    });
+    for (const [name, input] of Object.entries({ point, section })) input.control.addEventListener('change', () => {
+      deadlineFilter[name] = value(input);
+      renderDeadlines();
+    });
+    filters.append(point.wrapper, section.wrapper);
+    container.append(filters);
+    if (warnings.length) container.append(el('p', 'Не удалось прочитать часть журналов: ' + warnings.join(', '), 'error'));
+    const filtered = rows.filter(row =>
+      (!deadlineFilter.section || row.section === deadlineFilter.section) &&
+      (!deadlineFilter.point || (deadlineFilter.point === 'unassigned' ? !row.point : normalized(row.point) === deadlineFilter.point)));
+    for (const group of ['Просрочено', 'Сегодня', 'Ближайшие 7 дней', 'Позже', 'Без срока']) {
+      const items = filtered.filter(row => deadlineGroup(row.date, date, end) === group)
+        .sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.title.localeCompare(b.title, 'ru'));
+      if (!items.length) continue;
+      const block = el('section', '', 'quality-fields');
+      block.append(heading(group + ' · ' + items.length,
+        group === 'Ближайшие 7 дней' ? 'Сроки с завтрашнего дня по седьмой день включительно.' :
+        group === 'Без срока' ? 'Открытые действия, которым нужно назначить корректную дату.' :
+        'Открытые действия, сгруппированные по дате в браузере.', 'h4'));
+      for (const row of items) {
+        const entry = el('div', '', 'quality-criterion quality-fields');
+        line(entry, row.title, row.detail);
+        line(entry, 'Раздел:', deadlineSections[row.section]);
+        line(entry, 'Точка:', row.point || 'без привязки');
+        line(entry, 'Срок:', dateIsValid(row.date) ? formatDate(row.date) : 'не назначен');
+        if (row.owner) line(entry, 'Ответственный:', row.owner);
+        entry.append(action('Открыть запись', 'Переходит к исходной записи и раскрывает её для проверки результата.', () => openDeadline(row)));
+        entry.append(action('Изменить срок', 'Назначает или переносит дату в исходном журнале.', () => {
+          try { row.schedule(); }
+          catch {
+            container.append(el('p', 'Не удалось открыть запись. Обнови обзор и повтори действие.', 'error'));
+          }
+        }));
+        block.append(entry);
+      }
+      container.append(block);
+    }
+    if (!filtered.length) container.append(el('p', rows.length ? 'По выбранным фильтрам открытых действий нет.' : 'Открытых действий со сроками нет.', 'quiet'));
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -2486,7 +2693,8 @@
       const id = active();
       if (id) {
         editor.close();
-        if (location.hash === '#techcards') renderCards(id);
+        if (!location.hash || location.hash === '#overview') renderDeadlines();
+        else if (location.hash === '#techcards') renderCards(id);
         else if (location.hash === '#economy') renderEconomy(id);
         else if (location.hash === '#sales') renderSales();
         else if (location.hash === '#stock') renderStock(id);
@@ -2501,6 +2709,7 @@
     }
   });
   window.addEventListener('storage', event => {
+    if (!location.hash || location.hash === '#overview') renderDeadlines();
     if (event.key === null || event.key.startsWith(prefix)) render();
     if (event.key === null || event.key === cardKey) renderCards();
     if (event.key === null || event.key === cardKey || event.key === economyKey) renderEconomy();
@@ -2513,6 +2722,7 @@
     if (location.hash === '#suppliers' && [null, suppliersKey, economyKey].includes(event.key)) renderSuppliers();
   });
   window.addEventListener('hashchange', () => {
+    if (!location.hash || location.hash === '#overview') renderDeadlines();
     if (location.hash === '#economy') renderEconomy();
     if (location.hash === '#sales') renderSales();
     if (location.hash === '#stock') renderStock();
@@ -2520,6 +2730,10 @@
     if (location.hash === '#equipment') renderEquipment();
     if (location.hash === '#suppliers') renderSuppliers();
   });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && (!location.hash || location.hash === '#overview')) renderDeadlines();
+  });
+  renderDeadlines();
   render();
   renderCards();
   if (location.hash === '#economy') renderEconomy();
