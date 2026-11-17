@@ -37,3 +37,4 @@ a.action { display:inline-flex; align-items:center; text-decoration:none; }
 #stock-checks .quality-details { overflow-wrap:anywhere; }
 #training-message:empty { display:none; }
 #training .quality-record { overflow-wrap:anywhere; }
+#equipment-message:empty { display:none; }

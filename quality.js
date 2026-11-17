@@ -1819,6 +1819,321 @@
     }
   }
 
+  const equipmentKey = 'panel-03:equipment';
+  const deviceKinds = { machine: 'Кофемашина', grinder: 'Кофемолка', water: 'Водоподготовка' };
+  const jobKinds = { planned: 'Плановое обслуживание', issue: 'Неисправность' };
+  const jobStates = { scheduled: 'Запланировано', progress: 'В работе', recheck: 'На перепроверке', done: 'Закрыто' };
+  let equipmentPoint = '';
+
+  function readEquipment() {
+    const raw = localStorage.getItem(equipmentKey);
+    return { raw, data: raw === null ? { devices: [], jobs: [], water: [] } : JSON.parse(raw) };
+  }
+
+  function saveEquipment(snapshot, group, row) {
+    if (localStorage.getItem(equipmentKey) !== snapshot.raw) throw Error('Журнал изменился в другой вкладке. Открой запись заново.');
+    const items = snapshot.data[group].filter(item => item.id !== row.id);
+    localStorage.setItem(equipmentKey, JSON.stringify({ ...snapshot.data, [group]: [...items, row] }));
+    return row.id;
+  }
+
+  function equipmentAction(label, tip, run, className) {
+    return action(label, tip, () => {
+      try { run(); }
+      catch (problem) {
+        $('#equipment-message').textContent = problem instanceof DOMException ? 'Не удалось открыть данные в браузере.' : problem.message;
+      }
+    }, className);
+  }
+
+  function deviceTitle(device) {
+    return deviceKinds[device.kind] + ' · ' + device.model + (device.serial ? ' · ' + device.serial : '');
+  }
+
+  function openDevice(previous) {
+    const snapshot = readEquipment();
+    showEditor(previous ? 'Паспорт оборудования' : 'Новое оборудование', body => {
+      const point = field('Точка', 'Название кофейни. Используй то же название, что в других разделах панели.', { value: previous?.point ?? currentEquipmentPoint(snapshot.data) });
+      const kind = field('Тип оборудования', 'Выбери группу для паспорта.', { choices: deviceKinds, value: previous?.kind ?? 'machine' });
+      const model = field('Модель', 'Перепиши модель из паспорта или с маркировки оборудования.', { value: previous?.model });
+      const serial = field('Серийный номер', 'Укажи номер с маркировки, если он известен. Он помогает различить одинаковые модели.', { required: false, value: previous?.serial });
+      const owner = field('Ответственный', 'Укажи сотрудника, роль или сервис, который отвечает за обслуживание.', { value: previous?.owner });
+      body.append(point.wrapper, kind.wrapper, model.wrapper, serial.wrapper, owner.wrapper);
+      return () => saveEquipment(snapshot, 'devices', {
+        id: previous?.id ?? crypto.randomUUID(), point: requireText(point), kind: value(kind),
+        model: requireText(model), serial: value(serial), owner: requireText(owner)
+      });
+    }, 'Сохранить паспорт', 'Добавляет паспорт или обновляет его поля. Записи обслуживания остаются в истории.');
+  }
+
+  function deviceField(devices, previous, required = true) {
+    return field('Паспорт оборудования', 'Выбери конкретную единицу оборудования. В её паспорте будет видна связь с этой записью.', {
+      choices: { '': required ? 'Выбери оборудование' : 'Без привязки к паспорту', ...Object.fromEntries(devices.map(device => [device.id, device.point + ' · ' + deviceTitle(device)])) },
+      value: previous, required
+    });
+  }
+
+  function openEquipmentJob(previous, preferred) {
+    const snapshot = readEquipment();
+    const devices = snapshot.data.devices;
+    if (!devices.length) throw Error('Сначала добавь паспорт оборудования.');
+    const selected = previous?.device || preferred || devices.find(device => normalized(device.point) === equipmentPoint)?.id || devices[0].id;
+    showEditor(previous ? 'Работа по оборудованию' : 'Новая работа по оборудованию', body => {
+      const device = deviceField(devices, selected);
+      const kind = field('Тип работы', 'Плановое обслуживание или заявка по наблюдаемой неисправности.', { choices: jobKinds, value: previous?.kind ?? 'planned' });
+      const state = field('Статус', 'После выполнения запиши результат. «На перепроверке» означает, что нужно отдельно подтвердить результат.', { choices: jobStates, value: previous?.state ?? 'scheduled' });
+      const date = field('Дата записи', 'Когда работа была запланирована или когда заметили неисправность.', { type: 'date', value: previous?.date ?? dateKey() });
+      const due = field('Срок работы', 'Дата, к которой нужно выполнить работу. Срок берётся из регламента или согласуется с ответственным.', { type: 'date', value: previous?.due });
+      const owner = field('Ответственный', 'Кому поручена работа.', { value: previous?.owner ?? devices.find(item => item.id === selected)?.owner });
+      const description = field('Работа или наблюдение', 'Опиши плановую работу либо признаки неисправности и их влияние на работу точки.', { multiline: true, value: previous?.description });
+      const result = field('Результат работ', 'Запиши, что сделали и что изменилось. При закрытии добавь итог перепроверки, если она была нужна.', { multiline: true, required: false, value: previous?.result });
+      const follow = el('div', '', 'quality-fields');
+      const recheck = field('Что перепроверить', 'Опиши конкретный признак, замер или часть работы, которую нужно проверить.', { value: previous?.recheck });
+      const next = field('Дата перепроверки', 'Когда вернуться к результату обслуживания.', { type: 'date', value: previous?.next });
+      follow.append(recheck.wrapper, next.wrapper);
+      const recheckResult = field('Результат перепроверки', 'Запиши, что фактически подтвердил повторный осмотр или замер.', { multiline: true, value: previous?.recheckResult });
+      const closed = field('Дата закрытия', 'Фактическая дата, когда работа была закрыта.', { type: 'date', value: previous?.closed ?? dateKey() });
+      body.append(device.wrapper, kind.wrapper, state.wrapper, date.wrapper, due.wrapper, owner.wrapper, description.wrapper, result.wrapper, follow, recheckResult.wrapper, closed.wrapper);
+      state.control.addEventListener('change', update);
+      device.control.addEventListener('change', () => {
+        if (!previous) owner.control.value = devices.find(item => item.id === value(device))?.owner ?? '';
+      });
+      function update() {
+        const status = value(state);
+        result.control.required = status === 'done' || status === 'recheck';
+        setActive(follow, status === 'recheck');
+        setActive(closed.wrapper, status === 'done');
+        setActive(recheckResult.wrapper, status === 'done' && Boolean(previous?.recheck));
+      }
+      update();
+      return () => {
+        const status = value(state);
+        const dateFields = [date, due];
+        if (status === 'recheck') dateFields.push(next);
+        if (status === 'done') dateFields.push(closed);
+        if (dateFields.some(item => !dateIsValid(value(item)))) throw Error('Укажи даты работы и перепроверки.');
+        if (dateFields.slice(1).some(item => value(item) < value(date))) throw Error('Срок работы, перепроверка и закрытие должны быть не раньше даты записи.');
+        return saveEquipment(snapshot, 'jobs', {
+          id: previous?.id ?? crypto.randomUUID(), device: requireText(device), kind: value(kind), state: status,
+          date: value(date), due: value(due), owner: requireText(owner), description: requireText(description),
+          result: result.control.required ? requireText(result) : value(result),
+          recheck: status === 'recheck' ? requireText(recheck) : previous?.recheck ?? '',
+          next: status === 'recheck' ? value(next) : previous?.next ?? '',
+          recheckResult: status === 'done' && previous?.recheck ? requireText(recheckResult) : '',
+          closed: status === 'done' ? value(closed) : ''
+        });
+      };
+    }, 'Сохранить работу', 'Добавляет работу в общий список и в историю выбранного оборудования.');
+  }
+
+  function readWaterAttempt(container, rule, minDate = '') {
+    const date = dateField('Дата замера', 'Дата фактического замера.');
+    if (minDate) date.control.min = minDate;
+    const measurement = numberField('Фактическое значение', 'Введи результат в той же единице, что и заданный диапазон.');
+    const output = el('output', '', 'quality-result');
+    output.setAttribute('aria-live', 'polite');
+    const row = el('div', '', 'quality-heading');
+    row.append(output, help('Результат замера', 'Панель сравнивает значение с заданным диапазоном. Обе границы входят в диапазон.'));
+    const follow = el('div', '', 'quality-fields');
+    const nextAction = field('Что сделать', 'Запиши согласованное действие при отклонении.', { multiline: true });
+    const owner = field('Ответственный', 'Укажи, кто выполнит действие и организует следующий замер.');
+    const next = field('Дата повторного замера', 'Когда проверить тот же показатель повторно.', { type: 'date' });
+    follow.append(nextAction.wrapper, owner.wrapper, next.wrapper);
+    container.append(date.wrapper, measurement.wrapper, row, follow);
+    function outcome() {
+      const range = rule();
+      const amount = measurement.control.valueAsNumber;
+      if (!value(measurement) || !Number.isFinite(amount) || !validRule(range)) return null;
+      return amount >= range.min && amount <= range.max;
+    }
+    function update() {
+      const passed = outcome();
+      setActive(follow, passed === false);
+      output.textContent = passed === null ? 'Введи диапазон и результат' : passed ? 'В диапазоне' : 'Отклонение';
+      output.dataset.result = passed === false ? 'fail' : '';
+    }
+    container.addEventListener('input', update);
+    container.addEventListener('change', update);
+    update();
+    return () => {
+      const day = value(date);
+      const passed = outcome();
+      if (passed === null) throw Error('Проверь диапазон, единицу и фактический замер.');
+      if (!dateIsValid(day) || (minDate && day < minDate)) throw Error('Дата замера должна быть не раньше предыдущего замера.');
+      const nextDate = value(next);
+      if (!passed && (!dateIsValid(nextDate) || nextDate < day)) throw Error('Укажи дату повторного замера не раньше текущего.');
+      return {
+        date: day, amount: measurement.control.valueAsNumber, passed,
+        plan: passed ? null : { action: requireText(nextAction), owner: requireText(owner), date: nextDate }
+      };
+    };
+  }
+
+  function openWater() {
+    const snapshot = readEquipment();
+    const devices = snapshot.data.devices;
+    showEditor('Замер воды', body => {
+      const point = field('Точка', 'Кофейня, где отобрана проба.', { value: currentEquipmentPoint(snapshot.data) });
+      const device = deviceField(devices, '', false);
+      const sample = field('Место отбора', 'Укажи точное место отбора, чтобы повторить замер там же.');
+      const indicator = field('Показатель', 'Название показателя из регламента точки или документации оборудования.');
+      const method = field('Метод замера', 'Укажи прибор или методику и условия, нужные для повторного замера.', { multiline: true });
+      const unit = field('Единица измерения', 'Используй ту же единицу для границ и фактического замера.');
+      const min = numberField('Нижняя граница', 'Минимальное значение по регламенту точки или документации оборудования.');
+      const max = numberField('Верхняя граница', 'Максимальное значение по тому же источнику.');
+      const range = el('div', '', 'quality-pair');
+      range.append(min.wrapper, max.wrapper);
+      body.append(point.wrapper, device.wrapper, sample.wrapper, indicator.wrapper, method.wrapper, unit.wrapper, range);
+      device.control.addEventListener('change', () => {
+        const selected = devices.find(item => item.id === value(device));
+        if (selected) point.control.value = selected.point;
+      });
+      const rule = () => ({ type: 'numeric', min: min.control.valueAsNumber, max: max.control.valueAsNumber, unit: value(unit) });
+      const read = readWaterAttempt(body, rule);
+      return () => {
+        const site = requireText(point);
+        const selected = devices.find(item => item.id === value(device));
+        if (selected && normalized(selected.point) !== normalized(site)) throw Error('Паспорт оборудования должен относиться к выбранной точке.');
+        const item = {
+          id: crypto.randomUUID(), point: site, device: selected?.id ?? '', sample: requireText(sample),
+          indicator: requireText(indicator), method: requireText(method), rule: rule(), attempts: [read()]
+        };
+        return saveEquipment(snapshot, 'water', item);
+      };
+    }, 'Сохранить замер', 'Записывает исходный диапазон и фактический результат в журнал воды.');
+  }
+
+  function openWaterRepeat(item) {
+    const snapshot = readEquipment();
+    const current = snapshot.data.water.find(row => row.id === item.id);
+    if (!current) throw Error('Замер недоступен. Обнови журнал.');
+    showEditor('Повторный замер воды', body => {
+      line(body, 'Место отбора:', current.point + ' · ' + current.sample);
+      line(body, 'Показатель и диапазон:', current.indicator + ' · ' + ruleLabel(current.rule));
+      line(body, 'Метод:', current.method);
+      const read = readWaterAttempt(body, () => current.rule, current.attempts.at(-1).date);
+      return () => saveEquipment(snapshot, 'water', { ...current, attempts: [...current.attempts, read()] });
+    }, 'Сохранить повторный замер', 'Добавляет замер к исходной записи с теми же показателем, методом и диапазоном.');
+  }
+
+  function dueForJob(job) { return job.state === 'recheck' ? job.next : job.due; }
+
+  function jobCaption(job) {
+    const late = job.state !== 'done' && dueForJob(job) < dateKey();
+    return (late ? 'Просрочено · ' : '') + jobStates[job.state] + ' · ' + formatDate(job.closed || dueForJob(job));
+  }
+
+  function makeEquipmentRecord(id, title, caption, opened) {
+    const record = el('details', '', 'module quality-record');
+    record.dataset.equipmentId = id;
+    record.open = opened.has(id);
+    const summary = el('summary', title);
+    if (caption) summary.append(el('p', caption, 'quiet'));
+    const body = el('div', '', 'quality-details');
+    record.append(summary, body);
+    return { record, body };
+  }
+
+  function currentEquipmentPoint(data) {
+    const points = [...data.devices, ...data.water].map(item => item.point);
+    return points.find(point => normalized(point) === equipmentPoint) ?? '';
+  }
+
+  function renderEquipment(keepOpen = '') {
+    const passports = $('#equipment-passports');
+    if (!passports) return;
+    const jobsList = $('#equipment-jobs');
+    const waterList = $('#equipment-water');
+    const opened = new Set(Array.from(document.querySelectorAll('[data-equipment-id][open]'), item => item.dataset.equipmentId));
+    if (keepOpen) opened.add(keepOpen);
+    passports.replaceChildren();
+    jobsList.replaceChildren();
+    waterList.replaceChildren();
+    $('#equipment-message').textContent = '';
+    try {
+      const { data } = readEquipment();
+      const points = new Map([...data.devices, ...data.water].map(item => [normalized(item.point), item.point]));
+      const filter = field('Точка', 'Ограничивает один и тот же список паспортов, работ и замеров выбранной точкой.', {
+        choices: { '': 'Все точки', ...Object.fromEntries(points) }, value: points.has(equipmentPoint) ? equipmentPoint : '', required: false
+      });
+      if (!points.has(equipmentPoint)) equipmentPoint = '';
+      filter.control.addEventListener('change', () => { equipmentPoint = value(filter); renderEquipment(); });
+      $('#equipment-filter').replaceChildren(filter.wrapper);
+      const matches = point => !equipmentPoint || normalized(point) === equipmentPoint;
+      const devices = data.devices.filter(item => matches(item.point));
+      const known = new Map(devices.map(item => [item.id, item]));
+      const jobs = data.jobs.filter(item => known.has(item.device)).sort((a, b) =>
+        Number(a.state === 'done') - Number(b.state === 'done') || dueForJob(a).localeCompare(dueForJob(b)));
+      const water = data.water.filter(item => matches(item.point)).sort((a, b) => b.attempts.at(-1).date.localeCompare(a.attempts.at(-1).date));
+      for (const device of devices) {
+        const history = jobs.filter(item => item.device === device.id);
+        const nextMaintenance = history.find(item => item.kind === 'planned' && item.state !== 'done');
+        const { record, body } = makeEquipmentRecord(device.id, deviceTitle(device), device.point, opened);
+        line(body, 'Ответственный:', device.owner);
+        line(body, 'Ближайшее обслуживание:', nextMaintenance ? jobCaption(nextMaintenance) : 'не назначено');
+        const jobHistory = history.slice().sort((a, b) => (b.closed || b.date).localeCompare(a.closed || a.date));
+        for (const job of jobHistory) {
+          const entry = el('div', '', 'quality-criterion');
+          line(entry, jobKinds[job.kind] + ':', jobCaption(job));
+          line(entry, 'Работа или наблюдение:', job.description);
+          line(entry, 'Результат:', job.result);
+          line(entry, 'Результат перепроверки:', job.recheckResult);
+          body.append(entry);
+        }
+        for (const sample of data.water.filter(item => item.device === device.id)) {
+          const latest = sample.attempts.at(-1);
+          line(body, 'Вода · ' + sample.indicator + ':', formatDate(latest.date) + ' · ' + sample.sample + ' · ' +
+            latest.amount + ' ' + sample.rule.unit + ' · ' + (latest.passed ? 'в диапазоне' : 'отклонение'));
+        }
+        body.append(equipmentAction('Изменить паспорт', 'Открывает данные оборудования для редактирования.', () => openDevice(device)));
+        body.append(equipmentAction('Добавить работу', 'Открывает новую работу, связанную с этим паспортом.', () => openEquipmentJob(null, device.id)));
+        passports.append(record);
+      }
+      for (const job of jobs) {
+        const device = known.get(job.device);
+        const { record, body } = makeEquipmentRecord(job.id, jobKinds[job.kind] + ' · ' + device.model, jobCaption(job), opened);
+        line(body, 'Точка и оборудование:', device.point + ' · ' + deviceTitle(device));
+        line(body, 'Дата записи:', formatDate(job.date));
+        line(body, 'Срок работы:', formatDate(job.due));
+        line(body, 'Ответственный:', job.owner);
+        line(body, 'Работа или наблюдение:', job.description);
+        line(body, 'Результат работ:', job.result);
+        if (job.recheck) line(body, 'План перепроверки:', job.recheck + ' · ' + formatDate(job.next));
+        line(body, 'Результат перепроверки:', job.recheckResult);
+        body.append(equipmentAction('Изменить работу', 'Открывает сроки, статус и результат обслуживания.', () => openEquipmentJob(job)));
+        jobsList.append(record);
+      }
+      for (const item of water) {
+        const last = item.attempts.at(-1);
+        const caption = last.passed ? 'В диапазоне' : last.plan.date < dateKey() ? 'Отклонение · перепроверка просрочена' : 'Отклонение';
+        const { record, body } = makeEquipmentRecord(item.id, item.indicator + ' · ' + item.point, item.sample + ' · ' + caption, opened);
+        line(body, 'Место отбора:', item.sample);
+        const device = data.devices.find(row => row.id === item.device);
+        if (device) line(body, 'Паспорт:', deviceTitle(device));
+        line(body, 'Метод:', item.method);
+        line(body, 'Диапазон:', ruleLabel(item.rule));
+        for (const attempt of item.attempts) {
+          const reading = el('div', '', 'quality-criterion');
+          line(reading, formatDate(attempt.date) + ':', attempt.amount + ' ' + item.rule.unit + ' · ' + (attempt.passed ? 'в диапазоне' : 'отклонение'));
+          if (attempt.plan) {
+            line(reading, 'Действие:', attempt.plan.action);
+            line(reading, 'Ответственный:', attempt.plan.owner);
+            line(reading, 'Повторный замер:', formatDate(attempt.plan.date));
+          }
+          body.append(reading);
+        }
+        body.append(equipmentAction('Повторить замер', 'Добавляет замер с тем же местом отбора, методом и исходным диапазоном.', () => openWaterRepeat(item)));
+        waterList.append(record);
+      }
+      if (!devices.length) passports.append(el('p', 'Паспортов пока нет.', 'quiet'));
+      if (!jobs.length) jobsList.append(el('p', 'Работ пока нет.', 'quiet'));
+      if (!water.length) waterList.append(el('p', 'Замеров пока нет.', 'quiet'));
+    } catch (problem) {
+      $('#equipment-message').textContent = 'Не удалось прочитать журнал оборудования.';
+      console.warn(problem);
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -1830,6 +2145,9 @@
   $('#sales-start')?.append(action('Добавить продажи', 'Открывает дневной ввод из кассового отчёта. Для существующей строки будут подставлены её данные.', openSalesIdentity, 'action primary'));
   $('#stock-writeoff-start')?.append(action('Записать списание', 'Открывает запись расхода сырья вне продаж.', () => openWriteOff(), 'action primary'));
   $('#stock-check-start')?.append(action('Новая сверка', 'Сравнивает расход по остаткам с продажами и журналом списаний за выбранный период.', () => openStockCheck(), 'action primary'));
+  $('#equipment-passports-start')?.append(equipmentAction('Добавить оборудование', 'Создаёт паспорт оборудования с привязкой к точке.', () => openDevice(), 'action primary'));
+  $('#equipment-jobs-start')?.append(equipmentAction('Добавить работу', 'Открывает плановое обслуживание или заявку по неисправности.', () => openEquipmentJob(), 'action primary'));
+  $('#equipment-water-start')?.append(equipmentAction('Записать замер воды', 'Сохраняет результат, условия и допустимый диапазон.', openWater, 'action primary'));
   $('#training-team-start')?.append(trainingAction('Добавить бариста', 'Создаёт личную карточку с точкой и историей проверок.', () => openTeamMember(), 'action primary'));
   $('#training-skill-start')?.append(trainingAction('Новый навык', 'Создаёт шаблон задания и обязательных критериев.', () => openSkill(), 'action primary'));
   $('#economy-stock-link')?.after(help('Списания и сверка', 'Открывает журнал расхода вне продаж и сверку по остаткам.'));
@@ -1849,6 +2167,7 @@
         else if (location.hash === '#sales') renderSales();
         else if (location.hash === '#stock') renderStock(id);
         else if (location.hash === '#training') renderTraining(id);
+        else if (location.hash === '#equipment') renderEquipment(id);
         else render(id);
       }
     } catch (problem) {
@@ -1865,12 +2184,14 @@
     }
     if (location.hash === '#stock' && [null, cardKey, economyKey, salesKey, stockKey].includes(event.key)) renderStock();
     if (location.hash === '#training' && (event.key === null || event.key === trainingKey)) renderTraining();
+    if (location.hash === '#equipment' && (event.key === null || event.key === equipmentKey)) renderEquipment();
   });
   window.addEventListener('hashchange', () => {
     if (location.hash === '#economy') renderEconomy();
     if (location.hash === '#sales') renderSales();
     if (location.hash === '#stock') renderStock();
     if (location.hash === '#training') renderTraining();
+    if (location.hash === '#equipment') renderEquipment();
   });
   render();
   renderCards();
@@ -1878,4 +2199,5 @@
   if (location.hash === '#sales') renderSales();
   if (location.hash === '#stock') renderStock();
   if (location.hash === '#training') renderTraining();
+  if (location.hash === '#equipment') renderEquipment();
 })();
