@@ -192,12 +192,15 @@
       : Boolean(rule.expected);
   }
 
-  function definitionFields(container, saved = {}, required = false) {
+  function definitionFields(container, saved = {}, required = false, allowRecipe = false) {
     const rule = saved.rule || {};
     const label = field('Критерий', 'Один проверяемый параметр. Например, масса выхода эспрессо или чистота чашки при выдаче.', { required, value: saved.name });
-    const type = field('Способ оценки', 'Для замера задай числовые границы из техкарты. Для вкуса и подачи опиши конкретный наблюдаемый признак.', {
-      choices: { observable: 'Наблюдаемый признак', numeric: 'Числовой диапазон' }, value: rule.type || 'observable'
-    });
+    const choices = { observable: 'Наблюдаемый признак', numeric: 'Числовой диапазон' };
+    if (allowRecipe) choices.recipe = 'Числовой критерий из техкарты';
+    const tip = allowRecipe
+      ? 'Задай проверяемый признак, числовой диапазон или привяжи замер к действующей техкарте.'
+      : 'Для замера задай числовые границы из техкарты. Для вкуса и подачи опиши конкретный наблюдаемый признак.';
+    const type = field('Способ оценки', tip, { choices, value: rule.type || 'observable' });
     const expected = field('Что должно наблюдаться', 'Укажи конкретный проверяемый признак из стандарта. Например, «на поверхности нет крупных пузырьков».', { required, value: rule.expected });
     const min = field('Нижняя граница', 'Минимальное допустимое значение по техкарте. Граница включается в диапазон.', { type: 'number', required, value: rule.min });
     const max = field('Верхняя граница', 'Максимальное допустимое значение. Для точного значения введи одинаковые границы.', { type: 'number', required, value: rule.max });
@@ -210,7 +213,7 @@
 
     function update() {
       const numeric = value(type) === 'numeric';
-      setActive(expected.wrapper, !numeric);
+      setActive(expected.wrapper, value(type) === 'observable');
       setActive(numericFields, numeric);
     }
 
@@ -219,6 +222,7 @@
     update();
 
     function read() {
+      if (value(type) === 'recipe') return { name: value(label), rule: { type: 'recipe' } };
       const rule = value(type) === 'observable' ? { type: 'observable', expected: value(expected) } :
         { type: 'numeric', min: min.control.valueAsNumber, max: max.control.valueAsNumber, unit: value(unit) };
       return { name: value(label), rule };
@@ -1473,6 +1477,348 @@
     }
   }
 
+  const trainingKey = 'panel-03:training';
+  const starterSkill = {
+    id: 'espresso', version: 1, name: 'Приготовление эспрессо',
+    task: 'Найди действующую техкарту, самостоятельно приготовь эспрессо и взвесь выход.',
+    criteria: [
+      { name: 'Работа по техкарте', rule: { type: 'observable', expected: 'Бариста сам находит действующую техкарту и соблюдает указанный в ней порядок приготовления.' } },
+      { name: 'Масса выхода', rule: { type: 'recipe' } }
+    ]
+  };
+
+  function readTraining() {
+    const raw = localStorage.getItem(trainingKey);
+    return { raw, data: raw === null ? { team: [], skills: [starterSkill], attempts: [] } : JSON.parse(raw) };
+  }
+
+  function writeTraining(snapshot, group, item) {
+    if (localStorage.getItem(trainingKey) !== snapshot.raw) throw Error('Данные обучения изменились в другой вкладке. Открой форму заново.');
+    const updated = snapshot.data[group].filter(row => row.id !== item.id);
+    localStorage.setItem(trainingKey, JSON.stringify({ ...snapshot.data, [group]: [...updated, item] }));
+  }
+
+  function trainingError(problem) {
+    $('#training-message').textContent = problem instanceof DOMException ? 'Не удалось сохранить данные в браузере.' : problem.message;
+  }
+
+  function openTeamMember(previous) {
+    const snapshot = readTraining();
+    showEditor(previous ? 'Карточка бариста' : 'Новый бариста', body => {
+      const name = field('Имя или рабочий псевдоним', 'Укажи имя или псевдоним, по которому однозначно находишь бариста.', { value: previous?.name });
+      const point = field('Точка', 'Текущая кофейня бариста. При переводе измени точку в карточке. В прошлых попытках сохранится место проверки.', { value: previous?.point });
+      body.append(name.wrapper, point.wrapper);
+      return () => {
+        const person = { id: previous?.id ?? crypto.randomUUID(), name: requireText(name), point: requireText(point) };
+        if (snapshot.data.team.some(item => item.id !== person.id && normalized(item.name) === normalized(person.name) && normalized(item.point) === normalized(person.point))) {
+          throw Error('В этой точке уже есть бариста с таким именем. Укажи отличающийся рабочий псевдоним.');
+        }
+        writeTraining(snapshot, 'team', person);
+        return person.id;
+      };
+    }, 'Сохранить карточку', 'Сохраняет имя и точку. Записи о проверках хранятся в этом браузере.');
+  }
+
+  function openSkill(previous) {
+    const snapshot = readTraining();
+    showEditor(previous ? 'Шаблон навыка' : 'Новый навык', body => {
+      const name = field('Название навыка', 'Коротко назови действие, которое проверяется на практике.', { value: previous?.name });
+      const task = field('Практическое задание и условия', 'Опиши, что должен сделать бариста, что ему доступно и в каких условиях проходит проверка.', { multiline: true, value: previous?.task });
+      body.append(name.wrapper, task.wrapper);
+      const criteria = repeatedFields(body, previous?.criteria ?? [], {
+        item: 'Обязательный критерий', add: 'критерий', remove: 'критерий',
+        addHelp: 'Добавляет обязательный результат. Для подтверждения навыка нужно выполнить каждый критерий.',
+        removeHelp: 'Убирает критерий из будущих проверок. В истории прошлых попыток он сохранится.'
+      }, (group, item) => definitionFields(group, item, true, true).read);
+      return () => {
+        const title = requireText(name);
+        if (snapshot.data.skills.some(item => item.id !== previous?.id && normalized(item.name) === normalized(title))) {
+          throw Error('Шаблон с таким названием уже есть.');
+        }
+        const rules = criteria();
+        if (!rules.length) throw Error('Добавь хотя бы один обязательный критерий.');
+        const names = new Set();
+        for (const item of rules) {
+          const label = normalized(item.name);
+          if (!label || names.has(label) || (item.rule.type !== 'recipe' && !validRule(item.rule))) {
+            throw Error('Дай критериям уникальные названия и укажи проверяемые признаки или допустимые диапазоны.');
+          }
+          names.add(label);
+        }
+        const skill = { id: previous?.id ?? crypto.randomUUID(), version: (previous?.version ?? 0) + 1, name: title, task: requireText(task), criteria: rules };
+        writeTraining(snapshot, 'skills', skill);
+        return skill.id;
+      };
+    }, 'Сохранить шаблон', 'Сохраняет шаблон для следующих проверок. В журнале остаются условия и критерии каждой проведённой попытки.');
+  }
+
+  function selectTrainingRecipe(container, cards, references) {
+    const cardField = field('Действующая техкарта', 'Выбери действующую карту с числовым критерием, например диапазоном выхода эспрессо.', {
+      choices: { '': 'Выбери техкарту', ...Object.fromEntries(cards.map(card => [card.id, activeVersion(card).title])) }
+    });
+    const portionSlot = el('div', '', 'quality-fields');
+    const rulesSlot = el('div', '', 'quality-fields');
+    const chosenCard = () => cards.find(card => card.id === value(cardField));
+    let portionField;
+    let selections = [];
+    container.append(cardField.wrapper, portionSlot, rulesSlot);
+
+    function chooseRules() {
+      const version = activeVersion(chosenCard());
+      const portion = version.portions[Number(value(portionField))];
+      const options = portion.criteria.filter(criterion => criterion.rule.type === 'numeric');
+      rulesSlot.replaceChildren();
+      selections = references.map(reference => {
+        const exact = options.findIndex(criterion => normalized(criterion.name) === normalized(reference.name));
+        const input = field('Замер «' + reference.name + '»', 'Выбери числовой критерий из этой порции. Диапазон и единица сохранятся в попытке.', {
+          choices: { '': 'Выбери замер', ...Object.fromEntries(options.map((criterion, i) => [String(i), criterion.name])) },
+          value: exact >= 0 ? String(exact) : ''
+        });
+        rulesSlot.append(input.wrapper);
+        return { input, options };
+      });
+      if (!options.length) rulesSlot.prepend(el('p', 'В этой порции нет числовых критериев. Выбери другую или дополни техкарту.', 'quiet'));
+    }
+
+    cardField.control.addEventListener('change', () => {
+      portionSlot.replaceChildren();
+      rulesSlot.replaceChildren();
+      selections = [];
+      const card = chosenCard();
+      if (!card) return;
+      const version = activeVersion(card);
+      portionField = field('Размер порции', 'Выбери размер напитка, который приготовит бариста.', {
+        choices: Object.fromEntries(version.portions.map((portion, i) => [String(i), portion.name])), value: '0'
+      });
+      portionSlot.append(portionField.wrapper);
+      portionField.control.addEventListener('change', chooseRules);
+      chooseRules();
+    });
+
+    if (!cards.length) container.append(el('p', 'Для этого навыка нужна действующая техкарта с числовым критерием.', 'quiet'));
+    return () => {
+      requireText(cardField);
+      const version = activeVersion(chosenCard());
+      const portion = version.portions[Number(value(portionField))];
+      return selections.map(({ input, options }) => {
+        const selected = options[Number(requireText(input))];
+        return { rule: selected.rule, method: selected.method, source: version.title + ' · ' + portion.name + ' · версия ' + version.number + ' · ' + selected.name };
+      });
+    };
+  }
+
+  function pickTraining(memberId, skillId) {
+    const snapshot = readTraining();
+    const { team, skills } = snapshot.data;
+    if (!team.length || !skills.length) throw Error('Добавь бариста и шаблон навыка перед проверкой.');
+    const cards = readCatalog().cards.filter(activeVersion);
+    showEditor('Проверка навыка', body => {
+      const member = field('Бариста', 'Выбери карточку сотрудника. История проверки появится в этой карточке.', {
+        choices: Object.fromEntries(team.map(person => [person.id, person.name + ' · ' + person.point])),
+        value: memberId ?? team[0].id
+      });
+      const skillField = field('Навык', 'Выбери один практический навык для этой попытки.', {
+        choices: Object.fromEntries(skills.map(skill => [skill.id, skill.name])),
+        value: skillId ?? skills[0].id
+      });
+      const criteria = el('div', '', 'quality-fields');
+      let readRecipe;
+      function selectedSkill() { return skills.find(item => item.id === value(skillField)); }
+      function update() {
+        criteria.replaceChildren();
+        const selected = selectedSkill();
+        const references = selected.criteria.filter(item => item.rule.type === 'recipe');
+        readRecipe = references.length ? selectTrainingRecipe(criteria, cards, references) : () => [];
+      }
+      body.append(member.wrapper, skillField.wrapper, criteria);
+      skillField.control.addEventListener('change', update);
+      update();
+      return () => {
+        const person = team.find(item => item.id === value(member));
+        const skill = selectedSkill();
+        const recipeRules = readRecipe();
+        let index = 0;
+        const resolved = skill.criteria.map(criterion =>
+          criterion.rule.type === 'recipe' ? { ...criterion, ...recipeRules[index++] } : criterion);
+        openTrainingAttempt(snapshot, person, skill, resolved);
+        return null;
+      };
+    }, 'Продолжить', 'Открывает оценку с заданием и выбранными критериями.');
+  }
+
+  function trainingObservation(group, criterion) {
+    group.append(el('legend', criterion.name));
+    line(group, 'Критерий:', ruleLabel(criterion.rule));
+    line(group, 'Способ проверки:', criterion.method);
+    line(group, 'Техкарта:', criterion.source);
+    const numeric = criterion.rule.type === 'numeric';
+    const actual = numeric ? numberField('Фактическое значение', 'Запиши замер в единице, указанной в критерии. Обе границы диапазона включены.') :
+      field('Признак обнаружен', 'Укажи, наблюдался ли описанный результат.', { choices: { '': 'Выбери вариант', yes: 'Да', no: 'Нет' } });
+    const notes = field('Наблюдение', 'Кратко запиши, что именно произошло. Для числового замера можно дополнить фактическое значение комментарием.',
+      { multiline: true, required: !numeric });
+    const result = el('output', '', 'quality-result');
+    result.setAttribute('aria-live', 'polite');
+    const resultRow = el('div', '', 'quality-heading');
+    resultRow.append(result, help('Результат критерия', 'Критерий выполнен, когда замер входит в диапазон или требуемый признак наблюдался.'));
+    group.append(actual.wrapper, notes.wrapper, resultRow);
+    function outcome() {
+      if (!value(actual)) return null;
+      if (!numeric) return value(actual) === 'yes';
+      const measured = actual.control.valueAsNumber;
+      if (!Number.isFinite(measured)) return null;
+      return measured >= criterion.rule.min && measured <= criterion.rule.max;
+    }
+    function update() {
+      const passed = outcome();
+      result.textContent = passed === null ? 'Внеси результат' : passed ? 'Выполнен' : 'Требует отработки';
+      result.dataset.result = passed === false ? 'fail' : '';
+    }
+    group.addEventListener('input', update);
+    group.addEventListener('change', update);
+    update();
+    return {
+      outcome, read() {
+        const passed = outcome();
+        if (passed === null) throw Error('Внеси результат для критерия «' + criterion.name + '».');
+        return { ...criterion, passed, measured: numeric ? actual.control.valueAsNumber : null, notes: numeric ? value(notes) : requireText(notes) };
+      }
+    };
+  }
+
+  function openTrainingAttempt(snapshot, person, skill, criteria) {
+    showEditor('Практическая проверка', body => {
+      line(body, 'Бариста:', person.name);
+      line(body, 'Задание:', skill.task);
+      const date = dateField('Дата проверки', 'Фактическая дата попытки.');
+      const point = field('Точка проверки', 'Укажи место, где прошла попытка.', { value: person.point });
+      const reviewer = field('Проверяющий', 'Укажи имя или рабочий псевдоним человека, который наблюдал попытку.');
+      const independent = field('Выполнено без подсказок', 'Подтверждение требует самостоятельной работы и выполнения каждого обязательного критерия.', {
+        choices: { '': 'Выбери вариант', yes: 'Да', no: 'Нет' }
+      });
+      body.append(date.wrapper, point.wrapper, reviewer.wrapper, independent.wrapper);
+      const checks = criteria.map(criterion => {
+        const group = el('fieldset', '', 'quality-criterion quality-fields');
+        body.append(group);
+        return trainingObservation(group, criterion);
+      });
+      const feedback = field('Обратная связь', 'Коротко запиши, что получилось и над чем ещё стоит поработать.', { multiline: true, required: false });
+      const exercise = field('Что отработать', 'Укажи конкретное упражнение по непройденному критерию или по самостоятельному выполнению.', { multiline: true, required: false });
+      const next = field('Дата повторной проверки', 'При отработке укажи, когда повторить проверку. Для подтверждённого навыка можно оставить пустым.', { type: 'date', required: false });
+      body.append(feedback.wrapper, exercise.wrapper, next.wrapper);
+      function update() {
+        const needsPractice = value(independent) === 'no' || checks.some(check => check.outcome() === false);
+        exercise.control.required = needsPractice;
+        next.control.required = needsPractice;
+      }
+      body.addEventListener('input', update);
+      body.addEventListener('change', update);
+      update();
+      return () => {
+        const day = value(date);
+        const retest = value(next);
+        if (!dateIsValid(day) || (retest && (!dateIsValid(retest) || retest < day))) throw Error('Укажи корректные даты. Перепроверка не может быть раньше попытки.');
+        const unaided = requireText(independent) === 'yes';
+        const results = checks.map(check => check.read());
+        const passed = unaided && results.every(item => item.passed);
+        if (!passed && !retest) throw Error('Укажи дату повторной проверки.');
+        const row = {
+          id: crypto.randomUUID(), personId: person.id, skillId: skill.id, version: skill.version,
+          skill: skill.name, task: skill.task, date: day, point: requireText(point), reviewer: requireText(reviewer),
+          independent: unaided, passed, results, feedback: value(feedback),
+          exercise: passed ? value(exercise) : requireText(exercise), next: retest
+        };
+        writeTraining(snapshot, 'attempts', row);
+        return person.id;
+      };
+    }, 'Сохранить попытку', 'Добавляет результат в историю. Подтверждение требует всех обязательных критериев и работы без подсказок.');
+  }
+
+  function trainingAction(label, tip, run, className) {
+    return action(label, tip, () => {
+      try { run(); }
+      catch (problem) { trainingError(problem); }
+    }, className);
+  }
+
+  function renderAttempt(attempt) {
+    const details = el('details', '', 'quality-criterion');
+    const state = attempt.passed ? 'Подтверждён' : 'На отработке';
+    details.append(el('summary', formatDate(attempt.date) + ' · ' + attempt.skill + ' · ' + state));
+    const body = el('div', '', 'quality-details');
+    line(body, 'Точка и проверяющий:', attempt.point + ' · ' + attempt.reviewer);
+    line(body, 'Шаблон:', 'версия ' + attempt.version);
+    line(body, 'Задание:', attempt.task);
+    line(body, 'Без подсказок:', attempt.independent ? 'да' : 'нет');
+    for (const result of attempt.results) {
+      const criterion = el('div', '', 'quality-criterion');
+      line(criterion, result.name + ':', result.passed ? 'выполнен' : 'требует отработки');
+      line(criterion, 'Критерий:', ruleLabel(result.rule));
+      line(criterion, 'Замер:', result.measured === null ? '' : String(result.measured) + ' ' + result.rule.unit);
+      line(criterion, 'Наблюдение:', result.notes);
+      line(criterion, 'Техкарта:', result.source);
+      body.append(criterion);
+    }
+    line(body, 'Обратная связь:', attempt.feedback);
+    line(body, 'Отработать:', attempt.exercise);
+    if (attempt.next) line(body, 'Перепроверка:', formatDate(attempt.next));
+    details.append(body);
+    return details;
+  }
+
+  function renderTraining(keepOpen = '') {
+    const teamList = $('#training-team');
+    if (!teamList) return;
+    const skillList = $('#training-skills');
+    const opened = new Set(Array.from(document.querySelectorAll('[data-training-id][open]'), item => item.dataset.trainingId));
+    if (keepOpen) opened.add(keepOpen);
+    teamList.replaceChildren();
+    skillList.replaceChildren();
+    $('#training-message').textContent = '';
+    try {
+      const { data } = readTraining();
+      if (!data.team.length) teamList.append(el('p', 'Карточек бариста пока нет.', 'quiet'));
+      for (const person of data.team) {
+        const record = el('details', '', 'module quality-record');
+        record.dataset.trainingId = person.id;
+        record.open = opened.has(person.id);
+        record.append(el('summary', person.name + ' · ' + person.point));
+        const body = el('div', '', 'quality-details');
+        body.append(trainingAction('Изменить карточку', 'Открывает имя и текущую точку для правки.', () => openTeamMember(person)));
+        const attempts = data.attempts.filter(item => item.personId === person.id).reverse().sort((a, b) => b.date.localeCompare(a.date));
+        for (const skill of data.skills) {
+          const latest = attempts.find(item => item.skillId === skill.id);
+          const row = el('section', '', 'quality-criterion');
+          const state = !latest ? 'Не проверен' : latest.passed ? 'Подтверждён' : 'На отработке';
+          line(row, skill.name + ':', state);
+          if (latest?.version !== undefined && latest.version !== skill.version) line(row, 'Проверен по шаблону:', 'версия ' + latest.version);
+          if (latest?.next) line(row, 'Перепроверка:', formatDate(latest.next));
+          row.append(trainingAction('Проверить навык', 'Добавляет практическую попытку для этого бариста и навыка.', () => pickTraining(person.id, skill.id)));
+          body.append(row);
+        }
+        if (attempts.length) {
+          body.append(heading('История проверок', 'Открой попытку, чтобы увидеть фактические результаты, обратную связь и критерии на момент проверки.', 'h4'));
+          body.append(...attempts.map(renderAttempt));
+        }
+        record.append(body);
+        teamList.append(record);
+      }
+      for (const skill of data.skills) {
+        const record = el('details', '', 'module quality-record');
+        record.dataset.trainingId = skill.id;
+        record.open = opened.has(skill.id);
+        record.append(el('summary', skill.name + ' · версия ' + skill.version));
+        const body = el('div', '', 'quality-details');
+        line(body, 'Задание:', skill.task);
+        for (const criterion of skill.criteria) line(body, criterion.name + ':', criterion.rule.type === 'recipe' ? 'выбирается числовой критерий действующей техкарты' : ruleLabel(criterion.rule));
+        body.append(trainingAction('Изменить шаблон', 'Меняет условия для будущих попыток. Прошлые записи сохраняют прежние критерии.', () => openSkill(skill)));
+        record.append(body);
+        skillList.append(record);
+      }
+    } catch (problem) {
+      trainingError(problem);
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -1484,6 +1830,8 @@
   $('#sales-start')?.append(action('Добавить продажи', 'Открывает дневной ввод из кассового отчёта. Для существующей строки будут подставлены её данные.', openSalesIdentity, 'action primary'));
   $('#stock-writeoff-start')?.append(action('Записать списание', 'Открывает запись расхода сырья вне продаж.', () => openWriteOff(), 'action primary'));
   $('#stock-check-start')?.append(action('Новая сверка', 'Сравнивает расход по остаткам с продажами и журналом списаний за выбранный период.', () => openStockCheck(), 'action primary'));
+  $('#training-team-start')?.append(trainingAction('Добавить бариста', 'Создаёт личную карточку с точкой и историей проверок.', () => openTeamMember(), 'action primary'));
+  $('#training-skill-start')?.append(trainingAction('Новый навык', 'Создаёт шаблон задания и обязательных критериев.', () => openSkill(), 'action primary'));
   $('#economy-stock-link')?.after(help('Списания и сверка', 'Открывает журнал расхода вне продаж и сверку по остаткам.'));
   $('#economy-sales-link')?.after(help('Продажи и отчёт', 'Показывает выручку, прямую себестоимость, фудкост и маржинальность по точкам и периодам.'));
   $('#economy-price-start')?.append(action('Новая закупочная позиция', 'Добавляет сырьё или упаковку и первую цену, по которой их можно учитывать в расчёте.', () => openPriceEditor(), 'action primary'));
@@ -1500,6 +1848,7 @@
         else if (location.hash === '#economy') renderEconomy(id);
         else if (location.hash === '#sales') renderSales();
         else if (location.hash === '#stock') renderStock(id);
+        else if (location.hash === '#training') renderTraining(id);
         else render(id);
       }
     } catch (problem) {
@@ -1515,15 +1864,18 @@
       if (location.hash === '#sales') renderSales();
     }
     if (location.hash === '#stock' && [null, cardKey, economyKey, salesKey, stockKey].includes(event.key)) renderStock();
+    if (location.hash === '#training' && (event.key === null || event.key === trainingKey)) renderTraining();
   });
   window.addEventListener('hashchange', () => {
     if (location.hash === '#economy') renderEconomy();
     if (location.hash === '#sales') renderSales();
     if (location.hash === '#stock') renderStock();
+    if (location.hash === '#training') renderTraining();
   });
   render();
   renderCards();
   if (location.hash === '#economy') renderEconomy();
   if (location.hash === '#sales') renderSales();
   if (location.hash === '#stock') renderStock();
+  if (location.hash === '#training') renderTraining();
 })();
