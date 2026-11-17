@@ -38,3 +38,4 @@ a.action { display:inline-flex; align-items:center; text-decoration:none; }
 #training-message:empty { display:none; }
 #training .quality-record { overflow-wrap:anywhere; }
 #equipment-message:empty { display:none; }
+#suppliers-message:empty { display:none; }

@@ -774,10 +774,11 @@
     return null;
   }
 
-  function openPriceEditor(id) {
+  function openPriceEditor(id, proposal) {
     try {
       const snapshot = readEconomy();
       const supplied = snapshot.data.supplies.find(item => item.id === id);
+      if (proposal && !supplied) throw Error('Закупочная позиция недоступна.');
       showEditor(supplied ? 'Новая закупочная цена' : 'Закупочная цена', body => {
         if (supplied) body.append(heading(supplied.name, 'Новая цена добавится в историю этого сырья.'));
         const name = supplied ? null : field('Сырьё или упаковка', 'Укажи наименование закупочной позиции. Например, конкретное зерно или стакан 250 мл.');
@@ -795,6 +796,14 @@
           unit.control.value = previous.unit;
           density.control.value = previous.density ?? '';
         }
+        if (proposal) {
+          price.control.value = String(proposal.cost / 100);
+          amount.control.value = String(proposal.amount);
+          unit.control.value = proposal.unit;
+          date.control.value = proposal.date;
+          density.control.value = '';
+          line(body, 'Поставщик из пробы:', proposal.supplier);
+        }
         return () => {
           const cost = price.control.valueAsNumber;
           const pack = amount.control.valueAsNumber;
@@ -809,6 +818,11 @@
             throw Error('Закупочная позиция с таким названием уже есть. Добавь новую цену в её карточке.');
           }
           const entry = { cost: cents(cost), amount: pack, unit: requireText(unit), date: effective, density: ratio };
+          if (proposal) {
+            if (supplied.prices.some(item => item.reviewId === proposal.reviewId)) throw Error('Цена из этой пробы уже записана.');
+            entry.reviewId = proposal.reviewId;
+            entry.supplier = proposal.supplier;
+          }
           const supply = supplied ? { ...supplied, prices: [...supplied.prices, entry] } :
             { id: crypto.randomUUID(), name: title, prices: [entry] };
           const supplies = supplied ? snapshot.data.supplies.map(item => item.id === supply.id ? supply : item) :
@@ -837,11 +851,15 @@
       summary.append(el('p', recent ? money(recent.cost) + ' за ' + recent.amount + ' ' + recent.unit : 'Цена ещё не действует', 'quiet'));
       const body = el('div', '', 'quality-details');
       body.append(action('Добавить цену', 'Записывает новую цену для этой закупочной позиции. Старые цены остаются в истории.', () => openPriceEditor(supply.id)));
+      if ($('#suppliers-specs')) body.append(supplierAction('Требования к сырью', 'Открывает критерии проверки этой закупочной позиции.', () => {
+        location.hash = '#suppliers';
+        openSupplySpec(supply.id);
+      }));
       body.append(heading('История цен', 'Список записей по датам начала действия. Более поздняя запись за ту же дату уточняет расчёт.', 'h4'));
       const recentFirst = [...supply.prices].reverse().sort((a, b) => b.date.localeCompare(a.date));
       for (const price of recentFirst) {
         const density = price.density ? ' · ' + price.density + ' г/мл' : '';
-        line(body, formatDate(price.date) + ':', money(price.cost) + ' за ' + price.amount + ' ' + price.unit + density);
+        line(body, formatDate(price.date) + ':', money(price.cost) + ' за ' + price.amount + ' ' + price.unit + density + (price.supplier ? ' · ' + price.supplier : ''));
       }
       card.append(summary, body);
       list.append(card);
@@ -1646,7 +1664,7 @@
     }, 'Продолжить', 'Открывает оценку с заданием и выбранными критериями.');
   }
 
-  function trainingObservation(group, criterion) {
+  function criterionObservation(group, criterion, failedLabel = 'Требует отработки') {
     group.append(el('legend', criterion.name));
     line(group, 'Критерий:', ruleLabel(criterion.rule));
     line(group, 'Способ проверки:', criterion.method);
@@ -1670,7 +1688,7 @@
     }
     function update() {
       const passed = outcome();
-      result.textContent = passed === null ? 'Внеси результат' : passed ? 'Выполнен' : 'Требует отработки';
+      result.textContent = passed === null ? 'Внеси результат' : passed ? 'Выполнен' : failedLabel;
       result.dataset.result = passed === false ? 'fail' : '';
     }
     group.addEventListener('input', update);
@@ -1699,7 +1717,7 @@
       const checks = criteria.map(criterion => {
         const group = el('fieldset', '', 'quality-criterion quality-fields');
         body.append(group);
-        return trainingObservation(group, criterion);
+        return criterionObservation(group, criterion);
       });
       const feedback = field('Обратная связь', 'Коротко запиши, что получилось и над чем ещё стоит поработать.', { multiline: true, required: false });
       const exercise = field('Что отработать', 'Укажи конкретное упражнение по непройденному критерию или по самостоятельному выполнению.', { multiline: true, required: false });
@@ -2023,9 +2041,9 @@
     return (late ? 'Просрочено · ' : '') + jobStates[job.state] + ' · ' + formatDate(job.closed || dueForJob(job));
   }
 
-  function makeEquipmentRecord(id, title, caption, opened) {
+  function makeJournalRecord(id, title, caption, opened) {
     const record = el('details', '', 'module quality-record');
-    record.dataset.equipmentId = id;
+    record.dataset.journalId = id;
     record.open = opened.has(id);
     const summary = el('summary', title);
     if (caption) summary.append(el('p', caption, 'quiet'));
@@ -2044,7 +2062,7 @@
     if (!passports) return;
     const jobsList = $('#equipment-jobs');
     const waterList = $('#equipment-water');
-    const opened = new Set(Array.from(document.querySelectorAll('[data-equipment-id][open]'), item => item.dataset.equipmentId));
+    const opened = new Set(Array.from(document.querySelectorAll('[data-journal-id][open]'), item => item.dataset.journalId));
     if (keepOpen) opened.add(keepOpen);
     passports.replaceChildren();
     jobsList.replaceChildren();
@@ -2068,7 +2086,7 @@
       for (const device of devices) {
         const history = jobs.filter(item => item.device === device.id);
         const nextMaintenance = history.find(item => item.kind === 'planned' && item.state !== 'done');
-        const { record, body } = makeEquipmentRecord(device.id, deviceTitle(device), device.point, opened);
+        const { record, body } = makeJournalRecord(device.id, deviceTitle(device), device.point, opened);
         line(body, 'Ответственный:', device.owner);
         line(body, 'Ближайшее обслуживание:', nextMaintenance ? jobCaption(nextMaintenance) : 'не назначено');
         const jobHistory = history.slice().sort((a, b) => (b.closed || b.date).localeCompare(a.closed || a.date));
@@ -2091,7 +2109,7 @@
       }
       for (const job of jobs) {
         const device = known.get(job.device);
-        const { record, body } = makeEquipmentRecord(job.id, jobKinds[job.kind] + ' · ' + device.model, jobCaption(job), opened);
+        const { record, body } = makeJournalRecord(job.id, jobKinds[job.kind] + ' · ' + device.model, jobCaption(job), opened);
         line(body, 'Точка и оборудование:', device.point + ' · ' + deviceTitle(device));
         line(body, 'Дата записи:', formatDate(job.date));
         line(body, 'Срок работы:', formatDate(job.due));
@@ -2106,7 +2124,7 @@
       for (const item of water) {
         const last = item.attempts.at(-1);
         const caption = last.passed ? 'В диапазоне' : last.plan.date < dateKey() ? 'Отклонение · перепроверка просрочена' : 'Отклонение';
-        const { record, body } = makeEquipmentRecord(item.id, item.indicator + ' · ' + item.point, item.sample + ' · ' + caption, opened);
+        const { record, body } = makeJournalRecord(item.id, item.indicator + ' · ' + item.point, item.sample + ' · ' + caption, opened);
         line(body, 'Место отбора:', item.sample);
         const device = data.devices.find(row => row.id === item.device);
         if (device) line(body, 'Паспорт:', deviceTitle(device));
@@ -2134,6 +2152,309 @@
     }
   }
 
+  const suppliersKey = 'panel-03:suppliers';
+  const sampleKinds = { lot: 'Партия', sample: 'Образец', replacement: 'Образец для замены' };
+  const sampleDecisions = { approved: 'Одобрено', repeat: 'Нужна повторная проба', rejected: 'Отклонено' };
+
+  function readSuppliers() {
+    const raw = localStorage.getItem(suppliersKey);
+    return { raw, data: raw === null ? { suppliers: [], specs: [], samples: [] } : JSON.parse(raw) };
+  }
+
+  function writeSuppliers(snapshot, group, item) {
+    if (localStorage.getItem(suppliersKey) !== snapshot.raw) throw Error('Данные изменились в другой вкладке. Открой запись заново.');
+    const items = snapshot.data[group].filter(row => row.id !== item.id);
+    localStorage.setItem(suppliersKey, JSON.stringify({ ...snapshot.data, [group]: [...items, item] }));
+    return item.id;
+  }
+
+  function supplierAction(label, tip, run, className) {
+    return action(label, tip, () => {
+      try { run(); }
+      catch (problem) {
+        const message = $(location.hash === '#economy' ? '#economy-message' : '#suppliers-message');
+        if (message) message.textContent = problem.message;
+      }
+    }, className);
+  }
+
+  function supplierChoices(items) {
+    return Object.fromEntries(items.map(item => [item.id, item.name]));
+  }
+
+  function openSupplier(previous) {
+    const snapshot = readSuppliers();
+    const supplies = readEconomy().data.supplies;
+    showEditor(previous ? 'Карточка поставщика' : 'Новый поставщик', body => {
+      const name = field('Название поставщика', 'Укажи рабочее название поставщика.', { value: previous?.name });
+      const contact = field('Рабочий контакт', 'Укажи рабочий канал связи или контакт по поставкам.', { value: previous?.contact });
+      body.append(name.wrapper, contact.wrapper);
+      const positions = repeatedFields(body, previous?.positions ?? [], {
+        item: 'Закупочная позиция', add: 'позицию', remove: 'позицию',
+        addHelp: 'Связывает с поставщиком ещё одну существующую позицию из экономики.',
+        removeHelp: 'Убирает позицию из карточки поставщика. История проб сохраняется.'
+      }, (group, current) => {
+        const item = field('Закупочная позиция', 'Выбери сырьё, с которым работает поставщик.', {
+          choices: { '': 'Выбери позицию', ...supplierChoices(supplies) }, value: current, required: false
+        });
+        group.append(item.wrapper);
+        return () => value(item);
+      });
+      return () => {
+        const title = requireText(name);
+        if (snapshot.data.suppliers.some(item => item.id !== previous?.id && normalized(item.name) === normalized(title))) {
+          throw Error('Поставщик с таким названием уже существует.');
+        }
+        return writeSuppliers(snapshot, 'suppliers', { id: previous?.id ?? crypto.randomUUID(), name: title,
+          contact: requireText(contact), positions: [...new Set(positions().filter(Boolean))] });
+      };
+    }, 'Сохранить поставщика', 'Сохраняет рабочий контакт и связи с закупочными позициями.');
+  }
+
+  function openSupplySpec(id) {
+    const snapshot = readSuppliers();
+    const supply = readEconomy().data.supplies.find(item => item.id === id);
+    if (!supply) throw Error('Закупочная позиция недоступна.');
+    const previous = snapshot.data.specs.find(item => item.id === id);
+    showEditor('Требования к сырью', body => {
+      body.append(heading(supply.name, 'Требования используются при новых проверках этой закупочной позиции.'));
+      const readings = repeatedFields(body, previous?.criteria ?? [], {
+        item: 'Критерий требования', add: 'критерий', remove: 'критерий',
+        addHelp: 'Добавляет наблюдаемый признак или числовой диапазон.',
+        removeHelp: 'Убирает критерий из будущих проб. Прошлые записи сохраняются.'
+      }, (group, saved) => {
+        const fields = definitionFields(group, saved, true);
+        const method = field('Способ проверки', 'Укажи, как воспроизвести проверку: прибор, условия дегустации или порядок наблюдения.', { multiline: true, value: saved?.method });
+        group.append(method.wrapper);
+        return () => ({ ...fields.read(), method: requireText(method) });
+      });
+      return () => {
+        const criteria = readings();
+        if (!criteria.length) throw Error('Добавь хотя бы один проверяемый критерий.');
+        const seen = new Set();
+        for (const criterion of criteria) {
+          const label = normalized(criterion.name);
+          if (!label || seen.has(label) || !validRule(criterion.rule)) throw Error('Заполни критерии, укажи уникальные названия и проверяемые границы или признаки.');
+          seen.add(label);
+        }
+        return writeSuppliers(snapshot, 'specs', { id, version: (previous?.version ?? 0) + 1, criteria });
+      };
+    }, 'Сохранить требования', 'Сохраняет новую версию требований к этой позиции. Старые пробы остаются с исходными критериями.');
+  }
+
+  function pickSample() {
+    const snapshot = readSuppliers();
+    const { data } = readEconomy();
+    const { suppliers, specs } = snapshot.data;
+    const supplies = data.supplies.filter(item => specs.some(spec => spec.id === item.id));
+    if (!suppliers.length || !supplies.length) throw Error('Добавь поставщика и требования хотя бы к одной закупочной позиции.');
+    showEditor('Новая партия или образец', body => {
+      const supplier = field('Поставщик', 'Выбери поставщика партии или образца, включая кандидата на замену.', {
+        choices: supplierChoices(suppliers), value: suppliers[0].id
+      });
+      const supply = field('Закупочная позиция', 'Выбери позицию, по требованиям к которой проверяется партия или образец.', { choices: supplierChoices(supplies), value: supplies[0].id });
+      const kind = field('Тип записи', 'Отметь, что оцениваешь партию, образец или замену для действующего сырья.', { choices: sampleKinds, value: 'sample' });
+      const lot = field('Номер партии', 'Укажи номер, если он есть.', { required: false });
+      body.append(supplier.wrapper, supply.wrapper, kind.wrapper, lot.wrapper);
+      return () => {
+        const spec = specs.find(item => item.id === value(supply));
+        openSampleAttempt({
+          id: crypto.randomUUID(), supplier: requireText(supplier), supply: requireText(supply),
+          kind: value(kind), lot: value(lot), spec, attempts: []
+        });
+        return null;
+      };
+    }, 'Продолжить', 'Открывает оценку партии или образца по требованиям выбранной позиции.');
+  }
+
+  function sampleImpact(supply, quote, date) {
+    const { data } = readEconomy();
+    const affected = [];
+    for (const card of readCatalog().cards) {
+      const version = activeVersion(card);
+      if (!version) continue;
+      for (const portion of version.portions) {
+        const items = portion.ingredients.filter(ingredient => {
+          const key = linkKey(card.id, portion.name, ingredient);
+          return data.links.some(link => link.key === key && link.supply === supply);
+        });
+        if (!items.length) continue;
+        const costs = items.map(ingredient => {
+          const old = estimateIngredient({ data }, card.id, portion.name, ingredient, date).cost;
+          const amount = quote ? convertAmount(ingredient.amount, ingredient.unit, quote.unit) : null;
+          const next = amount === null ? null : cents(amount / quote.amount * quote.cost / 100);
+          return old !== null && Number.isSafeInteger(next) ? next - old : null;
+        });
+        const delta = costs.every(cost => cost !== null) ? costs.reduce((sum, cost) => sum + cost, 0) : null;
+        affected.push({ title: version.title + ' · ' + portion.name, delta });
+      }
+    }
+    return affected;
+  }
+
+  function openSampleAttempt(sample) {
+    const snapshot = readSuppliers();
+    const supply = readEconomy().data.supplies.find(item => item.id === sample.supply);
+    const company = snapshot.data.suppliers.find(item => item.id === sample.supplier);
+    if (!supply || !company) throw Error('Поставщик или закупочная позиция недоступны.');
+    const previous = sample.attempts.at(-1);
+    showEditor(previous ? 'Повторная проба' : 'Проверка партии или образца', body => {
+      line(body, 'Поставщик и сырьё:', company.name + ' · ' + supply.name);
+      line(body, 'Требования:', 'версия ' + sample.spec.version);
+      if (previous?.follow) line(body, 'План повторной пробы:', previous.follow);
+      const date = dateField('Дата пробы', 'Когда проверена партия или образец.');
+      if (previous) date.control.min = previous.date;
+      const conditions = field('Условия пробы', 'Укажи условия приготовления, дегустации или замера, необходимые для повторения.', { multiline: true });
+      body.append(date.wrapper, conditions.wrapper);
+      const readings = sample.spec.criteria.map(criterion => {
+        const group = el('fieldset', '', 'quality-criterion quality-fields');
+        body.append(group);
+        return criterionObservation(group, criterion, 'Отклонение');
+      });
+      const cost = field('Цена образца или упаковки, ₽', 'Если поставщик дал цену, укажи её целиком за указанное количество.', { type: 'number', required: false, value: previous?.quote ? previous.quote.cost / 100 : undefined });
+      cost.control.min = '0';
+      const amount = field('Количество по цене', 'Количество, за которое указана цена. Например, 1 для одного килограмма.', { type: 'number', required: false, value: previous?.quote?.amount });
+      const unit = field('Единица цены', 'Единица количества, входящего в указанную цену. Например, кг, л или шт.', { required: false, value: previous?.quote?.unit });
+      const pair = el('div', '', 'quality-pair');
+      pair.append(amount.wrapper, unit.wrapper);
+      const decision = field('Решение', 'Фиксирует итог пробы после оценки критериев.', { choices: { '': 'Выбери решение', ...sampleDecisions } });
+      const reason = field('Обоснование решения', 'Запиши, почему принято решение и какие наблюдения на него повлияли.', { multiline: true });
+      const follow = field('Что проверить повторно', 'Укажи, что уточнить на повторной пробе.', { multiline: true, required: false });
+      const next = field('Срок повторной пробы', 'Плановая дата повторной пробы, если известна.', { type: 'date', required: false });
+      const transition = field('Дата перехода', 'Плановая дата применения новой цены или сырья, если переход согласован.', { type: 'date', required: false });
+      const impactNote = field('Заметка о замене', 'Уточни затронутые напитки, изменение рецептуры или условия перехода. Панель посчитает разницу цены для уже связанных техкарт.', { multiline: true, required: false });
+      body.append(cost.wrapper, pair, decision.wrapper, reason.wrapper, follow.wrapper, next.wrapper, transition.wrapper, impactNote.wrapper);
+      function update() {
+        setActive(follow.wrapper, value(decision) === 'repeat');
+        setActive(next.wrapper, value(decision) === 'repeat');
+        setActive(transition.wrapper, value(decision) === 'approved');
+        setActive(impactNote.wrapper, sample.kind === 'replacement');
+      }
+      decision.control.addEventListener('change', update);
+      update();
+      return () => {
+        const day = value(date);
+        if (!dateIsValid(day) || (previous && day < previous.date)) throw Error('Укажи дату пробы не раньше предыдущей.');
+        const state = requireText(decision);
+        const nextDate = state === 'repeat' ? value(next) : '';
+        const transitionDate = state === 'approved' ? value(transition) : '';
+        if (nextDate && (!dateIsValid(nextDate) || nextDate < day)) throw Error('Срок повторной пробы должен быть не раньше даты пробы.');
+        if (transitionDate && (!dateIsValid(transitionDate) || transitionDate < day)) throw Error('Дата перехода должна быть не раньше даты пробы.');
+        let quote = null;
+        if ([cost, amount, unit].some(item => value(item))) {
+          const price = cost.control.valueAsNumber;
+          const size = amount.control.valueAsNumber;
+          if (!Number.isSafeInteger(cents(price)) || price < 0 || !Number.isFinite(size) || size <= 0) throw Error('Для цены укажи сумму от нуля, количество больше нуля и единицу.');
+          quote = { cost: cents(price), amount: size, unit: requireText(unit) };
+        }
+        const results = readings.map(item => item.read());
+        const attempt = {
+          id: crypto.randomUUID(), date: day, conditions: requireText(conditions), results, quote, decision: state,
+          reason: requireText(reason), follow: state === 'repeat' ? value(follow) : '', next: nextDate, transition: transitionDate,
+          impactNote: value(impactNote),
+          impact: sample.kind === 'replacement' ? sampleImpact(sample.supply, quote, transitionDate || day) : []
+        };
+        return writeSuppliers(snapshot, 'samples', { ...sample, attempts: [...sample.attempts, attempt] });
+      };
+    }, 'Сохранить пробу', 'Оставляет фактические результаты и решение в истории этой партии или образца.');
+  }
+
+  function showSampleAttempt(attempt) {
+    const details = el('details', '', 'quality-criterion');
+    details.append(el('summary', formatDate(attempt.date) + ' · ' + sampleDecisions[attempt.decision]));
+    const body = el('div', '', 'quality-details');
+    line(body, 'Условия:', attempt.conditions);
+    for (const result of attempt.results) {
+      const item = el('div', '', 'quality-criterion');
+      line(item, result.name + ':', result.passed ? 'соответствует' : 'отклонение');
+      line(item, 'Требование:', ruleLabel(result.rule));
+      line(item, 'Способ проверки:', result.method);
+      if (result.measured !== null) line(item, 'Замер:', result.measured + ' ' + result.rule.unit);
+      line(item, 'Наблюдение:', result.notes);
+      body.append(item);
+    }
+    line(body, 'Обоснование:', attempt.reason);
+    line(body, 'Повторная проба:', attempt.follow);
+    if (attempt.next) line(body, 'Срок повторной пробы:', formatDate(attempt.next));
+    if (attempt.transition) line(body, 'Дата перехода:', formatDate(attempt.transition));
+    if (attempt.quote) {
+      const price = attempt.quote;
+      line(body, 'Цена:', money(price.cost) + ' за ' + price.amount + ' ' + price.unit);
+      const kilogram = convertAmount(1, 'кг', price.unit);
+      const costPerKilo = kilogram === null ? null : cents(kilogram / price.amount * (price.cost / 100));
+      if (Number.isSafeInteger(costPerKilo)) line(body, 'В пересчёте на килограмм:', money(costPerKilo));
+    }
+    line(body, 'Заметка о замене:', attempt.impactNote);
+    if (attempt.impact.length) {
+      body.append(heading('Изменение затрат на порцию', 'Сравниваются цена действующей закупки и предложение при том же количестве сырья в текущей техкарте.', 'h4'));
+      for (const item of attempt.impact) line(body, item.title + ':', item.delta === null ? 'неполный расчёт цены' : (item.delta > 0 ? '+' : '') + money(item.delta));
+    }
+    details.append(body);
+    return details;
+  }
+
+  function renderSuppliers(keepOpen = '') {
+    const companies = $('#suppliers-list');
+    if (!companies) return;
+    const specs = $('#suppliers-specs');
+    const samples = $('#suppliers-samples');
+    const opened = new Set(Array.from(document.querySelectorAll('[data-journal-id][open]'), item => item.dataset.journalId));
+    if (keepOpen) opened.add(keepOpen);
+    companies.replaceChildren();
+    specs.replaceChildren();
+    samples.replaceChildren();
+    $('#suppliers-message').textContent = '';
+    try {
+      const { data } = readSuppliers();
+      const supplies = readEconomy().data.supplies;
+      const supplyName = id => supplies.find(item => item.id === id)?.name ?? 'Закупочная позиция';
+      const companyName = id => data.suppliers.find(item => item.id === id)?.name ?? 'Поставщик';
+      for (const company of data.suppliers) {
+        const { record, body } = makeJournalRecord(company.id, company.name, company.contact, opened);
+        for (const id of company.positions) line(body, 'Закупочная позиция:', supplyName(id));
+        body.append(supplierAction('Изменить поставщика', 'Открывает контакт и связи с закупочными позициями.', () => openSupplier(company)));
+        companies.append(record);
+      }
+      for (const supply of supplies) {
+        const spec = data.specs.find(item => item.id === supply.id);
+        const { record, body } = makeJournalRecord(supply.id, supply.name, spec ? 'Требования · версия ' + spec.version : 'Требования ещё не заданы', opened);
+        for (const criterion of spec?.criteria ?? []) line(body, criterion.name + ':', ruleLabel(criterion.rule) + ' · ' + criterion.method);
+        for (const sample of data.samples.filter(item => item.supply === supply.id)) {
+          const last = sample.attempts.at(-1);
+          line(body, 'Проба:', formatDate(last.date) + ' · ' + companyName(sample.supplier) + ' · ' + sampleDecisions[last.decision]);
+        }
+        body.append(supplierAction('Настроить требования', 'Открывает критерии и методы проверки для этой позиции.', () => openSupplySpec(supply.id)));
+        specs.append(record);
+      }
+      const sorted = data.samples.slice().sort((a, b) => b.attempts.at(-1).date.localeCompare(a.attempts.at(-1).date));
+      for (const sample of sorted) {
+        const last = sample.attempts.at(-1);
+        const { record, body } = makeJournalRecord(sample.id, supplyName(sample.supply) + ' · ' + companyName(sample.supplier),
+          sampleKinds[sample.kind] + ' · ' + sampleDecisions[last.decision], opened);
+        line(body, 'Номер партии:', sample.lot);
+        line(body, 'Требования:', 'версия ' + sample.spec.version);
+        for (const attempt of sample.attempts) body.append(showSampleAttempt(attempt));
+        if (last.decision === 'repeat') body.append(supplierAction('Повторить пробу', 'Добавляет ещё одну попытку по тем же требованиям.', () => openSampleAttempt(sample)));
+        if (last.decision === 'approved' && last.quote) {
+          const recorded = supplies.find(item => item.id === sample.supply)?.prices.some(price => price.reviewId === last.id);
+          if (recorded) line(body, 'Закупочная цена:', 'записана в истории цен');
+          else body.append(supplierAction('Добавить закупочную цену', 'Открывает форму цены с данными этой пробы. Дату действия можно проверить перед сохранением.', () => {
+            location.hash = '#economy';
+            $('#economy-price-start').closest('details').open = true;
+            openPriceEditor(sample.supply, { ...last.quote, date: last.transition || dateKey(), reviewId: last.id, supplier: companyName(sample.supplier) });
+          }));
+        }
+        samples.append(record);
+      }
+      if (!data.suppliers.length) companies.append(el('p', 'Поставщиков пока нет.', 'quiet'));
+      if (!supplies.length) specs.append(el('p', 'Сначала добавь закупочные позиции в «Экономике».', 'quiet'));
+      if (!data.samples.length) samples.append(el('p', 'Проб пока нет.', 'quiet'));
+    } catch (problem) {
+      $('#suppliers-message').textContent = 'Не удалось прочитать журнал поставщиков.';
+      console.warn(problem);
+    }
+  }
+
   $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
@@ -2148,6 +2469,9 @@
   $('#equipment-passports-start')?.append(equipmentAction('Добавить оборудование', 'Создаёт паспорт оборудования с привязкой к точке.', () => openDevice(), 'action primary'));
   $('#equipment-jobs-start')?.append(equipmentAction('Добавить работу', 'Открывает плановое обслуживание или заявку по неисправности.', () => openEquipmentJob(), 'action primary'));
   $('#equipment-water-start')?.append(equipmentAction('Записать замер воды', 'Сохраняет результат, условия и допустимый диапазон.', openWater, 'action primary'));
+  $('#suppliers-start')?.append(supplierAction('Добавить поставщика', 'Создаёт карточку с рабочим контактом и связанным сырьём.', () => openSupplier(), 'action primary'));
+  $('#suppliers-sample-start')?.append(supplierAction('Записать пробу', 'Открывает проверку одной партии или образца по требованиям закупочной позиции.', pickSample, 'action primary'));
+  $('#economy-suppliers-link')?.after(help('Сырьё и поставщики', 'Открывает контакты, требования к сырью и журнал проб.'));
   $('#training-team-start')?.append(trainingAction('Добавить бариста', 'Создаёт личную карточку с точкой и историей проверок.', () => openTeamMember(), 'action primary'));
   $('#training-skill-start')?.append(trainingAction('Новый навык', 'Создаёт шаблон задания и обязательных критериев.', () => openSkill(), 'action primary'));
   $('#economy-stock-link')?.after(help('Списания и сверка', 'Открывает журнал расхода вне продаж и сверку по остаткам.'));
@@ -2168,6 +2492,7 @@
         else if (location.hash === '#stock') renderStock(id);
         else if (location.hash === '#training') renderTraining(id);
         else if (location.hash === '#equipment') renderEquipment(id);
+        else if (location.hash === '#suppliers') renderSuppliers(id);
         else render(id);
       }
     } catch (problem) {
@@ -2185,6 +2510,7 @@
     if (location.hash === '#stock' && [null, cardKey, economyKey, salesKey, stockKey].includes(event.key)) renderStock();
     if (location.hash === '#training' && (event.key === null || event.key === trainingKey)) renderTraining();
     if (location.hash === '#equipment' && (event.key === null || event.key === equipmentKey)) renderEquipment();
+    if (location.hash === '#suppliers' && [null, suppliersKey, economyKey].includes(event.key)) renderSuppliers();
   });
   window.addEventListener('hashchange', () => {
     if (location.hash === '#economy') renderEconomy();
@@ -2192,6 +2518,7 @@
     if (location.hash === '#stock') renderStock();
     if (location.hash === '#training') renderTraining();
     if (location.hash === '#equipment') renderEquipment();
+    if (location.hash === '#suppliers') renderSuppliers();
   });
   render();
   renderCards();
@@ -2200,4 +2527,5 @@
   if (location.hash === '#stock') renderStock();
   if (location.hash === '#training') renderTraining();
   if (location.hash === '#equipment') renderEquipment();
+  if (location.hash === '#suppliers') renderSuppliers();
 })();

@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=8">
+  <link rel="stylesheet" href="./quality.css?v=9">
   <title>03 Работа</title>
   <style>
     :root {
@@ -318,6 +318,7 @@
         <p id="economy-message" class="error" role="alert"></p>
         <div class="quality-actions"><a class="action" id="economy-sales-link" href="#sales">Продажи и отчёт</a></div>
         <div class="quality-actions"><a class="action" id="economy-stock-link" href="#stock">Списания и сверка</a></div>
+        <div class="quality-actions"><a class="action" id="economy-suppliers-link" href="#suppliers">Сырьё и поставщики</a></div>
         <details class="module">
           <summary>Закупочные цены</summary>
           <div class="quality-details stack">
@@ -395,6 +396,26 @@
           <h3>Вода</h3>
           <div id="equipment-water-start"></div>
           <div id="equipment-water" class="stack"></div>
+        </section>
+      </div>
+    </section>
+    <section data-page="suppliers" hidden>
+      <div class="page-heading"><a class="quality-back" href="#economy">← Экономика</a><h2>Сырьё и поставщики</h2></div>
+      <div class="stack">
+        <p id="suppliers-message" class="error" role="alert"></p>
+        <section class="stack" aria-label="Поставщики">
+          <h3>Поставщики</h3>
+          <div id="suppliers-start"></div>
+          <div id="suppliers-list" class="stack"></div>
+        </section>
+        <section class="stack" aria-label="Требования к сырью">
+          <h3>Требования к сырью</h3>
+          <div id="suppliers-specs" class="stack"></div>
+        </section>
+        <section class="stack" aria-label="Партии и образцы">
+          <h3>Партии и образцы</h3>
+          <div id="suppliers-sample-start"></div>
+          <div id="suppliers-samples" class="stack"></div>
         </section>
       </div>
     </section>
@@ -485,6 +506,14 @@
             <p>Шеф-бариста ведёт перечень кофейного оборудования и систем водоподготовки по точкам. Для каждой единицы фиксирует модель, историю обслуживания, ответственного и дату следующей работы. Сроки и перечень работ сверяет с документацией производителя и регламентом сети.</p>
             <p>При неисправности записывает, что наблюдалось, когда это произошло и как это повлияло на работу точки. Передаёт задачу ответственному и фиксирует результат обслуживания. Если для закрытия задачи нужна повторная проверка, указывает, что именно следует проверить.</p>
             <p>При контроле воды записывает место отбора, показатель, единицу измерения, метод и результат. Сравнивает замер с диапазоном, установленным для этой точки и оборудования. При отклонении фиксирует действие, ответственного и дату повторного замера.</p>
+          </div>
+        </details>
+        <details class="module">
+          <summary>Сырьё и поставщики</summary>
+          <div class="guide-copy">
+            <p>Шеф-бариста формулирует требования к зерну и другим ингредиентам, которые используются в техкартах. Для каждой закупочной позиции фиксирует, что нужно проверить при получении новой партии или выборе замены.</p>
+            <p>При проверке партии или образца записывает поставщика, дату, номер партии при наличии, условия проверки и фактические результаты. Оценивает продукт по заданным критериям и фиксирует решение с обоснованием. Для предлагаемой замены также указывает, какие напитки затронуты и как изменится себестоимость порции.</p>
+            <p>После согласования замены шеф-бариста фиксирует дату перехода, обновляет закупочные данные и при необходимости выпускает новую версию техкарты. Результаты предыдущих проверок сохраняются в истории.</p>
           </div>
         </details>
       </div>
@@ -688,9 +717,9 @@
 
     function route() {
       const hash = location.hash.slice(1);
-      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'stock', 'training', 'equipment', 'instruction'].includes(hash) ? hash : 'overview';
+      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'stock', 'training', 'equipment', 'suppliers', 'instruction'].includes(hash) ? hash : 'overview';
       for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== current;
-      const tab = ({ techcards: 'quality', economy: 'overview', sales: 'overview', stock: 'overview', training: 'overview', equipment: 'overview' })[current] || current;
+      const tab = ({ techcards: 'quality', economy: 'overview', sales: 'overview', stock: 'overview', training: 'overview', equipment: 'overview', suppliers: 'overview' })[current] || current;
       for (const link of document.querySelectorAll('.nav a')) {
         if (link.hash === '#' + tab) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
@@ -843,6 +872,6 @@
 
     route();
   </script>
-  <script src="./quality.js?v=8"></script>
+  <script src="./quality.js?v=9"></script>
 </body>
 </html>
