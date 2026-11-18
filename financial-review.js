@@ -436,6 +436,18 @@
       return currentPlan(ledger, period, pointId) || currentPlan(ledger, period, '');
     };
     window.panel03FinancialProgress = progress;
-    return { render, deadlines, key };
+    function comparison(period, points) {
+      const source = sources();
+      return points.map(point => calculate(source, period, point));
+    }
+
+    function openPeriod(pointId, period) {
+      filter.kind = period.kind;
+      filter.date = period.from;
+      filter.pointId = pointId;
+      location.hash = '#economy';
+    }
+
+    return { render, deadlines, key, comparison, openPeriod, periodFor, fingerprint };
   };
 })();

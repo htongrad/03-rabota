@@ -2735,7 +2735,12 @@
     catch { $('#launch-message').textContent = 'Не удалось открыть журнал запусков.'; }
   }
 
-  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', 'financial-review': 'Экономика', 'point-operations': 'Работа точек', launches: 'Запуски', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const management = financialReview && window.panel03Management?.({
+    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized,
+    money, cents, percentFormat, savedRecords, financialReview, pointOperations, openDeadline
+  });
+
+  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', 'financial-review': 'Экономика', 'point-operations': 'Работа точек', launches: 'Запуски', management: 'Улучшения', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
   const deadlineFilter = { point: '', section: '' };
 
   function collectDeadlines() {
@@ -2866,6 +2871,9 @@
     load('Запуски', () => {
       for (const row of productLaunch?.deadlines() || []) rows.push(row);
     });
+    load('Улучшения', () => {
+      for (const row of management?.deadlines() || []) rows.push(row);
+    });
     return { rows, warnings };
   }
 
@@ -2922,6 +2930,8 @@
     if (!container) return;
     container.replaceChildren();
     const { rows, warnings } = collectDeadlines();
+    management?.restrictionAndDeadlines($('#management-priorities'), rows, warnings);
+    management?.render();
     const date = dateKey();
     const week = new Date(date + 'T12:00:00');
     week.setDate(week.getDate() + 7);
@@ -3072,8 +3082,7 @@
       const id = active();
       if (id) {
         editor.close();
-        if (!location.hash || location.hash === '#overview') renderDeadlines();
-        else if (location.hash === '#techcards') renderCards(id);
+        if (location.hash === '#techcards') renderCards(id);
         else if (location.hash === '#economy') renderEconomy(id);
         else if (location.hash === '#sales') renderSales();
         else if (location.hash === '#stock') renderStock(id);
@@ -3082,7 +3091,7 @@
         else if (location.hash === '#operations') renderOperations();
         else if (location.hash === '#launches') renderLaunches();
         else if (location.hash === '#suppliers') renderSuppliers(id);
-        else if (location.hash !== '#calendar') render(id);
+        else if (location.hash && !['#calendar', '#overview'].includes(location.hash)) render(id);
         window.dispatchEvent(new window.Event('panel-03:work-changed'));
       }
     } catch (problem) {

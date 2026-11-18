@@ -13,6 +13,7 @@
     'panel-03:financial-review': ['План-факт и разборы', ['plans', 'reviews']],
     'panel-03:point-operations': ['Визиты и случаи по точкам', ['plans', 'visits', 'incidents']],
     'panel-03:launches': ['Пилоты и запуск на точках', ['settings', 'projects']],
+    'panel-03:management': ['План управленческих улучшений', null],
     'panel-03:sales': ['Дневные продажи', null],
     'panel-03:stock': ['Списания и сверки', ['writeOffs', 'checks']],
     'panel-03:training': ['Обучение', ['team', 'skills', 'attempts', 'programs', 'clearances']],
@@ -235,7 +236,48 @@
       item.reviews.every((review, i) => review.date >= (item.reviews[i - 1]?.date || item.date) &&
         (!review.passed || (i === item.reviews.length - 1 && passed(review.observed, review.feedback)))));
   }
+  const improvementMetric = choices('revenue', 'food', 'margin', 'losses', 'quality', 'cases');
+  const comparisonPeriod = fields({ ...reportPeriod, to: date });
+  const evidenceSignature = value => text(value) && /^[0-9a-f]{16}$/.test(value);
+  const improvementEvidence = { value: number, detail: hasText, signature: evidenceSignature, basis: value => value === '' || evidenceSignature(value) };
+  const effectReview = fields({ ...improvementEvidence, period: comparisonPeriod, reached: boolean, date, note: hasText });
+  const improvement = item => identified({
+    pointId: hasText, metric: improvementMetric, period: comparisonPeriod, baseline: fields(improvementEvidence), target: number,
+    cause: hasText, task: hasText, owner: hasText, date, due: date, performed: nullable(fields({ date, result: hasText })), effect: nullable(effectReview)
+  })(item) && verifyImprovement(item);
+  function verifyImprovement(item) {
+    const { period, baseline, target, metric, performed, effect } = item;
+    const up = ['revenue', 'margin', 'quality'].includes(metric);
+    const validValue = value => {
+      if (metric === 'cases' || metric === 'losses') return nonNegativeInteger(value);
+      if (metric === 'revenue') return Number.isSafeInteger(value);
+      if (metric === 'quality') return percentage(value);
+      return metric === 'food' ? value >= 0 : value <= 1;
+    };
+    const validPeriod = scope => {
+      const start = new Date(scope.from + 'T12:00:00Z');
+      if (scope.kind === 'week') {
+        if (start.getUTCDay() !== 1) return false;
+        start.setUTCDate(start.getUTCDate() + 6);
+      } else {
+        if (start.getUTCDate() !== 1) return false;
+        start.setUTCMonth(start.getUTCMonth() + 1, 0);
+      }
+      return start.toISOString().slice(0, 10) === scope.to;
+    };
+    if (!validPeriod(period) || period.to >= item.date || item.due < item.date || !validValue(baseline.value) || !validValue(target) ||
+        (metric === 'quality' ? !baseline.basis : Boolean(baseline.basis)) ||
+        (up ? target <= baseline.value : target >= baseline.value)) return false;
+    if (performed && (performed.date < item.date || item.due <= performed.date)) return false;
+    if (!effect) return true;
+    const next = effect.period;
+    const duration = value => Date.parse(value.to) - Date.parse(value.from);
+    return performed && validPeriod(next) && next.kind === period.kind && duration(next) === duration(period) &&
+      next.from > performed.date && next.to < effect.date && validValue(effect.value) && baseline.basis === effect.basis &&
+      effect.reached === (up ? effect.value >= target : effect.value <= target);
+  }
   const schemas = {
+    'panel-03:management': array(improvement),
     'panel-03:launches': fields({ settings: array(pilotSetting), projects: array(launchProject) }),
     'panel-03:point-operations': fields({ plans: array(visitPlan), incidents: array(incident), visits: array(operationsVisit) }),
     'panel-03:financial-review': fields({ plans: array(financialPlan), reviews: array(financialReview) }),
@@ -348,6 +390,7 @@
       if (!exists(list, id)) throw Error('Нарушена связь «' + description + '».');
     };
     const network = records['panel-03:network'];
+    for (const item of records['panel-03:management'] || []) link(network?.points || [], item.pointId, 'Улучшение и точка');
     const launches = records['panel-03:launches'];
     if (launches) {
       const pointList = network?.points || [];

@@ -548,6 +548,14 @@
         guide.append(link);
         instruction.append(guide);
       }
+      if (window.panel03ManagementProgress) {
+        const guide = module('Управление по показателям');
+        guide.append(node('p', '', 'Начни с ограничений и просрочек в «Обзоре». Для сравнения выбери одну неделю или месяц и раскрой данные нужной точки. Назначь действие от исходного значения, зафиксируй выполнение и проверь тот же показатель за сопоставимый период.'));
+        const link = node('a', 'action', 'Открыть обзор сети');
+        link.href = '#overview';
+        guide.append(link);
+        instruction.append(guide);
+      }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
       function openMap(point) {
@@ -569,6 +577,7 @@
       const financial = window.panel03FinancialProgress?.();
       const operations = window.panel03OperationsProgress?.();
       const launches = window.panel03LaunchProgress?.();
+      const management = window.panel03ManagementProgress?.();
       const openings = data.points.map(point => ({ point, check: shifts?.get(point.id).opening }));
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
@@ -662,6 +671,12 @@
                       route.href = '#launches';
                       mission.append(node('p', '', launches.verified ? 'Уровень 7 · Эффект запуска на пилотной точке подтверждён' :
                         'Уровень 7 · Проведи пилот и проверь эффект первого ввода'), route);
+                      if (launches.verified && management) {
+                        const overview = node('a', 'action', 'Открыть обзор сети');
+                        overview.href = '#overview';
+                        mission.append(node('p', '', management.checked ? 'Уровень 8 · Проверена результативность управленческого действия' :
+                          'Уровень 8 · Выбери показатель и проверь эффект действия'), overview);
+                      }
                     }
                   }
                 }

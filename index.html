@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=25">
-  <link rel="stylesheet" href="./development.css?v=25">
+  <link rel="stylesheet" href="./quality.css?v=26">
+  <link rel="stylesheet" href="./development.css?v=26">
   <title>03 Работа</title>
   <style>
     :root {
@@ -278,6 +278,16 @@
     <section data-page="overview">
       <div class="page-heading"><h2>Обзор</h2><p class="quiet" id="today-label"></p></div>
       <div class="stack">
+        <section class="module stack" id="management-priorities" aria-label="Требует внимания"></section>
+        <p id="management-message" class="error" role="alert"></p>
+        <details class="module" id="management-comparison">
+          <summary>Сравнение точек</summary>
+          <div id="management-comparison-content" class="quality-details"></div>
+        </details>
+        <details class="module" id="management-actions">
+          <summary>План улучшений</summary>
+          <div id="management-actions-content" class="quality-details"></div>
+        </details>
         <section class="module stack" aria-label="Резервная копия Google">
           <h3>Google: копия и календарь</h3>
           <p id="google-overview-text" role="status">Проверяю состояние копии…</p>
@@ -716,7 +726,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=25"></script>
+  <script src="./backup.js?v=26"></script>
   <script>
     'use strict';
 
@@ -1062,15 +1072,16 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./team-readiness.js?v=25"></script>
-  <script src="./financial-review.js?v=25"></script>
-  <script src="./point-operations.js?v=25"></script>
-  <script src="./product-launch.js?v=25"></script>
-  <script src="./quality.js?v=25"></script>
-  <script src="./calendar-sync.js?v=25"></script>
-  <script src="./google-sync.js?v=25"></script>
-  <script src="./bar-menu.js?v=25"></script>
-  <script src="./bar-operations.js?v=25"></script>
-  <script src="./development.js?v=25"></script>
+  <script src="./team-readiness.js?v=26"></script>
+  <script src="./financial-review.js?v=26"></script>
+  <script src="./point-operations.js?v=26"></script>
+  <script src="./product-launch.js?v=26"></script>
+  <script src="./management.js?v=26"></script>
+  <script src="./quality.js?v=26"></script>
+  <script src="./calendar-sync.js?v=26"></script>
+  <script src="./google-sync.js?v=26"></script>
+  <script src="./bar-menu.js?v=26"></script>
+  <script src="./bar-operations.js?v=26"></script>
+  <script src="./development.js?v=26"></script>
 </body>
 </html>

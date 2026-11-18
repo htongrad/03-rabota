@@ -579,7 +579,19 @@
         status(item) === 'closed' ? 'Работа снова открыта' : incidentStates[status(item)];
     }
 
+    function restrictions() {
+      const { ledger, points } = read();
+      const byPoint = new Map(points.map(point => [point.id, point.name]));
+      return ledger.incidents.filter(item => item.impact !== 'observe' && status(item) !== 'closed')
+        .toSorted((a, b) => Number(b.impact === 'stopped') - Number(a.impact === 'stopped') ||
+          dueFor(a).localeCompare(dueFor(b))).map(item => ({
+          key: JSON.stringify(['point-incident', item.id]), section: 'point-operations', point: byPoint.get(item.pointId),
+          title: item.title, priority: impacts[item.impact], owner: item.owner, date: dueFor(item),
+          open: () => navigate(item.pointId, item.id)
+        }));
+    }
+
     window.panel03OperationsProgress = progress;
-    return { key, render, deadlines, openEquipmentCase, equipmentStatus };
+    return { key, render, deadlines, openEquipmentCase, equipmentStatus, restrictions };
   };
 })();
