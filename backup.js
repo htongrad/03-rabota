@@ -11,6 +11,7 @@
     'panel-03:techcards': ['Техкарты', null],
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:financial-review': ['План-факт и разборы', ['plans', 'reviews']],
+    'panel-03:point-operations': ['Визиты и случаи по точкам', ['plans', 'visits', 'incidents']],
     'panel-03:sales': ['Дневные продажи', null],
     'panel-03:stock': ['Списания и сверки', ['writeOffs', 'checks']],
     'panel-03:training': ['Обучение', ['team', 'skills', 'attempts', 'programs', 'clearances']],
@@ -150,7 +151,44 @@
     observed: financialNumbers, normative: financialNumbers,
     follow: nullable(fields({ title: hasText, owner: hasText, due: date, result: text }))
   })(item) && item.from <= item.to && item.to < item.date && (!item.follow || item.follow.due >= item.date);
+  const operationTopics = ['product', 'service', 'supplies', 'equipment'];
+  const visitCheck = fields({ category: choices(...operationTopics), state: choices('ok', 'issue', 'skip'), note: hasText, incidentId: text });
+  const operationsVisit = row => identified({
+    pointId: hasText, date, createdAt: recordedAt, kind: choices('regular', 'unscheduled'), incidentId: text,
+    reviewer: hasText, checks: array(visitCheck)
+  })(row) && Boolean(row.incidentId) === (row.kind === 'unscheduled') && row.checks.length === operationTopics.length &&
+    new Set(row.checks.map(item => item.category)).size === operationTopics.length &&
+    row.checks.every(item => Boolean(item.incidentId) === (item.state === 'issue'));
+  const visitPlan = identified({ first: date, baseVisitId: text, owner: hasText,
+    interval: value => Number.isInteger(value) && value >= 1 && value <= 90 });
+  const incidentRule = value => fields({ min: number, max: number, unit: hasText })(value) && value.min <= value.max;
+  const incidentCheck = fields({ date, who: hasText, proof: hasText, reading: nullable(number), passed: boolean, approval: text, calibrationId: text });
+  const incidentFollowUp = fields({ fixedOn: date, cause: hasText, work: hasText, acceptance: hasText, rule: nullable(incidentRule),
+    due: date, check: nullable(incidentCheck) });
+  const impact = choices('observe', 'limited', 'stopped');
+  const incident = row => identified({
+    pointId: hasText, kind: choices('complaint', 'failure', 'audit'), category: choices(...operationTopics, 'other'),
+    title: hasText, description: hasText, pattern: hasText, impact, approval: text, date, due: date, createdAt: recordedAt, owner: hasText,
+    deputy: boolean, deviceId: text, jobId: text, sampleId: text, fixes: array(incidentFollowUp),
+    priorImpacts: optional(array(fields({ impact, approval: text, changedOn: date }))),
+    visitPlan: optional(nullable(fields({ owner: hasText, due: date })))
+  })(row) && (row.impact === 'observe' || hasText(row.approval)) && row.due >= row.date && (!row.visitPlan || row.visitPlan.due >= row.date) &&
+    (!row.deviceId || row.category === 'equipment') && (!row.sampleId || row.category === 'supplies') && (!row.jobId || Boolean(row.deviceId)) &&
+    row.fixes.every((item, index, list) => {
+      const previous = list[index - 1];
+      if (previous && (!previous.check || previous.check.passed || item.fixedOn < previous.check.date)) return false;
+      if (item.fixedOn < row.date || item.due < item.fixedOn || (row.deviceId && !item.rule)) return false;
+      const check = item.check;
+      if (!check) return true;
+      if (check.date < item.fixedOn) return false;
+      if (item.rule) {
+        if (check.reading === null || check.passed !== (check.reading >= item.rule.min && check.reading <= item.rule.max)) return false;
+      } else if (check.reading !== null) return false;
+      if (check.passed) return (row.impact === 'observe' || hasText(check.approval)) && (!row.deviceId || Boolean(check.calibrationId));
+      return !check.calibrationId;
+    });
   const schemas = {
+    'panel-03:point-operations': fields({ plans: array(visitPlan), incidents: array(incident), visits: array(operationsVisit) }),
     'panel-03:financial-review': fields({ plans: array(financialPlan), reviews: array(financialReview) }),
     'panel-03:menu-plans': array(menuPlan),
     'panel-03:menu-changes': array(menuChange),
@@ -261,6 +299,42 @@
       if (!exists(list, id)) throw Error('Нарушена связь «' + description + '».');
     };
     const network = records['panel-03:network'];
+    const operations = records['panel-03:point-operations'];
+    if (operations) {
+      const pointList = network?.points || [];
+      const jobs = new Set();
+      for (const item of operations.plans) {
+        link(pointList, item.id, 'График визитов и точка');
+        if (item.baseVisitId && !operations.visits.some(visit => visit.id === item.baseVisitId && visit.pointId === item.id && visit.kind === 'regular')) {
+          throw Error('Нарушена связь «График и регулярный визит».');
+        }
+      }
+      for (const visit of operations.visits) {
+        link(pointList, visit.pointId, 'Визит и точка');
+        const pointIncidents = operations.incidents.filter(item => item.pointId === visit.pointId);
+        if (visit.incidentId) link(pointIncidents.filter(item => item.date <= visit.date), visit.incidentId, 'Внеплановый визит и случай');
+        for (const check of visit.checks) if (check.incidentId) {
+          link(pointIncidents.filter(item => item.category === check.category), check.incidentId, 'Отклонение визита и случай');
+        }
+      }
+      const calibrations = records['panel-03:bar-operations'] || [];
+      for (const item of operations.incidents) {
+        link(pointList, item.pointId, 'Случай и точка');
+        if (item.deviceId) link(equipment.devices, item.deviceId, 'Случай и оборудование');
+        if (item.jobId) {
+          link(equipment.jobs.filter(job => job.device === item.deviceId), item.jobId, 'Приёмка и обслуживание');
+          if (jobs.has(item.jobId)) throw Error('Для работы сохранено несколько приёмок.');
+          jobs.add(item.jobId);
+        }
+        if (item.sampleId) link(suppliers.samples.filter(sample => sample.kind === 'lot'), item.sampleId, 'Случай и партия');
+        for (const { fixedOn, check } of item.fixes) if (check?.calibrationId) {
+          const evidence = calibrations.find(row => row.id === check.calibrationId && row.type === 'calibration' &&
+            row.pointId === item.pointId && row.deviceId === item.deviceId && row.date >= fixedOn && row.date <= check.date &&
+            row.checks.length && row.checks.every(reading => reading.outcome === 'pass'));
+          if (!evidence) throw Error('Нарушена связь «Приёмка и проверка напитка».');
+        }
+      }
+    }
     const financial = records['panel-03:financial-review'];
     if (financial) for (const item of [...financial.plans, ...financial.reviews]) {
       if (item.pointId) link(network?.points || [], item.pointId, 'Разбор экономики и точка');

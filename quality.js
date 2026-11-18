@@ -2319,6 +2319,11 @@
         if (job.recheck) line(body, 'План перепроверки:', job.recheck + ' · ' + formatDate(job.next));
         line(body, 'Результат перепроверки:', job.recheckResult);
         body.append(equipmentAction('Изменить работу', 'Открывает сроки, статус и результат обслуживания.', () => openEquipmentJob(job)));
+        if (pointOperations && job.kind === 'issue') {
+          line(body, 'Операционная приёмка:', pointOperations.equipmentStatus(job));
+          body.append(equipmentAction('Открыть приёмку после ремонта', 'Связывает обслуживание с измеримой перепроверкой и проверкой напитка.',
+            () => pointOperations.openEquipmentCase(job, device)));
+        }
         jobsList.append(record);
       }
       for (const item of water) {
@@ -2707,7 +2712,18 @@
     el, heading, line, field, value, requireText, action, showEditor
   });
 
-  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', 'financial-review': 'Экономика', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const pointOperations = window.panel03PointOperations?.({
+    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, setActive
+  });
+
+  function renderOperations() {
+    const container = $('#operations-content');
+    if (!container || !pointOperations) return;
+    try { pointOperations.render(container); }
+    catch { container.replaceChildren(el('p', 'Не удалось открыть журнал работы точек.', 'error')); }
+  }
+
+  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', 'financial-review': 'Экономика', 'point-operations': 'Работа точек', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
   const deadlineFilter = { point: '', section: '' };
 
   function collectDeadlines() {
@@ -2831,6 +2847,9 @@
     });
     load('Экономика', () => {
       for (const row of financialReview?.deadlines() || []) rows.push(row);
+    });
+    load('Работа точек', () => {
+      for (const row of pointOperations?.deadlines() || []) rows.push(row);
     });
     return { rows, warnings };
   }
@@ -3045,6 +3064,7 @@
         else if (location.hash === '#stock') renderStock(id);
         else if (location.hash === '#training') renderTraining(id);
         else if (location.hash === '#equipment') renderEquipment(id);
+        else if (location.hash === '#operations') renderOperations();
         else if (location.hash === '#suppliers') renderSuppliers(id);
         else if (location.hash !== '#calendar') render(id);
         window.dispatchEvent(new window.Event('panel-03:work-changed'));
@@ -3066,7 +3086,7 @@
     }
     if (location.hash === '#stock' && [null, cardKey, economyKey, salesKey, stockKey].includes(event.key)) renderStock();
     if (location.hash === '#training' && [null, trainingKey, trainingPlansKey].includes(event.key)) renderTraining();
-    if (location.hash === '#equipment' && (event.key === null || event.key === equipmentKey)) renderEquipment();
+    if (location.hash === '#equipment' && [null, equipmentKey, pointOperations?.key].includes(event.key)) renderEquipment();
     if (location.hash === '#suppliers' && [null, suppliersKey, economyKey].includes(event.key)) renderSuppliers();
   });
   window.addEventListener('hashchange', () => {
@@ -3077,9 +3097,11 @@
     if (location.hash === '#training') renderTraining();
     if (location.hash === '#equipment') renderEquipment();
     if (location.hash === '#suppliers') renderSuppliers();
+    if (location.hash === '#operations') renderOperations();
   });
   window.addEventListener('panel-03:work-changed', () => {
     if (!location.hash || location.hash === '#overview') renderDeadlines();
+    if (location.hash === '#operations') renderOperations();
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && (!location.hash || location.hash === '#overview')) renderDeadlines();
@@ -3097,4 +3119,5 @@
   if (location.hash === '#training') renderTraining();
   if (location.hash === '#equipment') renderEquipment();
   if (location.hash === '#suppliers') renderSuppliers();
+  if (location.hash === '#operations') renderOperations();
 })();

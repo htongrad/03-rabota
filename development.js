@@ -528,6 +528,14 @@
         guide.append(link);
         instruction.append(guide);
       }
+      if (window.panel03OperationsProgress) {
+        const guide = module('Визиты, сбои и приёмка');
+        guide.append(node('p', '', 'Проверь напитки, сервис, сырьё и технику на визите. Запиши отклонение и срок. После исправления зафиксируй результат перепроверки. Для связанной неисправности открой приёмку из журнала оборудования и свяжи её с проверкой напитка.'));
+        const link = node('a', 'action', 'Открыть работу точек');
+        link.href = '#operations';
+        guide.append(link);
+        instruction.append(guide);
+      }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
       function openMap(point) {
@@ -547,6 +555,7 @@
       const menuReports = bar?.menu?.report(data.points);
       const teamReports = window.panel03TeamReadinessReport?.(data.points);
       const financial = window.panel03FinancialProgress?.();
+      const operations = window.panel03OperationsProgress?.();
       const openings = data.points.map(point => ({ point, check: shifts?.get(point.id).opening }));
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
@@ -571,6 +580,14 @@
           }
           if (financial?.length) barOverview.append(node('p', 'quiet', 'Экономика за прошлую неделю подтверждена на ' +
             financial.filter(item => item.ready).length + ' из ' + financial.length + ' точек.'));
+          if (operations?.length) {
+            const restricted = operations.filter(item => item.limited).length;
+            const overdue = operations.reduce((sum, item) => sum + item.overdue, 0);
+            barOverview.append(node('p', 'quiet', 'Точек с ограничениями: ' + restricted + ' · Просроченных случаев: ' + overdue));
+            const cases = node('a', 'action', 'Работа точек');
+            cases.href = '#operations';
+            barOverview.append(cases);
+          }
           barOverview.append(link);
         }
       }
@@ -616,6 +633,13 @@
                   economy.href = '#economy';
                   mission.append(node('p', '', needsReview ? 'Уровень 5 · Сверь экономику прошлой недели · ' + needsReview.point.name :
                     'Уровень 5 · Экономика прошлой недели подтверждена'), economy);
+                  if (!needsReview && operations?.length) {
+                    const needsVisit = operations.find(item => !item.ready);
+                    const link = node('a', 'action', 'Открыть работу точек');
+                    link.href = '#operations';
+                    mission.append(node('p', '', needsVisit ? 'Уровень 6 · Проверь визиты и открытые случаи · ' + needsVisit.point.name :
+                      'Уровень 6 · Рабочий цикл точек подтверждён'), link);
+                  }
                 }
               }
             }
