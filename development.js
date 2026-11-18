@@ -512,6 +512,14 @@
         guide.append(link);
         instruction.append(guide);
       }
+      if (window.panel03TeamReadinessReport) {
+        const guide = module('Обучение и допуск');
+        guide.append(node('p', '', 'Назначь сотруднику роль и, для стажировки, наставника. Сверь программу обязательных навыков, проведи практические проверки и запиши результаты. Допуск бариста и наставника подтверждает шеф-бариста после проверки программы.'));
+        const link = node('a', 'action', 'Открыть обучение');
+        link.href = '#training';
+        guide.append(link);
+        instruction.append(guide);
+      }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
       function openMap(point) {
@@ -529,6 +537,7 @@
       const confirmed = profile && versions.findLast(version => version.profileId === profile.id && JSON.stringify(version.visitIds) === visitIds);
       const shifts = bar?.shiftProgress(data.points);
       const menuReports = bar?.menu?.report(data.points);
+      const teamReports = window.panel03TeamReadinessReport?.(data.points);
       const openings = data.points.map(point => ({ point, check: shifts?.get(point.id).opening }));
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
@@ -547,6 +556,9 @@
             const ready = items.filter(item => item.ready).length;
             barOverview.append(node('p', 'quiet', 'Калибровки: ' + ready + ' из ' + items.length + ' известных порций по точкам.'));
             if (menuReports.some(item => !item.configured)) barOverview.append(node('p', 'quiet', 'Состав меню подтверждён не на всех точках.'));
+          }
+          if (teamReports?.length) {
+            barOverview.append(node('p', 'quiet', 'Команда подготовлена на ' + teamReports.filter(item => item.ready).length + ' из ' + teamReports.length + ' точек.'));
           }
           barOverview.append(link);
         }
@@ -579,7 +591,16 @@
             mission.append(node('p', '', 'Уровень 2 · Сменные проверки подтверждены'));
             if (nextMenu) mission.append(node('p', '', 'Уровень 3 · Подтверди воспроизводимость напитка'),
               button('Меню и калибровки · ' + nextMenu.point.name, () => openMap(nextMenu.point), true));
-            else if (menuReports?.length) mission.append(node('p', '', 'Уровень 3 · Все порции действующего меню подтверждены'));
+            else if (menuReports?.length) {
+              mission.append(node('p', '', 'Уровень 3 · Все порции действующего меню подтверждены'));
+              if (teamReports?.length) {
+                const pending = teamReports.find(item => !item.ready);
+                const link = node('a', 'action', 'Открыть обучение');
+                link.href = '#training';
+                mission.append(node('p', '', pending ? 'Уровень 4 · Сверь навыки и допуски · ' + pending.point.name :
+                  'Уровень 4 · Команда подготовлена'), link);
+              }
+            }
           }
         }
       } else if (ready) {
@@ -616,10 +637,13 @@
         showText(card, 'Управляющий', point.manager);
         showText(card, 'Меню напитков', point.menu);
         showText(card, 'Команда', listLabels(point.teamIds, team, item => item.name));
+        const readiness = teamReports?.find(item => item.point.id === point.id);
+        if (readiness) card.append(node('p', 'quiet', 'Подтверждено по роли: ' + readiness.confirmed + ' из ' + readiness.total +
+          (readiness.ready ? ' · Точка готова' : ' · Проверь состав и допуски')));
         showText(card, 'Оборудование', [listLabels(point.deviceIds, devices, item => item.model), point.equipmentNotes].filter(Boolean).join('\n'));
         const links = node('p');
         links.className = 'quality-actions';
-        for (const [href, text] of [['#techcards', 'Общий справочник напитков'], ['#quality', 'Журнал качества']]) {
+        for (const [href, text] of [['#techcards', 'Общий справочник напитков'], ['#quality', 'Журнал качества'], ['#training', 'Обучение']]) {
           const link = node('a', 'action', text);
           link.href = href;
           links.append(link);

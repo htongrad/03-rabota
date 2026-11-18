@@ -12,7 +12,7 @@
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:sales': ['Дневные продажи', null],
     'panel-03:stock': ['Списания и сверки', ['writeOffs', 'checks']],
-    'panel-03:training': ['Обучение', ['team', 'skills', 'attempts']],
+    'panel-03:training': ['Обучение', ['team', 'skills', 'attempts', 'programs', 'clearances']],
     'panel-03:training-plans': ['Планы проверок навыков', null],
     'panel-03:equipment': ['Оборудование и вода', ['devices', 'jobs', 'water']],
     'panel-03:suppliers': ['Сырьё и поставщики', ['suppliers', 'specs', 'samples']]
@@ -130,6 +130,13 @@
     new Set(value.rows.map(row => JSON.stringify([row.cardId, row.portionKey]))).size === value.rows.length;
   const menuChange = identified({ ...menuScope, pointId: hasText, date, createdAt: recordedAt,
     cause: choices('supplies', 'equipment'), note: hasText });
+  const role = choices('trainee', 'barista', 'mentor');
+  const uniqueIds = value => array(hasText)(value) && value.length > 0 && new Set(value).size === value.length;
+  const trainingProgram = identified({ role, skillIds: uniqueIds, date, createdAt: recordedAt });
+  const clearance = identified({
+    personId: hasText, programId: hasText, assignmentId: optional(hasText), point: hasText, approver: hasText,
+    date, createdAt: recordedAt, attemptIds: uniqueIds
+  });
   const schemas = {
     'panel-03:menu-plans': array(menuPlan),
     'panel-03:menu-changes': array(menuChange),
@@ -163,12 +170,16 @@
     }),
     'panel-03:training-plans': array(identified({ personId: hasText, skillId: hasText, requiredVersion: value => Number.isSafeInteger(value) && value > 0, owner: hasText, due: date })),
     'panel-03:training': fields({
-      team: array(identified({ name: text, point: text })),
-      skills: array(item => identified({ version: number, requiredVersion: optional(Number.isSafeInteger), name: text, task: text,
+      team: array(identified({
+        name: text, point: text, role: optional(value => value === '' || role(value)), mentorId: optional(text), assignmentId: optional(hasText)
+      })),
+      programs: optional(array(trainingProgram)),
+      clearances: optional(array(clearance)),
+      skills: array(item => identified({ version: number, requiredVersion: optional(Number.isSafeInteger), changedOn: optional(date), name: text, task: text,
         criteria: array(templateCriterion) })(item) &&
         (item.requiredVersion === undefined || (item.requiredVersion > 0 && item.requiredVersion <= item.version))),
       attempts: array(identified({ personId: text, skillId: text, version: number, skill: text, task: text, date,
-        point: text, reviewer: text, independent: boolean, passed: boolean, results: array(performance), feedback: text, exercise: text, next: maybeDate }))
+        point: text, reviewer: text, reviewerId: optional(hasText), independent: boolean, passed: boolean, results: array(performance), feedback: text, exercise: text, next: maybeDate }))
     }),
     'panel-03:equipment': fields({
       devices: array(identified({ point: text, kind: choices('machine', 'grinder', 'water'), model: text, serial: text, owner: text })),
@@ -197,7 +208,7 @@
 
   function collections(key, value) {
     if (keyKind(key) === 'event' || keyKind(key) === 'quality') return [[value]];
-    return groups[key][1] ? groups[key][1].map(name => value[name]) : [value];
+    return groups[key][1] ? groups[key][1].map(name => value[name] ?? []) : [value];
   }
 
   function recordId(key, item) { return key === 'panel-03:economy' && Object.hasOwn(item, 'key') ? item.key : item.id; }
@@ -306,6 +317,24 @@
     for (const item of training.attempts) {
       link(training.team, item.personId, 'Бариста и попытка');
       link(training.skills, item.skillId, 'Навык и попытка');
+      if (item.reviewerId) link(training.team, item.reviewerId, 'Проверка и наставник');
+    }
+    for (const person of training.team) {
+      if (person.mentorId === person.id) throw Error('Сотрудник не может назначить наставником себя.');
+      if (person.mentorId) link(training.team, person.mentorId, 'Сотрудник и наставник');
+    }
+    const programs = training.programs || [];
+    for (const program of programs) for (const id of program.skillIds) link(training.skills, id, 'Программа роли и навык');
+    for (const item of training.clearances || []) {
+      link(training.team, item.personId, 'Допуск и сотрудник');
+      const program = programs.find(entry => entry.id === item.programId);
+      const attempts = item.attemptIds.map(id => training.attempts.find(entry => entry.id === id));
+      const valid = program && program.role !== 'trainee' && program.date <= item.date && attempts.length === program.skillIds.length &&
+        attempts.every(attempt => attempt && attempt.personId === item.personId && attempt.date <= item.date &&
+          attempt.passed && attempt.independent && attempt.results.length &&
+          attempt.results.every(check => check.passed)) &&
+        program.skillIds.every(id => attempts.some(attempt => attempt.skillId === id));
+      if (!valid) throw Error('Нарушена связь «Допуск, программа и практические проверки».');
     }
     for (const item of equipment.jobs) link(equipment.devices, item.device, 'Обслуживание и паспорт');
     for (const item of equipment.water) {
@@ -363,7 +392,10 @@
       } else if (keyKind(key) === 'event' || keyKind(key) === 'quality') {
         retained++;
       } else if (groups[key][1]) {
-        for (const name of groups[key][1]) records[key][name] = join(key, records[key][name], value[name]);
+        for (const name of groups[key][1]) {
+          const previous = records[key][name];
+          if (previous || value[name]) records[key][name] = join(key, previous || [], value[name] || []);
+        }
       } else records[key] = join(key, records[key], value);
     }
     validate(records);

@@ -1576,11 +1576,21 @@
     return { raw, data: raw === null ? { team: [], skills: [starterSkill], attempts: [] } : JSON.parse(raw) };
   }
 
-  function writeTraining(snapshot, group, item) {
+  function writeTrainingData(snapshot, data) {
     if (localStorage.getItem(trainingKey) !== snapshot.raw) throw Error('Данные обучения изменились в другой вкладке. Открой форму заново.');
-    const updated = snapshot.data[group].filter(row => row.id !== item.id);
-    localStorage.setItem(trainingKey, JSON.stringify({ ...snapshot.data, [group]: [...updated, item] }));
+    window.panel03Backup?.validate({ [trainingKey]: data });
+    localStorage.setItem(trainingKey, JSON.stringify(data));
   }
+
+  function writeTraining(snapshot, group, item) {
+    const updated = snapshot.data[group].filter(row => row.id !== item.id);
+    writeTrainingData(snapshot, { ...snapshot.data, [group]: [...updated, item] });
+  }
+
+  const teamReadiness = window.panel03TeamReadiness?.({
+    readTraining, writeData: writeTrainingData, starterSkill, el, line, heading, field, value, requireText,
+    dateKey, formatDate, showEditor, trainingAction
+  });
 
   const trainingPlansKey = 'panel-03:training-plans';
   const minimumSkillVersion = skill => skill.requiredVersion ?? skill.version;
@@ -1597,12 +1607,12 @@
     return attempts.find(item => item.skillId === skill.id);
   }
 
-  function scheduleSkill(snapshot, plans, person, skill, prior) {
+  function scheduleSkill(snapshot, plans, person, skill, prior, automatic = '') {
     const plan = currentTrainingPlan(plans, person, skill);
     showEditor('Назначить проверку навыка', body => {
       body.append(heading(person.name + ' · ' + skill.name, 'Проверка проводится по действующей версии требований.'));
-      const owner = field('Ответственный', 'Кто проведёт практическую проверку.', { value: plan?.owner || prior?.reviewer });
-      const due = field('Срок', 'Когда провести проверку.', { type: 'date', value: plan?.due || prior?.next || dateKey() });
+      const owner = field('Ответственный', 'Кто проведёт практическую проверку.', { value: plan?.owner || snapshot.data.team.find(item => item.id === person.mentorId && item.role === 'mentor')?.name || prior?.reviewer });
+      const due = field('Срок', 'Когда провести проверку.', { type: 'date', value: plan?.due || automatic || prior?.next || dateKey() });
       body.append(owner.wrapper, due.wrapper);
       return () => {
         const deadline = value(due);
@@ -1628,8 +1638,10 @@
       const name = field('Имя или рабочий псевдоним', 'Укажи имя или псевдоним, по которому однозначно находишь бариста.', { value: previous?.name });
       const point = field('Точка', 'Текущая кофейня бариста. При переводе измени точку в карточке. В прошлых попытках сохранится место проверки.', { value: previous?.point });
       body.append(name.wrapper, point.wrapper);
+      const readRole = teamReadiness?.memberFields(body, snapshot, previous);
       return () => {
-        const person = { id: previous?.id ?? crypto.randomUUID(), name: requireText(name), point: requireText(point) };
+        const person = { ...previous, id: previous?.id ?? crypto.randomUUID(), name: requireText(name), point: requireText(point), ...readRole?.() };
+        if (!person.role) delete person.assignmentId;
         if (snapshot.data.team.some(item => item.id !== person.id && normalized(item.name) === normalized(person.name) && normalized(item.point) === normalized(person.point))) {
           throw Error('В этой точке уже есть бариста с таким именем. Укажи отличающийся рабочий псевдоним.');
         }
@@ -1645,6 +1657,7 @@
       const name = field('Название навыка', 'Коротко назови действие, которое проверяется на практике.', { value: previous?.name });
       const task = field('Практическое задание и условия', 'Опиши, что должен сделать бариста, что ему доступно и в каких условиях проходит проверка.', { multiline: true, value: previous?.task });
       body.append(name.wrapper, task.wrapper);
+      if (previous) teamReadiness?.reviewImpact(body, snapshot.data, previous);
       const criteria = repeatedFields(body, previous?.criteria ?? [], {
         item: 'Обязательный критерий', add: 'критерий', remove: 'критерий',
         addHelp: 'Добавляет обязательный результат. Для подтверждения навыка нужно выполнить каждый критерий.',
@@ -1670,7 +1683,9 @@
         const requirementsChanged = !previous || previous.task !== instruction ||
           JSON.stringify(previous.criteria) !== JSON.stringify(rules);
         const requiredVersion = requirementsChanged ? version : minimumSkillVersion(previous);
-        const skill = { id: previous?.id ?? crypto.randomUUID(), version, requiredVersion, name: title, task: instruction, criteria: rules };
+        const changedOn = requirementsChanged ? dateKey() : previous.changedOn;
+        const skill = { id: previous?.id ?? crypto.randomUUID(), version, requiredVersion, name: title, task: instruction, criteria: rules,
+          ...(changedOn ? { changedOn } : {}) };
         writeTraining(snapshot, 'skills', skill);
         return skill.id;
       };
@@ -1814,9 +1829,12 @@
     showEditor('Практическая проверка', body => {
       line(body, 'Бариста:', person.name);
       line(body, 'Задание:', skill.task);
-      const date = dateField('Дата проверки', 'Фактическая дата попытки.');
+      const date = dateField('Дата проверки', 'Фактическая дата попытки по действующим на тот день требованиям.');
+      date.control.max = dateKey();
+      if (skill.changedOn) date.control.min = skill.changedOn;
       const point = field('Точка проверки', 'Укажи место, где прошла попытка.', { value: person.point });
-      const reviewer = field('Проверяющий', 'Укажи имя или рабочий псевдоним человека, который наблюдал попытку.');
+      const mentor = snapshot.data.team.find(item => item.id === person.mentorId && item.role === 'mentor');
+      const reviewer = field('Проверяющий', 'Укажи имя или рабочий псевдоним человека, который наблюдал попытку.', { value: mentor?.name });
       const independent = field('Выполнено без подсказок', 'Подтверждение требует самостоятельной работы и выполнения каждого обязательного критерия.', {
         choices: { '': 'Выбери вариант', yes: 'Да', no: 'Нет' }
       });
@@ -1841,7 +1859,10 @@
       return () => {
         const day = value(date);
         const retest = value(next);
-        if (!dateIsValid(day) || (retest && (!dateIsValid(retest) || retest < day))) throw Error('Укажи корректные даты. Перепроверка не может быть раньше попытки.');
+        if (!dateIsValid(day) || day > dateKey() || (skill.changedOn && day < skill.changedOn) ||
+            (retest && (!dateIsValid(retest) || retest < day))) {
+          throw Error('Дата попытки должна соответствовать действующим требованиям, а дата перепроверки — быть в этот день или позже.');
+        }
         const unaided = requireText(independent) === 'yes';
         const results = checks.map(check => check.read());
         const passed = unaided && results.every(item => item.passed);
@@ -1849,6 +1870,7 @@
         const row = {
           id: crypto.randomUUID(), personId: person.id, skillId: skill.id, version: skill.version,
           skill: skill.name, task: skill.task, date: day, point: requireText(point), reviewer: requireText(reviewer),
+          ...(mentor && value(reviewer) === mentor.name ? { reviewerId: mentor.id } : {}),
           independent: unaided, passed, results, feedback: value(feedback),
           exercise: passed ? value(exercise) : requireText(exercise), next: retest
         };
@@ -1903,6 +1925,8 @@
       const snapshot = readTraining();
       const { data } = snapshot;
       const plans = trainingPlans();
+      const programList = $('#training-programs');
+      if (teamReadiness && programList) teamReadiness.renderPrograms(programList, snapshot, renderTraining);
       if (!data.team.length) teamList.append(el('p', 'Карточек бариста пока нет.', 'quiet'));
       for (const person of data.team) {
         const record = el('details', '', 'module quality-record');
@@ -1910,20 +1934,25 @@
         record.open = opened.has(person.id);
         record.append(el('summary', person.name + ' · ' + person.point));
         const body = el('div', '', 'quality-details');
-        body.append(trainingAction('Изменить карточку', 'Открывает имя и текущую точку для правки.', () => openTeamMember(person)));
-        const attempts = data.attempts.filter(item => item.personId === person.id).reverse().sort((a, b) => b.date.localeCompare(a.date));
-        for (const skill of data.skills) {
-          const latest = latestTrainingAttempt(attempts, skill);
+        body.append(trainingAction('Изменить карточку', 'Открывает имя, точку, роль и наставника для правки.', () => openTeamMember(person)));
+        const readiness = teamReadiness?.statesFor(data, person, dateKey());
+        if (readiness) teamReadiness.memberSummary(body, snapshot, readiness);
+        const attempts = readiness?.history || data.attempts.filter(item => item.personId === person.id).reverse().sort((a, b) => b.date.localeCompare(a.date));
+        const states = readiness?.states || data.skills.map(skill => ({ skill, attempt: latestTrainingAttempt(attempts, skill) }));
+        for (const item of states) {
+          const { skill, attempt: latest } = item;
+          if (person.role && !item.required && !latest && !currentTrainingPlan(plans, person, skill)) continue;
           const row = el('section', '', 'quality-criterion');
           const stale = latest && latest.version < minimumSkillVersion(skill);
           const state = !latest ? 'Не проверен' : stale ? 'Нужна проверка по новой версии' : latest.passed ? 'Подтверждён' : 'На отработке';
-          line(row, skill.name + ':', state);
+          line(row, skill.name + ':', state + (item.required ? ' · Обязательный' : ''));
           if (latest?.version !== undefined && latest.version !== skill.version) line(row, 'Проверен по шаблону:', 'версия ' + latest.version);
           if (!latest || stale) {
             const plan = currentTrainingPlan(plans, person, skill);
             if (plan) line(row, 'План проверки:', plan.owner + ' · ' + formatDate(plan.due));
-            row.append(trainingAction('Назначить проверку', 'Добавляет ответственного и срок в календарь рабочих действий.',
-              () => scheduleSkill(snapshot, plans, person, skill, latest)));
+            else if (item.due) line(row, 'Срок перепроверки по новой версии:', formatDate(item.due));
+            row.append(trainingAction('Назначить проверку', 'Добавляет или меняет ответственного и срок в календаре рабочих действий.',
+              () => scheduleSkill(snapshot, plans, person, skill, latest, item.due)));
           } else if (latest.next) line(row, 'Перепроверка:', formatDate(latest.next));
           row.append(trainingAction('Проверить навык', 'Добавляет практическую попытку для этого бариста и навыка.', () => pickTraining(person.id, skill.id)));
           body.append(row);
@@ -1942,6 +1971,7 @@
         record.append(el('summary', skill.name + ' · версия ' + skill.version));
         const body = el('div', '', 'quality-details');
         line(body, 'Задание:', skill.task);
+        teamReadiness?.reviewImpact(body, data, skill);
         for (const criterion of skill.criteria) line(body, criterion.name + ':', criterion.rule.type === 'recipe' ? 'выбирается числовой критерий действующей техкарты' : ruleLabel(criterion.rule));
         body.append(trainingAction('Изменить шаблон', 'Меняет условия для будущих попыток. Прошлые записи сохраняют прежние критерии.', () => openSkill(skill)));
         record.append(body);
@@ -2684,21 +2714,25 @@
       const { data } = snapshot;
       const plans = trainingPlans();
       for (const person of data.team) {
-        for (const skill of data.skills) {
-          const attempts = data.attempts.filter(item => item.personId === person.id && item.skillId === skill.id)
-            .reverse().sort((a, b) => b.date.localeCompare(a.date));
-          const last = attempts[0];
+        const status = teamReadiness?.statesFor(data, person, dateKey());
+        const attempts = status?.history || data.attempts.filter(item => item.personId === person.id)
+          .reverse().sort((a, b) => b.date.localeCompare(a.date));
+        const states = status?.states || data.skills.map(skill => ({ skill, attempt: latestTrainingAttempt(attempts, skill) }));
+        for (const item of states) {
+          const { skill, attempt: last } = item;
           const needsCurrent = !last || last.version < minimumSkillVersion(skill);
           if (!needsCurrent && last.passed && !last.next) continue;
           const plan = needsCurrent ? currentTrainingPlan(plans, person, skill) : null;
+          if (person.role && !item.required && !plan && (!last || last.passed && (needsCurrent || !last.next))) continue;
+          const mentor = status?.mentor;
           rows.push({
             key: JSON.stringify(['training', person.id, skill.id]),
-            section: 'training', point: person.point, owner: plan?.owner || last?.reviewer || '',
-            date: plan?.due || last?.next || '', title: person.name + ' · ' + skill.name,
+            section: 'training', point: person.point, owner: plan?.owner || mentor?.name || last?.reviewer || '',
+            date: plan?.due || item.due || last?.next || '', title: person.name + ' · ' + skill.name,
             detail: needsCurrent ? 'Проверить навык по действующим требованиям' : last.exercise || 'Повторная проверка подтверждённого навыка',
             route: 'training', id: person.id, selector: '[data-training-id]',
             schedule: () => {
-              if (needsCurrent) scheduleSkill(snapshot, plans, person, skill, last);
+              if (needsCurrent) scheduleSkill(snapshot, plans, person, skill, last, item.due);
               else editDeadline('Дата повторной проверки', last.next, date => {
                 writeTraining(snapshot, 'attempts', { ...last, next: date });
               }, last.date);
@@ -2926,7 +2960,7 @@
   $('#suppliers-start')?.append(supplierAction('Добавить поставщика', 'Создаёт карточку с рабочим контактом и связанным сырьём.', () => openSupplier(), 'action primary'));
   $('#suppliers-sample-start')?.append(supplierAction('Записать пробу', 'Открывает проверку одной партии или образца по требованиям закупочной позиции.', pickSample, 'action primary'));
   $('#economy-suppliers-link')?.after(help('Сырьё и поставщики', 'Открывает контакты, требования к сырью и журнал проб.'));
-  $('#training-team-start')?.append(trainingAction('Добавить бариста', 'Создаёт личную карточку с точкой и историей проверок.', () => openTeamMember(), 'action primary'));
+  $('#training-team-start')?.append(trainingAction('Добавить бариста', 'Создаёт карточку сотрудника с точкой, ролью, наставником и историей проверок.', () => openTeamMember(), 'action primary'));
   $('#training-skill-start')?.append(trainingAction('Новый навык', 'Создаёт шаблон задания и обязательных критериев.', () => openSkill(), 'action primary'));
   $('#economy-stock-link')?.after(help('Списания и сверка', 'Открывает журнал расхода вне продаж и сверку по остаткам.'));
   $('#economy-sales-link')?.after(help('Продажи и отчёт', 'Показывает выручку, прямую себестоимость, фудкост и маржинальность по точкам и периодам.'));
