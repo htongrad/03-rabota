@@ -5,6 +5,7 @@
     'panel-03:network': ['Развитие и точки', ['profiles', 'points']],
     'panel-03:precision-visits': ['Первичная диагностика', null],
     'panel-03:network-baselines': ['Исходные картины сети', null],
+    'panel-03:bar-operations': ['Сменные проверки и калибровки', null],
     'panel-03:techcards': ['Техкарты', null],
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:sales': ['Дневные продажи', null],
@@ -91,7 +92,33 @@
         (!check.action.closed || (value.confirmed && check.action.closed.date >= value.date)))) &&
       (!value.confirmed || (check.state && check.note.trim() && (check.state !== 'issue' || check.action)))
     );
+  const barAction = fields({ title: hasText, owner: hasText, due: date, closed: nullable(fields({ date, result: hasText })) });
+  const shiftCore = {
+    opening: ['Станция и чистота', 'Аллергены', 'Техника и вода', 'Сырьё и доступность меню'],
+    closing: ['Станция и чистота', 'Техника и вода', 'Остатки и передача смены']
+  };
+  const barCheck = value => fields({
+    name: hasText, rule: nullable(rule), outcome: choices('pass', 'fail', 'unchecked'), amount: nullable(number), note: text
+  })(value) && (value.rule?.type === 'numeric' && value.amount !== null
+    ? value.outcome === (value.amount >= value.rule.min && value.amount <= value.rule.max ? 'pass' : 'fail')
+    : value.amount === null && hasText(value.note) && (value.rule?.type !== 'numeric' || value.outcome === 'unchecked'));
+  const barOperation = value => identified({
+    pointId: hasText, date, createdAt: item => text(item) && Number.isFinite(Date.parse(item)), author: hasText,
+    checks: array(barCheck), action: nullable(barAction)
+  })(value) && value.checks.length > 0 &&
+    (value.checks.every(check => check.outcome === 'pass') ? value.action === null :
+      value.action && value.action.due >= value.date && (!value.action.closed || value.action.closed.date >= value.date)) &&
+    (value.type === 'shift'
+      ? fields({ phase: choices('opening', 'closing'), template: choices(1) })(value) &&
+        shiftCore[value.phase].every((name, index) => value.checks[index]?.name === name) &&
+        value.checks.every(check => check.rule === null) &&
+        new Set(value.checks.map(check => check.name.toLocaleLowerCase('ru'))).size === value.checks.length
+      : fields({
+        type: choices('calibration'), cardId: hasText, version: Number.isSafeInteger, portion: index => Number.isSafeInteger(index) && index >= 0,
+        deviceId: text, batch: hasText, sampleId: text, attemptId: text, adjustment: hasText
+      })(value) && Boolean(value.sampleId) === Boolean(value.attemptId) && value.checks.every(check => check.rule !== null));
   const schemas = {
+    'panel-03:bar-operations': array(barOperation),
     'panel-03:precision-visits': array(diagnosticVisit),
     'panel-03:network-baselines': array(identified({
       date, profileId: hasText, visitIds: value => array(hasText)(value) && value.length > 0 && new Set(value).size === value.length,
@@ -203,6 +230,25 @@
       const baselineVisits = baseline.visitIds.map(id => fieldVisits.find(visit => visit.id === id && visit.confirmed));
       if (baselineVisits.some(visit => !visit) || new Set(baselineVisits.map(visit => visit.pointId)).size !== baselineVisits.length) {
         throw Error('Нарушена связь «Исходная картина и визиты».');
+      }
+    }
+    for (const record of records['panel-03:bar-operations'] || []) {
+      link(network?.points || [], record.pointId, 'Проверка бара и точка');
+      if (record.type !== 'calibration') continue;
+      const card = catalog.find(item => item.id === record.cardId);
+      const version = card?.versions.find(item => item.number === record.version && item.effective <= record.date);
+      const criteria = version?.portions[record.portion]?.criteria;
+      const sameRule = (a, b) => a.type === b.type && (a.type === 'numeric'
+        ? a.min === b.min && a.max === b.max && a.unit === b.unit : a.expected === b.expected);
+      if (!criteria || criteria.length !== record.checks.length ||
+          record.checks.some(({ name, rule }, index) => name !== criteria[index].name || !sameRule(rule, criteria[index].rule))) {
+        throw Error('Нарушена связь «Калибровка и редакция техкарты».');
+      }
+      if (record.deviceId) link(equipment.devices, record.deviceId, 'Калибровка и оборудование');
+      if (record.sampleId) {
+        const sample = suppliers.samples.find(item => item.id === record.sampleId && item.kind === 'lot');
+        const approved = sample?.attempts.some(item => item.id === record.attemptId && item.decision === 'approved' && item.date <= record.date);
+        if (!approved) throw Error('Нарушена связь «Калибровка и приёмка партии».');
       }
     }
     for (const item of economy.links) {

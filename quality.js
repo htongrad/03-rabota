@@ -2615,7 +2615,7 @@
     }
   }
 
-  const deadlineSections = { diagnostics: 'Первичная диагностика', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
   const deadlineFilter = { point: '', section: '' };
 
   function collectDeadlines() {
@@ -2729,6 +2729,9 @@
     });
     load('Первичная диагностика', () => {
       for (const row of window.panel03DiagnosticDeadlines?.() || []) rows.push(row);
+    });
+    load('Проверки бара', () => {
+      for (const row of window.panel03BarDeadlines?.() || []) rows.push(row);
     });
     return { rows, warnings };
   }
@@ -2853,7 +2856,7 @@
       }));
       body.append(action('Перенести дату', 'Изменяет срок в исходной записи, календаре и обзоре.', () => {
         try {
-          if (row.section === 'diagnostics') editor.close();
+          if (row.section === 'diagnostics' || row.separateEditor) editor.close();
           row.schedule();
         } catch { error.textContent = 'Запись недоступна. Обнови календарь.'; error.hidden = false; }
       }));

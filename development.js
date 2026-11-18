@@ -6,6 +6,7 @@
   const baselineKey = 'panel-03:network-baselines';
   const page = document.getElementById('development-content');
   const instruction = document.getElementById('instruction-role');
+  const barOverview = document.getElementById('bar-overview');
   if (!page || !instruction) return;
 
   const fresh = () => ({ profiles: [], points: [] });
@@ -477,12 +478,39 @@
     return card;
   }
 
+  let focusedBarRecord = '';
+  const bar = window.panel03BarOperations?.({
+    read, edit, node, button, module, field, explain, today,
+    openRecord(pointId, id) {
+      selectedPoint = pointId;
+      focusedBarRecord = id;
+      showMap = true;
+      if (location.hash !== '#development') location.hash = '#development';
+      else render();
+      setTimeout(() => {
+        const detail = [...page.querySelectorAll('[data-bar-record]')].find(item => item.dataset.barRecord === id);
+        detail?.scrollIntoView?.({ block: 'start' });
+        detail?.querySelector('summary')?.focus({ preventScroll: true });
+      }, 0);
+    }
+  });
+  window.panel03BarDeadlines = bar?.deadlines;
+
   function render() {
     try {
       const baseline = localStorage.getItem(key) ?? '';
       const data = baseline ? JSON.parse(baseline) : fresh();
       const profile = getProfile(data);
       instruction.replaceChildren(profileCard(profile, baseline, data));
+      if (bar) {
+        const guide = module('Готовность смены и качество напитков');
+        guide.append(node('p', '', 'Записывай открытие и закрытие в карточке точки. Сверяй каждый пункт с процедурой и указывай факт. При отклонении или пропуске назначь срок перепроверки.'),
+          node('p', '', 'Для калибровки выбери напиток, порцию и дату, зафиксируй партию и условия. Сопоставь результат с техкартой. После изменения рецепта проведи новую проверку.'));
+        const link = node('a', 'action', 'Открыть карту сети');
+        link.href = '#development';
+        guide.append(link);
+        instruction.append(guide);
+      }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
       function openMap(point) {
@@ -498,6 +526,21 @@
       const ready = latest.length > 0 && latest.every(item => item.point.reviewed && item.visit);
       const visitIds = ready ? JSON.stringify(latest.map(item => item.visit.id).sort()) : '';
       const confirmed = profile && versions.findLast(version => version.profileId === profile.id && JSON.stringify(version.visitIds) === visitIds);
+      const openingChecks = bar?.todayOpenings();
+      if (barOverview) {
+        barOverview.hidden = !bar || !data.points.length;
+        if (!barOverview.hidden) {
+          const checks = data.points.map(point => openingChecks.get(point.id)).filter(Boolean);
+          const confirmed = checks.filter(bar.passed).length;
+          const needsAttention = checks.length - confirmed;
+          const missing = data.points.length - checks.length;
+          const link = node('a', 'action', 'Открыть карту сети');
+          link.href = '#development';
+          barOverview.replaceChildren(node('h3', '', 'Готовность бара сегодня'),
+            node('p', '', 'Подтверждено ' + confirmed + ' из ' + data.points.length),
+            node('p', 'quiet', 'Требуют внимания: ' + needsAttention + ' · Без проверки: ' + missing), link);
+        }
+      }
       const next = data.points.find(point => !point.reviewed);
       const undiagnosed = data.points.find(point => point.reviewed && !visits.some(visit => visit.pointId === point.id && visit.confirmed));
       const mission = module('Следующее действие');
@@ -516,6 +559,13 @@
           }, true));
       } else if (confirmed) {
         mission.append(node('p', '', 'Уровень 1 · Исходная картина сети подтверждена'), node('p', 'quiet', 'Открытые действия видны в рабочих сроках.'));
+        if (bar) {
+          const openings = data.points.map(point => ({ point, check: openingChecks.get(point.id) }));
+          const nextOpening = openings.find(({ check }) => !check || !bar.passed(check));
+          const nextPoint = nextOpening?.point || data.points[0];
+          mission.append(node('p', '', nextOpening ? 'Уровень 2 · Проверь готовность бара' : 'Уровень 3 · Подтверди воспроизводимость напитка'),
+            button((nextOpening ? 'Сменные проверки · ' : 'Калибровки · ') + nextPoint.name, () => openMap(nextPoint), true));
+        }
       } else if (ready) {
         mission.append(node('p', '', 'Миссия 1.4 · Подведи итоги по исходной картине сети'),
           button('Подтвердить исходную картину', () => confirmBaseline(profile, latest, diagnosticsRaw, baseline), true));
@@ -536,6 +586,15 @@
       const point = showMap && data.points.find(item => item.id === selectedPoint);
       const picture = initialPicture(latest, visits, versions, confirmed);
       const panels = picture ? [mission, map, picture] : [mission, map];
+      if (bar && data.points.length) {
+        const openings = module('Готовность к работе сегодня');
+        explain(openings, 'Статус каждой точки основан на последней проверке открытия за сегодня. Открой точку, чтобы увидеть журнал и действия.');
+        for (const item of data.points) {
+          const check = openingChecks.get(item.id);
+          openings.append(button(item.name + ' · ' + bar.status(check), () => openMap(item)));
+        }
+        panels.splice(1, 0, openings);
+      }
       if (point) {
         const card = module(point.name);
         showText(card, 'Управляющий', point.manager);
@@ -550,11 +609,13 @@
           links.append(link);
         }
         card.append(links, button('Заполнить карточку', () => editPoint(baseline, data, point, team, devices), true));
+        if (bar) card.append(bar.pointSection(point, focusedBarRecord));
         visitHistory(card, point, visits);
         panels.splice(1, 0, card);
       }
       page.replaceChildren(...panels);
     } catch (error) {
+      if (barOverview && !barOverview.hidden) barOverview.replaceChildren(node('p', 'error', 'Сведения о готовности бара недоступны.'));
       page.replaceChildren(node('p', 'error', 'Не удалось открыть карту сети: ' + error.message));
     }
   }
@@ -563,6 +624,9 @@
     if (event.key === null || [key, visitKey, baselineKey, 'panel-03:training', 'panel-03:equipment'].includes(event.key)) render();
   });
   window.addEventListener('hashchange', render);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && ['', '#development', '#overview'].includes(location.hash)) render();
+  });
   window.addEventListener('panel-03:work-changed', render);
   window.dispatchEvent(new Event('panel-03:work-changed'));
 })();

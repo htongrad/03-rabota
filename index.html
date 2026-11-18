@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=19">
-  <link rel="stylesheet" href="./development.css?v=19">
+  <link rel="stylesheet" href="./quality.css?v=20">
+  <link rel="stylesheet" href="./development.css?v=20">
   <title>03 Работа</title>
   <style>
     :root {
@@ -289,6 +289,7 @@
             <button type="button" id="google-overview-open" class="action">Настройки Google</button>
           </div>
         </section>
+        <section class="module stack" id="bar-overview" aria-label="Готовность бара" hidden></section>
         <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
         <section class="module"><h3>Сегодня</h3><div id="events-today"></div></section>
         <section class="module"><h3>До конца недели</h3><div id="events-week"></div></section>
@@ -438,7 +439,7 @@
       </div>
     </section>
     <section data-page="development" hidden>
-      <div class="page-heading"><h2>Развитие</h2><p class="quiet">Уровень 1 · Карта направления</p></div>
+      <div class="page-heading"><h2>Развитие</h2><p class="quiet">Карта направления и рабочие миссии</p></div>
       <div id="development-content" class="stack"></div>
     </section>
     <section data-page="instruction" hidden>
@@ -448,7 +449,7 @@
         <details class="module" open>
           <summary>Назначение должности</summary>
           <div class="guide-copy">
-            <p>Шеф-бариста обеспечивает стабильное качество кофе и кофейных напитков во всех кофейнях сети, развивает кофейное направление и управляет его экономикой в пределах своих полномочий.</p>
+            <p>Шеф-бариста обеспечивает стабильное качество всего меню напитков, включая софт-позиции, во всех кофейнях сети, развивает кофейное направление и управляет его экономикой в пределах своих полномочий.</p>
             <p><strong>Основные результаты работы шеф-бариста</strong></p>
             <ul>
               <li>Кофейни готовят и подают напитки по единым стандартам сети.</li>
@@ -702,7 +703,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=19"></script>
+  <script src="./backup.js?v=20"></script>
   <script>
     'use strict';
 
@@ -1048,9 +1049,10 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=19"></script>
-  <script src="./calendar-sync.js?v=19"></script>
-  <script src="./google-sync.js?v=19"></script>
-  <script src="./development.js?v=19"></script>
+  <script src="./quality.js?v=20"></script>
+  <script src="./calendar-sync.js?v=20"></script>
+  <script src="./google-sync.js?v=20"></script>
+  <script src="./bar-operations.js?v=20"></script>
+  <script src="./development.js?v=20"></script>
 </body>
 </html>
