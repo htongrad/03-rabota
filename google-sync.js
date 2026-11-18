@@ -47,7 +47,7 @@
   const query = data => '?' + new URLSearchParams(data);
   function conflict() {
     update({ paused: true });
-    throw Error('Копия на Диске обновлена другим браузером. Сначала восстанови её.');
+    throw Error('Версия копии на Диске отличается от сохранённой в панели. Сначала восстанови её.');
   }
 
   async function request(url, options = {}, allow404 = false, acceptedStatuses = []) {
@@ -332,7 +332,6 @@
     $('#google-calendar-overview').textContent = settings.paused || !ready() || !calendarGranted ? calendarSummary : calendarError ? 'Календарь: ' + calendarMessage : calendarSummary;
     $('#google-calendar-status').textContent = settings.paused ? calendarSummary : calendarMessage || calendarSummary;
     $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
-    $('#google-calendar-zone').textContent = settings.calendarZone ? 'Часовой пояс: ' + settings.calendarZone + '. Событие без окончания занимает один час.' : 'Будет использован часовой пояс календаря «03 РАБОТА».';
     $('#google-calendar-connect').hidden = Boolean(settings.calendarEnabled && ready() && calendarGranted);
     $('#google-calendar-connect').disabled = busy || connecting || !settings.clientId || !calendarTokenClient;
     $('#google-calendar-send').disabled = busy || connecting || !ready() || !calendarGranted || !settings.calendarEnabled || !settings.fileId || settings.paused;
@@ -359,11 +358,14 @@
   }
 
   function connect() {
-    if (!tokenClient || busy || connecting) return;
+    if (!tokenClient || busy || connecting || ready()) return;
     connecting = true;
     message = '';
     paint();
-    (read().calendarEnabled ? calendarTokenClient : tokenClient).requestAccessToken({ prompt: '' });
+    const settings = read();
+    (settings.calendarEnabled ? calendarTokenClient : tokenClient).requestAccessToken({
+      prompt: '', ...(settings.account ? { login_hint: settings.account } : {})
+    });
   }
 
   $('#google-config').addEventListener('submit', event => {
@@ -415,10 +417,16 @@
 
   $('#google-calendar-connect').addEventListener('click', () => {
     if (!calendarTokenClient || busy || connecting) return;
+    if (ready() && calendarGranted) {
+      update({ calendarEnabled: true });
+      run(sync);
+      return;
+    }
+    const { account } = read();
     connecting = true;
     calendarMessage = 'Подтверди доступ к календарю в окне Google.';
     paint();
-    calendarTokenClient.requestAccessToken({ prompt: '' });
+    calendarTokenClient.requestAccessToken({ prompt: '', ...(account ? { login_hint: account } : {}) });
   });
   $('#google-calendar-send').addEventListener('click', () => { calendarRetryAfter = 0; run(sync); });
 

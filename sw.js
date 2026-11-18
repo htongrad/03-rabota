@@ -1,11 +1,11 @@
 'use strict';
 
 const cachePrefix = 'panel-03-shell-';
-const cacheName = cachePrefix + 'v28';
+const cacheName = cachePrefix + 'v29';
 const scope = new URL(self.registration.scope);
 const home = scope.href;
 const index = new URL('index.html', scope).href;
-const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=28', 'team-readiness.js?v=28', 'financial-review.js?v=28', 'point-operations.js?v=28', 'product-launch.js?v=28', 'management.js?v=28', 'quality.js?v=28', 'backup.js?v=28', 'google-sync.js?v=28', 'calendar-sync.js?v=28', 'development.css?v=28', 'bar-menu.js?v=28', 'bar-operations.js?v=28', 'development.js?v=28']
+const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=29', 'team-readiness.js?v=29', 'financial-review.js?v=29', 'point-operations.js?v=29', 'product-launch.js?v=29', 'management.js?v=29', 'quality.js?v=29', 'backup.js?v=29', 'google-sync.js?v=29', 'calendar-sync.js?v=29', 'development.css?v=29', 'bar-menu.js?v=29', 'bar-operations.js?v=29', 'development.js?v=29']
   .map(path => new URL(path, scope).href);
 
 self.addEventListener('install', event => {

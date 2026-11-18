@@ -175,7 +175,7 @@ function quality(app,id,date,passed) {
 function mirrorDouble() {
   const remote=new Map();
   const settings={};
-  const calendarInfo={id:'test-calendar',summary:'03 РАБОТА',accessRole:'owner',timeZone:'Europe/Moscow'};
+  const calendarInfo={id:'test-calendar',summary:'03 РАБОТА',accessRole:'owner',timeZone:'UTC'};
   const operations=[];
   const reply=(data,status=200)=>({status,ok:status<300,json:async()=>structuredClone(data)});
   let revision=0;
@@ -193,12 +193,26 @@ function mirrorDouble() {
     remote.set(id,{...remote.get(id),...data,etag:'v'+ ++revision});
     return reply(remote.get(id));
   };
-  const sync=work=>calendar.mirror({request,settings,update:patch=>Object.assign(settings,patch),
-    digest:async value=>createHash('sha256').update(value).digest('hex'),events:[],work});
+  const sync=(work, events=[])=>calendar.mirror({request,settings,update:patch=>Object.assign(settings,patch),
+    digest:async value=>createHash('sha256').update(value).digest('hex'),events,work});
   return{sync,remote,operations};
 }
 
 async function run(){
+  const timedMirror = mirrorDouble();
+  const appointment = {id:'moscow-event',title:'Тест времени',date:'2026-11-19',start:'00:30',end:'01:00'};
+  await timedMirror.sync([], [appointment]);
+  const [appointmentId, remoteAppointment] = timedMirror.remote.entries().next().value;
+  assert.deepEqual(remoteAppointment.start, {dateTime:'2026-11-18T21:30:00.000Z',timeZone:'Europe/Moscow'});
+  assert.deepEqual(remoteAppointment.end, {dateTime:'2026-11-18T22:00:00.000Z',timeZone:'Europe/Moscow'});
+  // An existing UTC mirror is corrected in place with the same event ID.
+  remoteAppointment.start = {dateTime:'2026-11-19T00:30:00.000Z',timeZone:'UTC'};
+  remoteAppointment.end = {dateTime:'2026-11-19T01:00:00.000Z',timeZone:'UTC'};
+  await timedMirror.sync([], [appointment]);
+  assert.equal(timedMirror.remote.size, 1);
+  assert.deepEqual(timedMirror.operations, ['POST', 'PATCH']);
+  assert.equal(timedMirror.remote.get(appointmentId).start.dateTime, '2026-11-18T21:30:00.000Z');
+
   const app=createApp();
   app.route('instruction');
   const handbook=app.$('[data-page="instruction"]').textContent;

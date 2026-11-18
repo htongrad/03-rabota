@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=28">
-  <link rel="stylesheet" href="./development.css?v=28">
+  <link rel="stylesheet" href="./quality.css?v=29">
+  <link rel="stylesheet" href="./development.css?v=29">
   <title>03 Работа</title>
   <style>
     :root {
@@ -602,7 +602,7 @@
           <summary>Планирование работы в календаре</summary>
           <div class="guide-copy">
             <p>После подключения Google Календаря панель отправляет события и рабочие действия со сроками в календарь «03 РАБОТА». Изменения и удаление выполняются в панели. Прямые записи в Google Календаре остаются самостоятельными и в панель не загружаются. Закрытые рабочие действия убираются из зеркала.</p>
-            <p>События со временем используют часовой пояс календаря «03 РАБОТА». Если окончание не указано, в зеркале событие занимает один час. Рабочие действия из журналов показываются на весь день.</p>
+            <p>Время начала и окончания вводится по Москве (Europe/Moscow). Если окончание не указано, в зеркале событие занимает один час. Рабочие действия из журналов показываются на весь день.</p>
             <p>Шеф-бариста использует календарь для планирования визитов, обучения, обслуживания и повторных проверок. Рабочие действия с назначенной датой отображаются в календаре автоматически.</p>
             <p>При переносе срока изменяет дату в исходной записи или через календарь. После выполнения фиксирует результат в соответствующем журнале. Закрытое действие исчезает из списка предстоящих работ, а история его выполнения сохраняется в журнале.</p>
           </div>
@@ -653,7 +653,7 @@
         <label class="field"><span>Начало</span><input name="start" type="time" required></label>
         <label class="field"><span>Окончание</span><input name="end" type="time"></label>
       </div>
-      <div class="quality-actions"><button type="button" class="quality-help" aria-label="Пояснение: время в Google Календаре" data-google-help="В зеркале используется часовой пояс календаря «03 РАБОТА». Без времени окончания событие занимает один час. Событие на весь день и рабочее действие из журнала показываются на весь день."><span>?</span></button><span class="quiet">Время в Google Календаре</span></div>
+      <div class="quality-actions"><button type="button" class="quality-help" aria-label="Пояснение: время в Google Календаре" data-google-help="Вводи начало и окончание по московскому времени. Google Календарь может показывать событие в часовом поясе своего интерфейса. Без времени окончания событие занимает один час. Событие на весь день и рабочее действие из журнала показываются на весь день."><span>?</span></button><span class="quiet">Время по Москве</span></div>
       <p id="form-error" class="error" role="alert" hidden></p>
       <div class="actions">
         <button type="button" id="delete-event" class="action danger" hidden>Удалить</button>
@@ -684,7 +684,7 @@
       <details><summary>Все разделы</summary><nav id="menu-sections" class="menu-sections" aria-label="Быстрый переход"></nav></details>
       <button type="button" id="google-open" class="action">Google Диск и Календарь</button>
       <button type="button" id="backup-open" class="action">Копии данных</button>
-      <p class="quiet">Панель 03 · Версия 1.0 · Сборка 28</p>
+      <p class="quiet">Панель 03 · Версия 1.0 · Сборка 29</p>
       <button type="button" id="app-menu-close" class="action">Закрыть</button>
     </div>
   </dialog>
@@ -721,7 +721,7 @@
       <section class="module stack" aria-label="Зеркало Google Календаря">
         <h3>Календарь «03 РАБОТА»</h3>
         <p id="google-calendar-status" role="status"></p>
-        <p id="google-calendar-zone" class="quiet"></p>
+        <p class="quiet">События отправляются по московскому времени (Europe/Moscow). Событие без окончания занимает один час.</p>
         <div class="quality-actions"><button type="button" id="google-calendar-connect" class="action primary">Подключить календарь</button><button type="button" class="quality-help" aria-label="Пояснение: подключение календаря" data-google-help="Запрашивает доступ к списку календарей и событиям твоих календарей. Панель найдёт календарь с точным названием «03 РАБОТА». Сначала настрой резервную копию на Диске. При найденной существующей копии восстанови её перед отправкой событий."><span>?</span></button></div>
         <div class="quality-actions"><button type="button" id="google-calendar-send" class="action">Отправить события</button><button type="button" class="quality-help" aria-label="Пояснение: отправка событий" data-google-help="Отправляет обычные события и рабочие действия со сроками. Изменение и удаление выполняй в панели. Закрытые рабочие действия убираются из зеркала. События, созданные напрямую в Google Календаре, остаются самостоятельными. Отправка также выполняется автоматически при открытой панели и действующем доступе."><span>?</span></button></div>
       </section>
@@ -758,7 +758,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=28"></script>
+  <script src="./backup.js?v=29"></script>
   <script>
     'use strict';
 
@@ -1137,16 +1137,16 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./team-readiness.js?v=28"></script>
-  <script src="./financial-review.js?v=28"></script>
-  <script src="./point-operations.js?v=28"></script>
-  <script src="./product-launch.js?v=28"></script>
-  <script src="./management.js?v=28"></script>
-  <script src="./quality.js?v=28"></script>
-  <script src="./calendar-sync.js?v=28"></script>
-  <script src="./google-sync.js?v=28"></script>
-  <script src="./bar-menu.js?v=28"></script>
-  <script src="./bar-operations.js?v=28"></script>
-  <script src="./development.js?v=28"></script>
+  <script src="./team-readiness.js?v=29"></script>
+  <script src="./financial-review.js?v=29"></script>
+  <script src="./point-operations.js?v=29"></script>
+  <script src="./product-launch.js?v=29"></script>
+  <script src="./management.js?v=29"></script>
+  <script src="./quality.js?v=29"></script>
+  <script src="./calendar-sync.js?v=29"></script>
+  <script src="./google-sync.js?v=29"></script>
+  <script src="./bar-menu.js?v=29"></script>
+  <script src="./bar-operations.js?v=29"></script>
+  <script src="./development.js?v=29"></script>
 </body>
 </html>

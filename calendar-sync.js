@@ -3,6 +3,7 @@
   const base = 'https://www.googleapis.com/calendar/v3';
   const name = '03 РАБОТА';
   const tag = 'rabota03';
+  const eventZone = 'Europe/Moscow';
   const scopes = ['https://www.googleapis.com/auth/calendar.events.owned', 'https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
   const query = values => '?' + new URLSearchParams(values);
   const encode = encodeURIComponent;
@@ -23,20 +24,20 @@
       if (!difference) return new Date(value).toISOString();
       value += difference;
     }
-    throw Error('Время события не существует в часовом поясе календаря. Уточни время в панели.');
+    throw Error('Время события не существует в указанном часовом поясе. Уточни время в панели.');
   }
 
-  function build(events, work, zone) {
+  function build(events, work) {
     const desired = new Map();
     function add(key, title, day, start, end, description, location = '') {
       if (!validDate(day) || !title) throw Error('Не удалось проверить дату или название события.');
       let times;
       if (!start) times = { start: { date: day }, end: { date: dayAfter(day) } };
       else {
-        const startTime = instant(day, start, zone);
-        const endTime = end ? instant(day, end, zone) : new Date(Date.parse(startTime) + 3600000).toISOString();
+        const startTime = instant(day, start, eventZone);
+        const endTime = end ? instant(day, end, eventZone) : new Date(Date.parse(startTime) + 3600000).toISOString();
         if (Date.parse(endTime) <= Date.parse(startTime)) throw Error('Окончание события должно быть позже начала.');
-        times = { start: { dateTime: startTime, timeZone: zone }, end: { dateTime: endTime, timeZone: zone } };
+        times = { start: { dateTime: startTime, timeZone: eventZone }, end: { dateTime: endTime, timeZone: eventZone } };
       }
       if (desired.has(key)) throw Error('У рабочих действий совпали идентификаторы. Отправка календаря остановлена.');
       desired.set(key, { summary: title, description, location, ...times });
@@ -78,9 +79,9 @@
       if (found.length !== 1) throw Error(found.length ? 'Найдено несколько календарей «03 РАБОТА». Оставь это название у одного рабочего календаря.' : 'Не найден твой календарь «03 РАБОТА». Проверь название и выбранный аккаунт.');
       calendar = found[0];
     }
-    if (calendar.primary || calendar.deleted || calendar.summary?.trim() !== name || calendar.accessRole !== 'owner' || !calendar.id || !calendar.timeZone) throw Error('Проверь доступ и название календаря «03 РАБОТА».');
-    const desired = build(events, work, calendar.timeZone);
-    update({ calendarId: calendar.id, calendarZone: calendar.timeZone });
+    if (calendar.primary || calendar.deleted || calendar.summary?.trim() !== name || calendar.accessRole !== 'owner' || !calendar.id) throw Error('Проверь доступ и название календаря «03 РАБОТА».');
+    const desired = build(events, work);
+    update({ calendarId: calendar.id, calendarZone: eventZone });
     const url = base + '/calendars/' + encode(calendar.id) + '/events';
     const remote = await list(url, { privateExtendedProperty: 'panel=' + tag, maxResults: '2500', showDeleted: 'false', fields: 'nextPageToken,items(id,etag,status,summary,description,location,start,end,recurrence,extendedProperties)' });
     const known = new Map((settings.calendarKnown || []).map(item => [item.id, item.key]));
