@@ -62,7 +62,8 @@
   });
   const performance = value => criterion(value) && fields({ passed: boolean, measured: nullable(number), notes: text })(value);
   const price = fields({ cost: number, amount: value => number(value) && value > 0, unit: text, date, density: nullable(number),
-    pointId: optional(value => text(value) && Boolean(value)) });
+    pointId: optional(value => text(value) && Boolean(value)), approval: optional(value => text(value) && Boolean(value.trim())),
+    purchasingApproval: optional(value => text(value) && Boolean(value.trim())) });
   const waterPlan = fields({ action: text, owner: text, date });
   const waterAttempt = fields({ date, amount: number, passed: boolean, plan: nullable(waterPlan) });
   const sampleAttempt = attempt => identified({
@@ -76,7 +77,7 @@
       !attempt.results.some(item => !item.passed && item.importance === 'critical')
     : attempt.approval === undefined);
   const networkPoint = identified({
-    name: value => text(value) && Boolean(value.trim()), manager: text, menu: text,
+    name: value => text(value) && Boolean(value.trim()), aliases: optional(array(value => text(value) && Boolean(value.trim()))), manager: text, menu: text,
     teamIds: array(text), deviceIds: array(text), equipmentNotes: text, reviewed: boolean
   });
   const hasText = value => text(value) && Boolean(value.trim());
@@ -299,7 +300,8 @@
     })),
     'panel-03:economy': fields({
       supplies: array(identified({ name: text, kind: optional(choices('ingredient', 'packaging')), prices: array(price) })),
-      links: array(fields({ key: text, supply: text }))
+      links: array(item => fields({ key: text, supply: hasText, changes: optional(array(fields({ from: date, supply: text }))) })(item) &&
+        (item.changes || []).every((change, i, list) => i === 0 || change.from > list[i - 1].from))
     }),
     'panel-03:sales': array(identified({
       date, point: text, cardId: nullable(text), drink: text, portion: text,
@@ -390,6 +392,14 @@
       if (!exists(list, id)) throw Error('Нарушена связь «' + description + '».');
     };
     const network = records['panel-03:network'];
+    const pointNames = new Set();
+    for (const point of network?.points || []) {
+      for (const label of [point.name, ...(point.aliases || [])]) {
+        const key = portionNameKey(label);
+        if (pointNames.has(key)) throw Error('Название точки или её прежнее название повторяется в карте сети.');
+        pointNames.add(key);
+      }
+    }
     for (const item of records['panel-03:management'] || []) link(network?.points || [], item.pointId, 'Улучшение и точка');
     const launches = records['panel-03:launches'];
     if (launches) {
@@ -538,6 +548,9 @@
       if (!Array.isArray(parts) || parts.length !== 4 || !parts.every(text)) throw Error('Повреждена связь сырья с техкартой.');
       link(catalog, parts[0], 'Сырьё и техкарта');
       link(economy.supplies, item.supply, 'Закупочная позиция');
+      for (const change of item.changes || []) {
+        if (change.supply) link(economy.supplies, change.supply, 'История привязки закупочной позиции');
+      }
     }
     for (const item of records['panel-03:sales'] || []) if (item.cardId) link(catalog, item.cardId, 'Продажи и техкарта');
     for (const item of [...stock.checks, ...stock.writeOffs]) link(economy.supplies, item.supply, 'Расход сырья');
@@ -666,7 +679,12 @@
     return result;
   }
 
-  const core = { validate, snapshot, exportData, parseBackup, merge, commit, recover, transactionKey, title, collections };
+  function approvedLot(attempt) {
+    return attempt?.decision === 'approved' && attempt.results.length > 0 &&
+      attempt.results.every(item => item.passed || item.importance === 'advisory');
+  }
+
+  const core = { approvedLot, validate, snapshot, exportData, parseBackup, merge, commit, recover, transactionKey, title, collections };
   if (typeof module !== 'undefined' && module.exports) { module.exports = core; return; }
 
   try { recover(localStorage); }
@@ -698,6 +716,7 @@
 
   document.querySelector('#app-menu').addEventListener('click', () => document.querySelector('#app-menu-dialog').showModal());
   document.querySelector('#app-menu-close').addEventListener('click', () => document.querySelector('#app-menu-dialog').close());
+  document.querySelector('#start-import')?.addEventListener('click', () => document.querySelector('#backup-open').click());
   document.querySelector('#backup-open').addEventListener('click', () => {
     document.querySelector('#app-menu-dialog').close();
     generation++;

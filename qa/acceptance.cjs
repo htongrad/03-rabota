@@ -139,8 +139,8 @@ function seed(app) {
   app.set('economy',{supplies:[{id:'beans',kind:'ingredient',name:'Зерно',prices:[{cost:200000,amount:1,unit:'кг',date:'2026-11-01',density:null}]}],
     links:[{key:JSON.stringify(['drink','стандарт','зерно','г']),supply:'beans'}]});
   app.set('suppliers',{suppliers:[{id:'supplier',name:'Тестовый поставщик',contact:'',positions:['beans']}],specs:[],samples:[{
-    id:'lot',supplier:'supplier',supply:'beans',kind:'lot',lot:'Партия 1',spec:{id:'beans',version:1,criteria:[]},
-    attempts:[{id:'accepted',date:'2026-11-16',conditions:'Проверка',results:[],quote:null,decision:'approved',reason:'',follow:'',next:'',transition:'',impactNote:'',impact:[]}]
+    id:'lot',supplier:'supplier',supply:'beans',kind:'lot',lot:'Партия 1',spec:{id:'beans',version:1,criteria:[{name:'Контрольный выход',rule}]},
+    attempts:[{id:'accepted',date:'2026-11-16',conditions:'Проверка',results:[{name:'Контрольный выход',rule,passed:true,measured:32,notes:''}],quote:null,decision:'approved',reason:'',follow:'',next:'',transition:'',impactNote:'',impact:[]}]
   }]});
   app.set('point-operations',{plans:[{id:pilotPoint,first:'2026-11-17',baseVisitId:'',owner:'Тестовый шеф',interval:7}],
     visits:[{id:'visit',pointId:pilotPoint,date:'2026-11-17',createdAt:'2026-11-17T12:00:00Z',kind:'regular',incidentId:'',
@@ -206,6 +206,8 @@ async function run(){
   assert.match(handbook,/Приёмка ремонта/);
   app.route('overview');
   const { $, route, click, fill, submit, fire, work, get }=app;
+  assert.equal($('#overview-start').hidden,false);
+  assert.equal($('#menu-sections').querySelectorAll('a').length,14);
   const initial=await app.restore(configuration);
   assert.deepEqual(initial,backup.records);
   seed(app);
@@ -337,6 +339,62 @@ async function run(){
   await app.restore(configuration);
   assert.equal(app.get('launches').projects[0].id,project().id);
   assert.equal(app.get('network').points.find(item=>item.id===pilotPoint).manager,'Тестовый управляющий');
+  // Existing sales and quality checks keep the original text from the register.
+  route('development');
+  fire([...$('#development-content').querySelectorAll('.dev-point')].find(node=>node.querySelector('span').textContent===point.name),'click');
+  click('Заполнить карточку',$('#development-content'));
+  const pointEditor=$('dialog[open] .dev-editor');
+  const newName='Переименованная тестовая точка';
+  pointEditor.querySelector('[name="name"]').value=newName;
+  fire(pointEditor,'submit');
+  assert.ok(get('network').points.find(item=>item.id===pilotPoint).aliases.includes(point.name));
+  route('sales');
+  assert.ok([...$('#sales-filters').querySelectorAll('option')].some(option=>option.textContent===newName));
+  assert.ok(get('sales').some(item=>item.point===point.name));
+  route('overview');
+  $('#management-comparison').open=true;
+  fire($('#management-comparison'),'toggle');
+  function qualityMetric(){
+    const card=[...$('#management-comparison-content').querySelectorAll('details.quality-record')].find(item=>item.querySelector('summary').textContent===newName);
+    return [...card.querySelectorAll('.quality-criterion')].find(item=>item.querySelector('h4')?.textContent==='Доля критериев в норме');
+  }
+  assert.match(qualityMetric().textContent,/Измерено 1 из 1/);
+  const skipped=get('quality:measured-effect');
+  skipped.criteria[0].repeats.push({date:'2026-11-25',outcome:'skip',detail:'Нет замера',measured:null,plan:null});
+  app.set('quality:measured-effect',skipped);
+  app.changed();
+  assert.match(qualityMetric().textContent,/Измерено 0 из 1/);
+
+  route('economy');
+  click('Новая закупочная позиция',$('#economy-price-start'));
+  fill('Сырьё или упаковка','Вторая тестовая смесь');
+  fill('Тип закупочной позиции','ingredient');
+  fill('Цена упаковки, ₽','1000');
+  fill('Количество в упаковке','1');
+  fill('Единица закупки','кг');
+  fill('Действует с','2026-11-01');
+  submit(true);
+  assert.match($('#quality-error').textContent,/Согласование руководителя/);
+  fill('Согласование руководителя','Решение владельца от 1 ноября');
+  fill('Поставщик цены','Второй поставщик');
+  fill('Меняется поставщик','yes');
+  submit(true);
+  assert.match($('#quality-error').textContent,/менеджера по закупкам/);
+  fill('Согласование менеджера по закупкам','Подтверждено 1 ноября');
+  submit();
+  const second=get('economy').supplies.find(item=>item.name==='Вторая тестовая смесь');
+  assert.ok(second.prices[0].purchasingApproval);
+  const calculator=$('#economy-calculation');
+  fill('Дата закупочных цен','2026-11-20',calculator);
+  fill('Закупочная позиция',second.id,calculator);
+  assert.match(calculator.textContent,/Итог за порцию.10,00/);
+  fill('Дата закупочных цен','2026-11-19',calculator);
+  assert.match(calculator.textContent,/Итог за порцию.20,00/);
+  const finalBackup=core.exportData(app.localStorage);
+  const recovered=createApp();
+  assert.deepEqual(await recovered.restore(JSON.stringify(finalBackup)),finalBackup.records);
+  assert.equal(core.approvedLot({decision:'approved',results:[]}),false);
+  assert.equal(core.approvedLot({decision:'approved',results:[{passed:false,importance:'critical'}]}),false);
   console.log('PASS acceptance: actual settings, synthetic point setup → approved pilot → rollout → verified effect → management action; restore, repeat import and calendar mirroring.');
 }
 run().catch(problem=>{console.error(problem);process.exitCode=1;});

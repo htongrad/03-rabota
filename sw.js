@@ -1,11 +1,11 @@
 'use strict';
 
 const cachePrefix = 'panel-03-shell-';
-const cacheName = cachePrefix + 'v27';
+const cacheName = cachePrefix + 'v28';
 const scope = new URL(self.registration.scope);
 const home = scope.href;
 const index = new URL('index.html', scope).href;
-const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=27', 'team-readiness.js?v=27', 'financial-review.js?v=27', 'point-operations.js?v=27', 'product-launch.js?v=27', 'management.js?v=27', 'quality.js?v=27', 'backup.js?v=27', 'google-sync.js?v=27', 'calendar-sync.js?v=27', 'development.css?v=27', 'bar-menu.js?v=27', 'bar-operations.js?v=27', 'development.js?v=27']
+const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=28', 'team-readiness.js?v=28', 'financial-review.js?v=28', 'point-operations.js?v=28', 'product-launch.js?v=28', 'management.js?v=28', 'quality.js?v=28', 'backup.js?v=28', 'google-sync.js?v=28', 'calendar-sync.js?v=28', 'development.css?v=28', 'bar-menu.js?v=28', 'bar-operations.js?v=28', 'development.js?v=28']
   .map(path => new URL(path, scope).href);
 
 self.addEventListener('install', event => {
@@ -26,20 +26,10 @@ self.addEventListener('activate', event => {
   })());
 });
 
-async function refresh(request, cacheKey) {
-  const cache = await caches.open(cacheName).catch(() => null);
-  let response;
-  try {
-    response = await fetch(request);
-  } catch {
-    return await cache?.match(cacheKey) || Response.error();
-  }
-
-  const cacheable = request.mode !== 'navigate' || response.headers.get('content-type')?.includes('text/html');
-  if (cache && response.ok && cacheable) {
-    await cache.put(cacheKey, response.clone()).catch(() => {});
-  }
-  return response;
+// The HTML and its asset versions are activated together after a successful install.
+async function fromRelease(request, key) {
+  const cache = await caches.open(cacheName);
+  return await cache.match(key) || fetch(request);
 }
 
 self.addEventListener('fetch', event => {
@@ -49,8 +39,8 @@ self.addEventListener('fetch', event => {
   const canonical = url.origin + url.pathname;
 
   if (request.mode === 'navigate' && (canonical === home || canonical === index)) {
-    event.respondWith(refresh(request, home));
+    event.respondWith(fromRelease(request, home));
   } else if (staticAssets.includes(url.href)) {
-    event.respondWith(refresh(request, url.href));
+    event.respondWith(fromRelease(request, url.href));
   }
 });

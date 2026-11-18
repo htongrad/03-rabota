@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=27">
-  <link rel="stylesheet" href="./development.css?v=27">
+  <link rel="stylesheet" href="./quality.css?v=28">
+  <link rel="stylesheet" href="./development.css?v=28">
   <title>03 Работа</title>
   <style>
     :root {
@@ -191,7 +191,7 @@
     .guide-copy { line-height: 1.54; }
     .guide-copy li + li { margin-top: 7px; }
     details.module { padding-top: 0; padding-bottom: 0; }
-    details[open] summary { border-bottom: 1px solid var(--line); }
+    details[open] > summary { border-bottom: 1px solid var(--line); }
     summary { min-height: 48px; padding-block: 13px; cursor: pointer; font-weight: 680; }
     .guide-copy { padding: 13px 0; }
     .guide-copy ol, .guide-copy ul { margin: 9px 0 0; padding-left: 23px; }
@@ -242,6 +242,27 @@
     .error { color: var(--danger); line-height: 1.4; }
     #app-error { margin-bottom: 12px; }
 
+    .module { min-width: 0; overflow-wrap: anywhere; box-shadow: 0 2px 5px #39250b0a; }
+    .stack > *, .quality-heading > :first-child, form > * { min-width: 0; }
+    .stack > .error:empty, .stack > .quiet:empty, .stack > .error[hidden] { display: none; }
+    .stack > h3, .module .quality-title, .dev-copy, .module h4 { margin: 0; }
+    .dev-field { display: grid; gap: 3px; }
+    .dev-field label { font-size: .89rem; }
+    .dev-feature { border-inline-start: 4px solid #cf841b; }
+    .menu-sections { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; padding-block: 8px; }
+    .menu-sections a { display: flex; align-items: center; gap: 6px; min-height: 46px; border-radius: 8px; padding: 5px; text-decoration: none; overflow-wrap: anywhere; font-size: .88rem; }
+    .menu-sections a[aria-current] { background: var(--soft); font-weight: 700; }
+    .bottom { box-shadow: 0 -3px 16px #39250b0d; }
+    .nav a { flex-basis: clamp(80px,21vw,104px); }
+    .quality-details { min-width: 0; }
+    dialog { overscroll-behavior: contain; scroll-padding-block: 12px; }
+    button.action, a.action { max-width: 100%; overflow-wrap: anywhere; }
+    .mark { flex-shrink: 0; }
+    @media (max-width: 400px) {
+      .quality-pair { grid-template-columns: minmax(0,1fr); }
+      .header-inner { gap: 8px; }
+      .menu-sections .icon { width: 16px; height: 16px; }
+    }
     @media (max-width: 350px) {
       main { padding-inline: 12px; }
       .module { padding-inline: 10px; }
@@ -279,6 +300,14 @@
       <div class="page-heading"><h2>Обзор</h2><p class="quiet" id="today-label"></p></div>
       <div class="stack">
         <section class="module stack" id="management-priorities" aria-label="Требует внимания"></section>
+        <section id="overview-start" class="module stack dev-feature" aria-label="Начало работы" hidden>
+          <h3>Начало работы</h3>
+          <p id="overview-start-copy"></p>
+          <div class="quality-actions">
+            <a class="action primary" href="#development">Открыть следующий шаг</a>
+            <button type="button" id="start-import" class="action">Загрузить настройки</button>
+          </div>
+        </section>
         <p id="management-message" class="error" role="alert"></p>
         <details class="module" id="management-comparison">
           <summary>Сравнение точек</summary>
@@ -288,6 +317,11 @@
           <summary>План улучшений</summary>
           <div id="management-actions-content" class="quality-details"></div>
         </details>
+        <section class="module stack" id="bar-overview" aria-label="Готовность бара" hidden></section>
+        <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
+        <section class="module"><h3>Сегодня</h3><div id="events-today"></div></section>
+        <section class="module"><h3>До конца недели</h3><div id="events-week"></div></section>
+        <section class="module"><h3>Качество напитков</h3><p class="quiet" id="quality-count">Журнал проверок</p></section>
         <section class="module stack" aria-label="Резервная копия Google">
           <h3>Google: копия и календарь</h3>
           <p id="google-overview-text" role="status">Проверяю состояние копии…</p>
@@ -299,11 +333,6 @@
             <button type="button" id="google-overview-open" class="action">Настройки Google</button>
           </div>
         </section>
-        <section class="module stack" id="bar-overview" aria-label="Готовность бара" hidden></section>
-        <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
-        <section class="module"><h3>Сегодня</h3><div id="events-today"></div></section>
-        <section class="module"><h3>До конца недели</h3><div id="events-week"></div></section>
-        <section class="module"><h3>Качество напитков</h3><p class="quiet" id="quality-count">Журнал проверок</p></section>
       </div>
     </section>
     <section data-page="calendar" hidden>
@@ -517,6 +546,7 @@
         <details class="module">
           <summary>Расчёт себестоимости порции</summary>
           <div class="guide-copy">
+            <p>Цены и расходы утверждает руководитель. При смене поставщика решение согласуют руководитель и менеджер по закупкам. При вводе цены укажи основание в истории закупочной позиции. Одобрение пробы фиксирует качество сырья.</p>
             <p>Шеф-бариста рассчитывает прямую себестоимость порции по составу действующей техкарты и закупочным ценам. Для каждого ингредиента фиксирует цену, количество в закупочной упаковке, единицу измерения и дату, с которой действует цена.</p>
             <p>Стоимость ингредиента на порцию определяется по количеству, указанному в техкарте. Расчёт считается полным, когда для каждого ингредиента есть цена и совместимая единица измерения. Шеф-бариста использует расчёт, чтобы оценить влияние изменений рецептуры и закупочных цен на себестоимость напитка.</p>
           </div>
@@ -651,8 +681,10 @@
   <dialog id="app-menu-dialog" aria-labelledby="app-menu-title">
     <div class="stack">
       <h2 id="app-menu-title">Меню</h2>
+      <details><summary>Все разделы</summary><nav id="menu-sections" class="menu-sections" aria-label="Быстрый переход"></nav></details>
       <button type="button" id="google-open" class="action">Google Диск и Календарь</button>
       <button type="button" id="backup-open" class="action">Копии данных</button>
+      <p class="quiet">Панель 03 · Версия 1.0 · Сборка 28</p>
       <button type="button" id="app-menu-close" class="action">Закрыть</button>
     </div>
   </dialog>
@@ -726,7 +758,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=27"></script>
+  <script src="./backup.js?v=28"></script>
   <script>
     'use strict';
 
@@ -888,6 +920,12 @@
     }
 
     const sectionNav = $('#section-nav');
+    const quickNav = $('#menu-sections');
+    for (const link of sectionNav.querySelectorAll('a')) {
+      const shortcut = link.cloneNode(true);
+      shortcut.addEventListener('click', () => $('#app-menu-dialog').close());
+      quickNav.append(shortcut);
+    }
     function updateNavScroll() {
       $('#nav-previous').disabled = sectionNav.scrollLeft <= 1;
       $('#nav-next').disabled = sectionNav.scrollLeft + sectionNav.clientWidth >= sectionNav.scrollWidth - 1;
@@ -911,6 +949,10 @@
           link.setAttribute('aria-current', 'page');
           link.scrollIntoView?.({ block: 'nearest', inline: 'center' });
         }
+        else link.removeAttribute('aria-current');
+      }
+      for (const link of quickNav.querySelectorAll('a')) {
+        if (link.getAttribute('href') === '#' + current) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
       $('#add-event').hidden = !['overview', 'calendar'].includes(current);
@@ -1069,19 +1111,42 @@
       });
     }
 
+    let renderedDay = dateKey(new Date());
+    function refreshDay() {
+      if (document.hidden) return;
+      const current = dateKey(new Date());
+      if (renderedDay === current) return;
+      if (selectedDay === renderedDay) {
+        selectedDay = current;
+        visibleMonth = beginningOfMonth(new Date());
+      }
+      renderedDay = current;
+      render();
+      window.dispatchEvent(new Event('panel-03:work-changed'));
+    }
+    let dayTimer;
+    function watchDay() {
+      clearInterval(dayTimer);
+      if (document.visibilityState !== 'visible') return;
+      refreshDay();
+      dayTimer = setInterval(refreshDay, 60000);
+    }
+    document.addEventListener('visibilitychange', watchDay);
+    window.addEventListener('pageshow', watchDay);
+    watchDay();
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./team-readiness.js?v=27"></script>
-  <script src="./financial-review.js?v=27"></script>
-  <script src="./point-operations.js?v=27"></script>
-  <script src="./product-launch.js?v=27"></script>
-  <script src="./management.js?v=27"></script>
-  <script src="./quality.js?v=27"></script>
-  <script src="./calendar-sync.js?v=27"></script>
-  <script src="./google-sync.js?v=27"></script>
-  <script src="./bar-menu.js?v=27"></script>
-  <script src="./bar-operations.js?v=27"></script>
-  <script src="./development.js?v=27"></script>
+  <script src="./team-readiness.js?v=28"></script>
+  <script src="./financial-review.js?v=28"></script>
+  <script src="./point-operations.js?v=28"></script>
+  <script src="./product-launch.js?v=28"></script>
+  <script src="./management.js?v=28"></script>
+  <script src="./quality.js?v=28"></script>
+  <script src="./calendar-sync.js?v=28"></script>
+  <script src="./google-sync.js?v=28"></script>
+  <script src="./bar-menu.js?v=28"></script>
+  <script src="./bar-operations.js?v=28"></script>
+  <script src="./development.js?v=28"></script>
 </body>
 </html>

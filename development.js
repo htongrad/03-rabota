@@ -83,13 +83,19 @@
   }
 
   function explain(container, text) {
+    if (window.panel03Help) {
+      const title = container.querySelector('legend, h2, h3, label span')?.textContent || 'Правило работы';
+      container.append(window.panel03Help(title, text));
+      return;
+    }
     const details = node('details', 'quiet dev-help');
     details.append(node('summary', '', 'Пояснение'), node('p', '', text));
     container.append(details);
   }
 
+  let fieldNumber = 0;
   function field(form, label, name, value, help, type = 'text', required = false) {
-    const wrapper = node('div', 'stack');
+    const wrapper = node('div', 'dev-field');
     const caption = node('label', 'field');
     const input = node(type === 'textarea' ? 'textarea' : 'input');
     input.name = name;
@@ -97,9 +103,19 @@
     input.value = value;
     input.required = required;
     input.maxLength = type === 'textarea' ? 8000 : 160;
-    caption.append(node('span', '', label), input);
-    wrapper.append(caption);
-    if (help) explain(wrapper, help);
+    if (window.panel03Help) {
+      const row = node('div', 'quality-heading');
+      input.id = 'dev-field-' + (++fieldNumber);
+      caption.htmlFor = input.id;
+      caption.textContent = label;
+      row.append(caption);
+      if (help) row.append(window.panel03Help(label, help));
+      wrapper.append(row, input);
+    } else {
+      caption.append(node('span', '', label), input);
+      wrapper.append(caption);
+      if (help) explain(wrapper, help);
+    }
     form.append(wrapper);
     return input;
   }
@@ -109,7 +125,7 @@
   }
 
   function getProfile(data) {
-    return data.profiles.toSorted((a, b) => b.savedAt.localeCompare(a.savedAt) || b.id.localeCompare(a.id))[0];
+    return data.profiles.toSorted((a, b) => b.effective.localeCompare(a.effective) || b.savedAt.localeCompare(a.savedAt) || b.id.localeCompare(a.id))[0];
   }
 
   function editProfile(baseline, data, profile) {
@@ -182,7 +198,7 @@
 
   function editPoint(baseline, data, point, team, devices) {
     edit(point.id ? 'Карточка точки' : 'Новая точка', baseline, data, form => {
-      const name = field(form, 'Название', 'name', point.name, 'Короткое название, по которому узнаешь точку в списке.', 'text', true);
+      const name = field(form, 'Название', 'name', point.name, 'Название для карты сети и отчётов. При переименовании прежние записи сохранят связь с этой точкой.', 'text', true);
       const manager = field(form, 'Управляющий', 'manager', point.manager, 'Кому передать срочный вопрос на этой точке.');
       const menu = field(form, 'Меню напитков', 'menu', point.menu, 'Укажи, какие локальные позиции, включая софт, добавлены или отсутствуют по сравнению с общим меню.', 'textarea');
       const teamIds = choices(form, 'Команда', team.map(person => ({ id: person.id, title: person.name })), point.teamIds,
@@ -200,8 +216,13 @@
       return existing => {
         const title = name.value.trim();
         if (!title) throw Error('Укажи название точки.');
-        if (existing.points.some(item => item.id !== point.id && normalize(item.name) === normalize(title))) throw Error('Точка с таким названием уже есть.');
-        const updated = { id: point.id || crypto.randomUUID(), name: title, manager: manager.value.trim(), menu: menu.value.trim(),
+        if (existing.points.some(item => item.id !== point.id && [item.name, ...(item.aliases || [])].some(label => normalize(label) === normalize(title)))) {
+          throw Error('Это название уже связано с другой точкой или её историей.');
+        }
+        const aliases = [...(point.aliases || [])];
+        if (point.id && normalize(point.name) !== normalize(title)) aliases.push(point.name);
+        const former = aliases.filter(label => normalize(label) !== normalize(title));
+        const updated = { id: point.id || crypto.randomUUID(), name: title, ...(former.length ? { aliases: former } : {}), manager: manager.value.trim(), menu: menu.value.trim(),
           teamIds: teamIds(), deviceIds: deviceIds(), equipmentNotes: equipmentNotes.value.trim(), reviewed: reviewed.checked };
         if (updated.reviewed && (!updated.manager || !updated.menu || !updated.teamIds.length || !(updated.deviceIds.length || updated.equipmentNotes))) {
           throw Error('Для подтверждения заполни управляющего, меню, команду и оборудование.');
@@ -689,6 +710,17 @@
           button('Подтвердить исходную картину', () => confirmBaseline(profile, latest, diagnosticsRaw, baseline), true));
       }
 
+      const start = document.getElementById('overview-start');
+      if (start) {
+        start.hidden = Boolean(confirmed);
+        if (!start.hidden) {
+          const hasSetup = data.points.length > 0 || Boolean(profile);
+          document.getElementById('start-import').hidden = hasSetup;
+          document.getElementById('overview-start-copy').textContent = hasSetup
+            ? (mission.querySelector('button')?.textContent || 'Проверь карту сети и первичные визиты.')
+            : 'Загрузи согласованные настройки сети или начни с паспорта должности во вкладке «Развитие».';
+        }
+      }
       const map = module('Карта сети');
       const reviewedCount = data.points.filter(point => point.reviewed).length;
       map.append(node('p', 'quiet', data.points.length ? 'Проверено карточек: ' + reviewedCount + ' из ' + data.points.length : 'Добавь точки, с которыми работаешь.'));

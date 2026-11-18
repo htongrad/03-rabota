@@ -16,7 +16,7 @@
   }
 
   window.panel03ProductLaunch = ({
-    el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized,
+    el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized, pointKey,
     readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat
   }) => {
     let focus = '';
@@ -134,7 +134,7 @@
       return source.suppliers.samples.flatMap(sample => {
         if (sample.supply !== supplyId || sample.kind !== 'lot') return [];
         const attempt = sample.attempts.findLast(item => item.date <= day);
-        return attempt?.decision === 'approved' ? [{ sample, attempt }] : [];
+        return window.panel03Backup.approvedLot(attempt) ? [{ sample, attempt }] : [];
       });
     }
 
@@ -310,7 +310,7 @@
     function facts(project, point, source, from, to, recordedAfter) {
       const { portion } = portionFor(project, source, to);
       const sales = source.sales.filter(item => item.cardId === project.cardId && normalized(item.portion) === normalized(portion?.name || '') &&
-        normalized(item.point) === normalized(point.name) && item.date >= from && item.date <= to);
+        pointKey(item.point) === pointKey(point.name) && item.date >= from && item.date <= to);
       const estimate = sales.map(row => costForSale(row, source.cards, source.economy));
       const revenue = sum(sales.map(row => row.revenue));
       const sold = sum(sales.map(row => row.quantity));

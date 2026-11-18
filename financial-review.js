@@ -46,7 +46,7 @@
 
   window.panel03FinancialReview = ({
     readSales, readStock, readEconomy, readCatalog, saleRecipe, estimateIngredient, reconcileStock,
-    priceFor, convertAmount, normalized, cents, money, percentFormat, dateKey, dateIsValid, formatDate,
+    priceFor, convertAmount, normalized, pointKey, cents, money, percentFormat, dateKey, dateIsValid, formatDate,
     el, heading, line, field, value, requireText, action, showEditor
   }) => {
     const filter = { kind: 'week', date: '', pointId: '' };
@@ -93,8 +93,8 @@
 
     function calculate(source, period, point) {
       const { ledger, economy, cards, sales, stock } = source;
-      const scope = normalized(point.name);
-      const samePoint = row => normalized(row.point) === scope;
+      const scope = pointKey(point.name);
+      const samePoint = row => pointKey(row.point) === scope;
       const inPeriod = row => samePoint(row) && period.from <= row.date && row.date <= period.to;
       const saleRows = sales.filter(inPeriod);
       const writeOffs = stock.writeOffs.filter(inPeriod);

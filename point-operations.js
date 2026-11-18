@@ -23,7 +23,7 @@
     return date.toISOString().slice(0, 10);
   }
 
-  window.panel03PointOperations = ({ el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, setActive }) => {
+  window.panel03PointOperations = ({ el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, pointKey, setActive }) => {
     const filter = { pointId: '', state: 'active' };
     let focusId = '';
 
@@ -143,7 +143,7 @@
           linked.replaceChildren();
           device = null;
           if (value(category) === 'equipment') {
-            const options = equipment.devices.filter(item => current?.deviceIds.includes(item.id) || normalized(item.point) === normalized(current?.name || ''));
+            const options = equipment.devices.filter(item => current?.deviceIds.includes(item.id) || pointKey(item.point) === pointKey(current?.name || ''));
             device = field('Оборудование из журнала', 'Связанная техника требует измеримой приёмки и проверки напитка перед закрытием.', {
               choices: { '': 'Не связывать', ...Object.fromEntries(options.map(item => [item.id, item.model + (item.serial ? ' · ' + item.serial : '')])) },
               value: options.some(item => item.id === selectedDevice) ? selectedDevice : prefill.deviceId || '', required: false
@@ -399,7 +399,7 @@
       const { ledger, points } = read();
       const previous = ledger.incidents.find(item => item.jobId === job.id);
       if (previous) return navigate(previous.pointId, previous.id);
-      const point = points.find(item => normalized(item.name) === normalized(device.point)) ||
+      const point = points.find(item => normalized(item.name) === pointKey(device.point)) ||
         points.find(item => item.deviceIds.includes(device.id));
       if (!point) throw Error('Свяжи оборудование с точкой в карте сети.');
       addIncident({ pointId: point.id, deviceId: device.id, jobId: job.id, owner: job.owner,

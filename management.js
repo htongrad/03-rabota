@@ -21,7 +21,7 @@
   const offsets = period => Math.round((Date.parse(period.to) - Date.parse(period.from)) / 86400000);
 
   window.panel03Management = ({
-    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized,
+    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, pointKey,
     money, cents, percentFormat, savedRecords, financialReview, pointOperations, openDeadline
   }) => {
     const filter = { kind: 'week', day: '' };
@@ -76,12 +76,12 @@
       let covered = 0;
       let passed = 0;
       for (const { record } of records) {
-        if (normalized(record.location) !== normalized(point.name)) continue;
+        if (pointKey(record.location) !== pointKey(point.name)) continue;
         for (const [index, criterion] of record.criteria.entries()) {
           const attempts = [{ ...criterion.initial, date: record.date }, ...criterion.repeats].filter(item => within(item.date, period));
           if (!attempts.length) continue;
-          const observed = attempts.toSorted((a, b) => a.date.localeCompare(b.date)).findLast(item => item.outcome === 'pass' || item.outcome === 'fail');
-          if (observed) {
+          const observed = attempts.toSorted((a, b) => a.date.localeCompare(b.date)).at(-1);
+          if (observed.outcome === 'pass' || observed.outcome === 'fail') {
             covered++;
             if (observed.outcome === 'pass') passed++;
           }

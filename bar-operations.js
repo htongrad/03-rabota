@@ -195,7 +195,7 @@
         const device = select(form, 'Оборудование', [['', 'Без привязки'], ...deviceOptions.map(item => [item.id, item.model])],
           'Если проверка зависит от техники, выбери карточку оборудования этой точки.');
         const batch = field(form, 'Партия сырья', 'batch', '', 'Внеси номер с маркировки или точное описание. Если партия не влияет на проверку, укажи причину.', 'text', true);
-        const approvedLots = suppliers.samples.filter(item => item.kind === 'lot' && item.attempts.at(-1)?.decision === 'approved')
+        const approvedLots = suppliers.samples.filter(item => item.kind === 'lot' && window.panel03Backup.approvedLot(item.attempts.at(-1)))
           .map(item => [JSON.stringify([item.id, item.attempts.at(-1).id]), item.lot || 'Партия без номера']);
         const lot = select(form, 'Связать с принятой партией', [['', 'Без привязки'], ...approvedLots],
           'Выбери совпадающую партию из журнала поставщиков. Запись сохранит конкретный результат приёмки.');

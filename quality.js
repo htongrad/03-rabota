@@ -39,6 +39,8 @@
     return control;
   }
 
+  window.panel03Help = help;
+
   function heading(label, description, tag = 'h3') {
     const row = el('div', '', 'quality-heading');
     row.append(el(tag, label, 'quality-title'), help(label, description));
@@ -792,6 +794,24 @@
     return raw ? JSON.parse(raw).points : [];
   }
 
+  let indexedNetwork;
+  let pointNames = new Map();
+  function pointName(label) {
+    const raw = localStorage.getItem('panel-03:network');
+    if (raw !== indexedNetwork) {
+      const next = new Map();
+      for (const point of raw ? JSON.parse(raw).points : []) {
+        for (const name of [point.name, ...(point.aliases || [])]) next.set(normalized(name), point.name);
+      }
+      pointNames = next;
+      indexedNetwork = raw;
+    }
+    return pointNames.get(normalized(label)) || label;
+  }
+  function pointKey(label) {
+    return normalized(pointName(label));
+  }
+
   function readEconomy() {
     const raw = localStorage.getItem(economyKey);
     const data = raw === null ? { supplies: [], links: [] } : JSON.parse(raw);
@@ -818,7 +838,7 @@
 
   function priceFor(supply, date, point = '') {
     const pointId = point && supply.prices.some(price => price.pointId) &&
-      economyPoints().find(item => normalized(item.name) === normalized(point))?.id;
+      economyPoints().find(item => normalized(item.name) === pointKey(point))?.id;
     const latest = choices => choices.reduce((current, price) =>
       price.date <= date && (!current || price.date >= current.date) ? price : current, null);
     return (pointId && latest(supply.prices.filter(price => price.pointId === pointId))) ||
@@ -859,6 +879,23 @@
         const density = field('Плотность, г/мл', 'Заполни, если в закупке и техкарте используются масса и объём. Укажи сколько граммов весит 1 мл именно этого сырья.', { type: 'number', required: false });
         if (name) body.append(name.wrapper, kind.wrapper);
         body.append(scope.wrapper, price.wrapper, amount.wrapper, unit.wrapper, date.wrapper, density.wrapper);
+        const approval = field('Согласование руководителя', 'Укажи, кто утвердил цену или расход и на что можно сослаться: дату, сообщение или документ.');
+        const company = field('Поставщик цены', 'Укажи поставщика, если он известен. При смене поставщика название обязательно.', { required: false, value: proposal?.supplier });
+        company.control.readOnly = Boolean(proposal);
+        const change = field('Меняется поставщик', 'При смене поставщика запиши решения руководителя и менеджера по закупкам.', {
+          choices: { no: 'Нет', yes: 'Да' }, value: 'no'
+        });
+        const purchasing = field('Согласование менеджера по закупкам', 'Укажи, кто и когда согласовал смену поставщика.');
+        function updateApproval() {
+          const point = economyPoints().find(item => item.id === value(scope));
+          const prior = supplied && priceFor({ prices: supplied.prices.filter(item => item.supplier) }, value(date), point?.name);
+          const changed = Boolean(prior && value(company) && normalized(prior.supplier) !== normalized(value(company)));
+          if (changed) change.control.value = 'yes';
+          change.control.disabled = changed;
+          setActive(purchasing.wrapper, value(change) === 'yes');
+        }
+        for (const input of [change, date, scope, company]) input.control.addEventListener('change', updateApproval);
+        body.append(company.wrapper, approval.wrapper, change.wrapper, purchasing.wrapper);
         const previous = supplied ? priceFor(supplied, '9999-12-31') : null;
         if (previous) {
           amount.control.value = String(previous.amount);
@@ -873,7 +910,9 @@
           density.control.value = '';
           line(body, 'Поставщик из пробы:', proposal.supplier);
         }
+        updateApproval();
         return () => {
+          updateApproval();
           const cost = price.control.valueAsNumber;
           const pack = amount.control.valueAsNumber;
           const ratio = value(density) ? density.control.valueAsNumber : null;
@@ -889,6 +928,12 @@
           const pointId = value(scope);
           if (pointId && !economyPoints().some(item => item.id === pointId)) throw Error('Точка недоступна. Открой форму заново.');
           const entry = { cost: cents(cost), amount: pack, unit: requireText(unit), date: effective, density: ratio, ...(pointId ? { pointId } : {}) };
+          entry.approval = requireText(approval);
+          if (value(company)) entry.supplier = value(company);
+          if (value(change) === 'yes') {
+            entry.supplier = requireText(company);
+            entry.purchasingApproval = requireText(purchasing);
+          }
           if (proposal) {
             if (supplied.prices.some(item => item.reviewId === proposal.reviewId)) throw Error('Цена из этой пробы уже записана.');
             entry.reviewId = proposal.reviewId;
@@ -953,6 +998,8 @@
         const density = price.density ? ' · ' + price.density + ' г/мл' : '';
         const scope = price.pointId ? economyPoints().find(item => item.id === price.pointId)?.name || 'Точка недоступна' : 'Вся сеть';
         line(body, formatDate(price.date) + ' · ' + scope, money(price.cost) + ' за ' + price.amount + ' ' + price.unit + density + (price.supplier ? ' · ' + price.supplier : ''));
+        if (price.approval) line(body, 'Согласование руководителя:', price.approval);
+        if (price.purchasingApproval) line(body, 'Согласование менеджера по закупкам:', price.purchasingApproval);
       }
       card.append(summary, body);
       list.append(card);
@@ -963,9 +1010,18 @@
     return JSON.stringify([card, normalized(portion), normalized(ingredient.name), normalized(ingredient.unit)]);
   }
 
+  function boundSupply(link, day) {
+    let id = link?.supply;
+    for (const change of link?.changes || []) {
+      if (change.from > day) break;
+      id = change.supply;
+    }
+    return id;
+  }
+
   function estimateIngredient(snapshot, card, portion, ingredient, date, point = '') {
     const key = linkKey(card, portion, ingredient);
-    const linked = snapshot.data.links.find(pair => pair.key === key)?.supply;
+    const linked = boundSupply(snapshot.data.links.find(pair => pair.key === key), date);
     const supply = snapshot.data.supplies.find(item => item.id === linked);
     const price = supply ? priceFor(supply, date, point) : null;
     const converted = price ? convertAmount(ingredient.amount, ingredient.unit, price.unit, price.density) : null;
@@ -974,11 +1030,11 @@
       !price ? 'На выбранную дату нет действующей цены.' :
       converted === null ? 'Единицы несовместимы. Проверь единицы или укажи плотность для перевода массы в объём.' :
       !Number.isSafeInteger(cost) ? 'Сумма выходит за пределы расчёта.' : '';
-    return { key, supply, price, cost: reason ? null : cost, reason };
+    return { key, date, supply, price, cost: reason ? null : cost, reason };
   }
 
-  function purchaseLink(snapshot, { key, supply }, refresh, message) {
-    const link = field('Закупочная позиция', 'Связь сохранится для этого напитка, размера порции и ингредиента. При обновлении цены панель пересчитает стоимость.', {
+  function purchaseLink(snapshot, { key, supply, date }, refresh, message) {
+    const link = field('Закупочная позиция', 'Первая привязка задаёт исходную закупочную позицию. Замена или снятие действует с выбранной даты (в строке продаж — с даты продажи). Более ранние расчёты сохраняются.', {
       choices: { '': 'Не связана', ...Object.fromEntries(snapshot.data.supplies.map(item => [item.id, item.name])) },
       required: false, value: supply?.id
     });
@@ -986,7 +1042,12 @@
       try {
         const id = value(link);
         const links = snapshot.data.links.filter(pair => pair.key !== key);
-        if (id) links.push({ key, supply: id });
+        const previous = snapshot.data.links.find(pair => pair.key === key);
+        if (previous) {
+          const changes = [...(previous.changes || []).filter(item => item.from !== date), { from: date, supply: id }]
+            .sort((a, b) => a.from.localeCompare(b.from));
+          links.push({ ...previous, changes });
+        } else if (id) links.push({ key, supply: id });
         saveEconomy(snapshot, { ...snapshot.data, links });
         refresh();
         window.dispatchEvent(new window.Event('panel-03:work-changed'));
@@ -1104,7 +1165,7 @@
   }
 
   function sameSale(left, right) {
-    return left.date === right.date && normalized(left.point) === normalized(right.point) &&
+    return left.date === right.date && pointKey(left.point) === pointKey(right.point) &&
       normalized(left.portion) === normalized(right.portion) &&
       (left.cardId && right.cardId ? left.cardId === right.cardId : normalized(left.drink) === normalized(right.drink));
   }
@@ -1315,7 +1376,7 @@
       const rows = readSales().rows;
       const cards = readCatalog().cards;
       const economy = readEconomy();
-      const points = new Map(rows.map(row => [normalized(row.point), row.point]));
+      const points = new Map(rows.map(row => [pointKey(row.point), pointName(row.point)]));
       const filters = $('#sales-filters');
       filters.replaceChildren();
       const from = field('Период с', 'Первая дата отчёта, включительно. Пустое поле означает, что нижней границы нет.', { type: 'date', value: reportFilter.from, required: false });
@@ -1333,7 +1394,7 @@
       const invalid = reportFilter.from && reportFilter.to && reportFilter.from > reportFilter.to;
       const matching = invalid ? [] : rows.filter(row =>
         (!reportFilter.from || row.date >= reportFilter.from) && (!reportFilter.to || row.date <= reportFilter.to) &&
-        (!reportFilter.point || normalized(row.point) === reportFilter.point));
+        (!reportFilter.point || pointKey(row.point) === reportFilter.point));
       const entries = matching.sort((a, b) => b.date.localeCompare(a.date))
         .map(row => ({ row, estimate: costForSale(row, cards, economy) }));
       renderSalesRows(entries, economy);
@@ -1484,7 +1545,7 @@
           from: value(from), to: value(to), unit: requireText(unit), coverage: value(coverage), note: value(note), ...quantities
         };
         if (snapshot.data.checks.some(item => item.id !== row.id && item.supply === row.supply && item.from === row.from &&
-          item.to === row.to && normalized(item.point) === normalized(row.point))) throw Error('Такая сверка уже есть. Открой её для исправления.');
+          item.to === row.to && pointKey(item.point) === pointKey(row.point))) throw Error('Такая сверка уже есть. Открой её для исправления.');
         return saveStock(snapshot, 'checks', row);
       };
     }, 'Сохранить сверку', 'Сохраняет остатки, движения и заметку. Результат пересчитывается по записям о продажах и списаниях за этот период.');
@@ -1495,7 +1556,7 @@
   }
 
   function reconcileStock(check, supply, economy, cards, sales, writeOffs) {
-    const inPeriod = row => row.date >= check.from && row.date <= check.to && normalized(row.point) === normalized(check.point);
+    const inPeriod = row => row.date >= check.from && row.date <= check.to && pointKey(row.point) === pointKey(check.point);
     const actual = check.opening + check.received + check.incoming - check.outgoing - check.returned - check.closing;
     const gaps = new Map();
     function missing(label) { gaps.set(label, (gaps.get(label) ?? 0) + 1); }
@@ -1518,7 +1579,7 @@
       }
       for (const ingredient of portion.ingredients) {
         const key = linkKey(card.id, portion.name, ingredient);
-        const linked = economy.links.find(item => item.key === key)?.supply;
+        const linked = boundSupply(economy.links.find(item => item.key === key), row.date);
         if (!linked || !economy.supplies.some(item => item.id === linked)) {
           missing('Ингредиент в техкарте не связан с закупочной позицией');
           continue;
@@ -1697,7 +1758,7 @@
       return () => {
         const person = { ...previous, id: previous?.id ?? crypto.randomUUID(), name: requireText(name), point: requireText(point), ...readRole?.() };
         if (!person.role) delete person.assignmentId;
-        if (snapshot.data.team.some(item => item.id !== person.id && normalized(item.name) === normalized(person.name) && normalized(item.point) === normalized(person.point))) {
+        if (snapshot.data.team.some(item => item.id !== person.id && normalized(item.name) === normalized(person.name) && pointKey(item.point) === pointKey(person.point))) {
           throw Error('В этой точке уже есть бариста с таким именем. Укажи отличающийся рабочий псевдоним.');
         }
         writeTraining(snapshot, 'team', person);
@@ -2095,7 +2156,7 @@
     const snapshot = readEquipment();
     const devices = snapshot.data.devices;
     if (!devices.length) throw Error('Сначала добавь паспорт оборудования.');
-    const selected = previous?.device || preferred || devices.find(device => normalized(device.point) === equipmentPoint)?.id || devices[0].id;
+    const selected = previous?.device || preferred || devices.find(device => pointKey(device.point) === equipmentPoint)?.id || devices[0].id;
     showEditor(previous ? 'Работа по оборудованию' : 'Новая работа по оборудованию', body => {
       const device = deviceField(devices, selected);
       const kind = field('Тип работы', 'Плановое обслуживание или заявка по наблюдаемой неисправности.', { choices: jobKinds, value: previous?.kind ?? 'planned' });
@@ -2211,7 +2272,7 @@
       return () => {
         const site = requireText(point);
         const selected = devices.find(item => item.id === value(device));
-        if (selected && normalized(selected.point) !== normalized(site)) throw Error('Паспорт оборудования должен относиться к выбранной точке.');
+        if (selected && pointKey(selected.point) !== pointKey(site)) throw Error('Паспорт оборудования должен относиться к выбранной точке.');
         const item = {
           id: crypto.randomUUID(), point: site, device: selected?.id ?? '', sample: requireText(sample),
           indicator: requireText(indicator), method: requireText(method), rule: rule(), attempts: [read()]
@@ -2254,7 +2315,7 @@
 
   function currentEquipmentPoint(data) {
     const points = [...data.devices, ...data.water].map(item => item.point);
-    return points.find(point => normalized(point) === equipmentPoint) ?? '';
+    return points.find(point => pointKey(point) === equipmentPoint) ?? '';
   }
 
   function renderEquipment(keepOpen = '') {
@@ -2270,14 +2331,14 @@
     $('#equipment-message').textContent = '';
     try {
       const { data } = readEquipment();
-      const points = new Map([...data.devices, ...data.water].map(item => [normalized(item.point), item.point]));
+      const points = new Map([...data.devices, ...data.water].map(item => [pointKey(item.point), pointName(item.point)]));
       const filter = field('Точка', 'Ограничивает один и тот же список паспортов, работ и замеров выбранной точкой.', {
         choices: { '': 'Все точки', ...Object.fromEntries(points) }, value: points.has(equipmentPoint) ? equipmentPoint : '', required: false
       });
       if (!points.has(equipmentPoint)) equipmentPoint = '';
       filter.control.addEventListener('change', () => { equipmentPoint = value(filter); renderEquipment(); });
       $('#equipment-filter').replaceChildren(filter.wrapper);
-      const matches = point => !equipmentPoint || normalized(point) === equipmentPoint;
+      const matches = point => !equipmentPoint || pointKey(point) === equipmentPoint;
       const devices = data.devices.filter(item => matches(item.point));
       const known = new Map(devices.map(item => [item.id, item]));
       const jobs = data.jobs.filter(item => known.has(item.device)).sort((a, b) =>
@@ -2496,7 +2557,7 @@
       for (const portion of version.portions) {
         const items = portion.ingredients.filter(ingredient => {
           const key = linkKey(card.id, portion.name, ingredient);
-          return data.links.some(link => link.key === key && link.supply === supply);
+          return boundSupply(data.links.find(link => link.key === key), date) === supply;
         });
         if (!items.length) continue;
         const costs = items.map(ingredient => {
@@ -2708,12 +2769,12 @@
 
   const financialReview = window.panel03FinancialReview?.({
     readSales, readStock, readEconomy, readCatalog, saleRecipe, estimateIngredient, reconcileStock,
-    priceFor, convertAmount, normalized, cents, money, percentFormat, dateKey, dateIsValid, formatDate,
+    priceFor, convertAmount, normalized, pointKey, cents, money, percentFormat, dateKey, dateIsValid, formatDate,
     el, heading, line, field, value, requireText, action, showEditor
   });
 
   const pointOperations = window.panel03PointOperations?.({
-    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, setActive
+    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, pointKey, setActive
   });
 
   function renderOperations() {
@@ -2724,7 +2785,7 @@
   }
 
   const productLaunch = window.panel03ProductLaunch?.({
-    el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized,
+    el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized, pointKey,
     readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat
   });
 
@@ -2736,7 +2797,7 @@
   }
 
   const management = financialReview && window.panel03Management?.({
-    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized,
+    el, heading, line, field, value, requireText, action, showEditor, dateKey, dateIsValid, formatDate, normalized, pointKey,
     money, cents, percentFormat, savedRecords, financialReview, pointOperations, openDeadline
   });
 
@@ -2938,7 +2999,7 @@
     const end = dateKey(week);
     container.append(heading('Рабочие сроки', 'Действия из журналов и плановые проверки. Нажми «Открыть запись», чтобы увидеть результат или правило графика.'));
     const filters = el('div', '', 'quality-fields');
-    const points = new Map(rows.filter(row => row.point).map(row => [normalized(row.point), row.point]));
+    const points = new Map(rows.filter(row => row.point).map(row => [pointKey(row.point), pointName(row.point)]));
     const point = field('Точка для сроков', 'Выбери точку. Общие пробы поставщиков находятся в варианте «Без привязки к точке».', {
       choices: { '': 'Все точки', ...Object.fromEntries(points), unassigned: 'Без привязки к точке' }, value: deadlineFilter.point, required: false
     });
@@ -2954,7 +3015,7 @@
     if (warnings.length) container.append(el('p', 'Не удалось прочитать часть журналов: ' + warnings.join(', '), 'error'));
     const filtered = rows.filter(row =>
       (!deadlineFilter.section || row.section === deadlineFilter.section) &&
-      (!deadlineFilter.point || (deadlineFilter.point === 'unassigned' ? !row.point : normalized(row.point) === deadlineFilter.point)));
+      (!deadlineFilter.point || (deadlineFilter.point === 'unassigned' ? !row.point : pointKey(row.point) === deadlineFilter.point)));
     for (const group of ['Просрочено', 'Сегодня', 'Ближайшие 7 дней', 'Позже', 'Без срока']) {
       const items = filtered.filter(row => deadlineGroup(row.date, date, end) === group)
         .sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.title.localeCompare(b.title, 'ru'));
