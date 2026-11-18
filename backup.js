@@ -2,6 +2,7 @@
   'use strict';
 
   const groups = {
+    'panel-03:network': ['Развитие и точки', ['profiles', 'points']],
     'panel-03:techcards': ['Техкарты', null],
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:sales': ['Дневные продажи', null],
@@ -57,7 +58,15 @@
     decision: choices('approved', 'repeat', 'rejected'), reason: text, follow: text, next: maybeDate,
     transition: maybeDate, impactNote: text, impact: array(fields({ title: text, delta: nullable(number) }))
   });
+  const networkPoint = identified({
+    name: value => text(value) && Boolean(value.trim()), manager: text, menu: text,
+    teamIds: array(text), deviceIds: array(text), equipmentNotes: text, reviewed: boolean
+  });
   const schemas = {
+    'panel-03:network': fields({
+      profiles: array(identified({ purpose: text, scope: text, leadership: text, authority: text, basis: text, effective: date, savedAt: text })),
+      points: array(networkPoint)
+    }),
     'panel-03:techcards': array(identified({
       draft: nullable(draftRecipe),
       versions: array(value => recipe(value) && fields({ number, effective: date })(value))

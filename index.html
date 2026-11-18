@@ -7,7 +7,8 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=16">
+  <link rel="stylesheet" href="./quality.css?v=17">
+  <link rel="stylesheet" href="./development.css?v=17">
   <title>03 Работа</title>
   <style>
     :root {
@@ -436,9 +437,14 @@
         </section>
       </div>
     </section>
+    <section data-page="development" hidden>
+      <div class="page-heading"><h2>Развитие</h2><p class="quiet">Уровень 1 · Карта направления</p></div>
+      <div id="development-content" class="stack"></div>
+    </section>
     <section data-page="instruction" hidden>
       <div class="page-heading"><h2>Инструкция</h2><p class="quiet">Шеф-бариста сети спешелти-кофеен</p></div>
       <div class="stack">
+        <div id="instruction-role" class="stack"></div>
         <details class="module" open>
           <summary>Назначение должности</summary>
           <div class="guide-copy">
@@ -569,6 +575,7 @@
       <nav id="section-nav" class="nav" aria-label="Разделы панели — листай по горизонтали">
         <a href="#overview" aria-current="page"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-grid"/></svg><span>Обзор</span></a>
         <a href="#calendar"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-calendar"/></svg><span>Календарь</span></a>
+        <a href="#development"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-grid"/></svg><span>Развитие</span></a>
         <a href="#quality"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Качество</span></a>
         <a href="#techcards"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-techcards"/></svg><span>Техкарты</span></a>
         <a href="#economy"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-economy"/></svg><span>Экономика</span></a>
@@ -695,7 +702,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=16"></script>
+  <script src="./backup.js?v=17"></script>
   <script>
     'use strict';
 
@@ -872,7 +879,7 @@
 
     function route() {
       const hash = location.hash.slice(1);
-      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'stock', 'training', 'equipment', 'suppliers', 'instruction'].includes(hash) ? hash : 'overview';
+      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'stock', 'training', 'equipment', 'suppliers', 'development', 'instruction'].includes(hash) ? hash : 'overview';
       for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== current;
       const tab = current;
       for (const link of document.querySelectorAll('.nav a')) {
@@ -1041,8 +1048,9 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./quality.js?v=16"></script>
-  <script src="./calendar-sync.js?v=16"></script>
-  <script src="./google-sync.js?v=16"></script>
+  <script src="./quality.js?v=17"></script>
+  <script src="./calendar-sync.js?v=17"></script>
+  <script src="./google-sync.js?v=17"></script>
+  <script src="./development.js?v=17"></script>
 </body>
 </html>
