@@ -62,7 +62,7 @@
       for (const [key, original] of expected) {
         if (localStorage.getItem(key) !== original) throw Error('Связанные данные изменились. Открой форму заново.');
       }
-      const related = [networkKey, cardsKey, equipmentKey, supplyKey, 'panel-03:economy'].flatMap(key => {
+      const related = [networkKey, cardsKey, equipmentKey, supplyKey, 'panel-03:economy', 'panel-03:menu-changes'].flatMap(key => {
         const data = localStorage.getItem(key);
         return data === null ? [] : [[key, JSON.parse(data)]];
       });
@@ -177,11 +177,16 @@
       }, persist);
     }
 
-    function editCalibration(point) {
+    const menu = window.panel03BarMenu?.({
+      read, edit, node, button, module, field, explain, select, today, order: newest, recipeOn, passed, records, openRecord,
+      startCalibration: (point, selection) => editCalibration(point, selection)
+    });
+
+    function editCalibration(point, selection) {
       const { cards, suppliers, equipment } = snapshot(read);
       const published = cards.filter(card => card.versions.length);
       const deviceOptions = point.deviceIds.map(id => equipment.devices.find(item => item.id === id)).filter(Boolean);
-      edit('Калибровка · ' + point.name, raw([storageKey, networkKey, cardsKey, equipmentKey, supplyKey]), records(), form => {
+      edit('Калибровка · ' + point.name, raw([storageKey, networkKey, cardsKey, equipmentKey, supplyKey, ...(menu ? [menu.changeKey] : [])]), records(), form => {
         const day = field(form, 'Дата проверки', 'date', today(), 'По этой дате подбирается действовавшая редакция техкарты.', 'date', true);
         day.max = today();
         const author = field(form, 'Кто проверил', 'author', '', 'Имя сотрудника, который выполнил калибровку.', 'text', true);
@@ -201,13 +206,24 @@
         let getChecks = [];
         let version;
         let portionIndex;
+        let change;
+        let acknowledged;
 
         function changePortion() {
           portionIndex = portionChoice.value === '' ? -1 : Number(portionChoice.value);
           const portion = version?.portions[portionIndex];
           readings.replaceChildren();
           getChecks = [];
+          change = undefined;
+          acknowledged = undefined;
           if (!portion) return;
+          change = menu?.changeFor(point.id, cardChoice.value, portion.name, day.value);
+          if (change) {
+            const confirmation = node('label', 'check');
+            acknowledged = node('input');
+            acknowledged.type = 'checkbox';
+            confirmedChange(readings, confirmation, acknowledged, change);
+          }
           readings.append(node('p', 'quiet', 'Редакция ' + version.number + ' действует с ' + version.effective));
           if (!portion.criteria.length) readings.append(node('p', '', 'Добавь критерии в техкарту и опубликуй редакцию для этой порции.'));
           getChecks = portion.criteria.map(({ name, rule, method }) => {
@@ -216,29 +232,39 @@
           });
         }
 
-        function changeCard() {
+        function confirmedChange(container, label, control, entry) {
+          label.append(control, node('span', '', 'Проверка проведена после изменения'));
+          container.append(node('p', '', entry.date + ' · ' + entry.note), label);
+          explain(container, 'Отметь только если напиток приготовлен с учётом указанного сырья, техники или настройки.');
+        }
+
+        function changeCard(wanted = '') {
           const card = published.find(item => item.id === cardChoice.value);
           version = card && recipeOn(card, day.value);
-          setOptions(portionChoice, [['', 'Выбери порцию'], ...(version?.portions.map((item, index) => [String(index), item.name]) || [])]);
+          const selected = wanted && version?.portions.findIndex(item => menu?.portionKey(item.name) === wanted);
+          setOptions(portionChoice, [['', 'Выбери порцию'], ...(version?.portions.map((item, index) => [String(index), item.name]) || [])], selected >= 0 && wanted ? String(selected) : '');
           changePortion();
         }
 
-        function changeDay() {
-          const keep = cardChoice.value;
+        function changeDay(initial = false) {
+          const keep = initial ? selection?.cardId : cardChoice.value;
+          const wanted = initial ? selection?.portionKey : version?.portions[portionIndex]?.name;
+          const key = initial ? wanted : wanted && menu?.portionKey(wanted);
           const available = published.flatMap(card => {
             const version = recipeOn(card, day.value);
             return version ? [[card.id, version.title]] : [];
           });
           setOptions(cardChoice, [['', 'Выбери техкарту'], ...available], available.some(([id]) => id === keep) ? keep : '');
-          changeCard();
+          changeCard(key);
         }
 
-        day.addEventListener('change', changeDay);
-        cardChoice.addEventListener('change', changeCard);
+        day.addEventListener('change', () => changeDay());
+        cardChoice.addEventListener('change', () => changeCard());
         portionChoice.addEventListener('change', changePortion);
-        changeDay();
+        changeDay(true);
         return list => {
           if (!getChecks.length) throw Error('Выбери порцию с критериями в действовавшей техкарте.');
+          if (change && !acknowledged.checked) throw Error('Подтверди, что проверка выполнена после отмеченного изменения.');
           if (!batch.value.trim() || !adjustment.value.trim()) throw Error('Заполни происхождение сырья и условия калибровки.');
           const [sampleId, attemptId] = lot.value ? JSON.parse(lot.value) : ['', ''];
           const sample = suppliers.samples.find(item => item.id === sampleId);
@@ -247,7 +273,8 @@
           return [...list, {
             ...base(point, day.value, author.value, checks, actionFor(checks, day.value)), type: 'calibration',
             cardId: cardChoice.value, version: version.number, portion: portionIndex, deviceId: device.value || '',
-            batch: batch.value.trim(), sampleId, attemptId, adjustment: adjustment.value.trim()
+            batch: batch.value.trim(), sampleId, attemptId, adjustment: adjustment.value.trim(),
+            ...(change ? { changeId: change.id } : {})
           }];
         };
       }, persist);
@@ -317,7 +344,7 @@
       return detail;
     }
 
-    function pointSection(point, focus) {
+    function pointSection(point, focus, menuReport, shift) {
       const sources = snapshot(read);
       const entries = newest(records().filter(item => item.pointId === point.id));
       const shiftsCard = module('Сменные проверки');
@@ -333,22 +360,14 @@
         const row = entries.find(item => item.type === 'shift' && item.phase === phase && item.date === today());
         shiftsCard.append(node('p', '', label + ' сегодня · ' + status(row)), button('Записать ' + label.toLowerCase(), () => editShift(point, phase)));
       }
+      if (shift) {
+        const message = shift.closing ? 'Последнее обязательное закрытие · ' + shift.closing.date + ' · ' + status(shift.closing) :
+          'Последнее обязательное закрытие · Нет проверки';
+        shiftsCard.append(node('p', 'quiet', message));
+      }
       const calibration = module('Калибровки напитков');
       explain(calibration, 'Выбери техкарту и порцию, запиши условия, партию и фактические результаты. Результат относится к этой точке, порции и редакции техкарты.');
-      const current = new Map();
-      for (const record of entries) {
-        if (record.type !== 'calibration') continue;
-        const card = sources.cards.find(item => item.id === record.cardId);
-        if (!card || recipeOn(card, today())?.number !== record.version) continue;
-        const scope = JSON.stringify([record.cardId, record.portion]);
-        if (!current.has(scope)) current.set(scope, record);
-      }
-      const checked = [...current.values()];
-      if (checked.length) {
-        const count = checked.filter(passed).length;
-        calibration.append(node('p', '', 'По действующим редакциям подтверждено ' + count + ' из ' + checked.length + ' проверенных порций.'));
-        explain(calibration, 'В этом числе только те порции, которые уже проверяли на точке по действующей редакции. Полнота меню будет учитываться отдельно.');
-      } else calibration.append(node('p', 'quiet', 'По действующим редакциям записей пока нет.'));
+      if (menuReport) calibration.append(menu.pointSection(menuReport, focus));
       calibration.append(button('Записать калибровку', () => editCalibration(point), true));
       const history = module('История смен и калибровок');
       if (!entries.length) history.append(node('p', 'quiet', 'Проверок пока нет.'));
@@ -373,11 +392,16 @@
       return section;
     }
 
-    function todayOpenings() {
-      const openings = newest(records().filter(item => item.type === 'shift' && item.phase === 'opening' && item.date === today()));
-      const byPoint = new Map();
-      for (const record of openings) if (!byPoint.has(record.pointId)) byPoint.set(record.pointId, record);
-      return byPoint;
+    function shiftProgress(points) {
+      const day = today();
+      const shifts = newest(records().filter(item => item.type === 'shift' && item.date <= day));
+      return new Map(points.map(point => {
+        const entries = shifts.filter(item => item.pointId === point.id);
+        const opening = entries.find(item => item.phase === 'opening' && item.date === day);
+        const lastDay = entries.find(item => item.date < day)?.date;
+        const closing = entries.find(item => item.phase === 'closing' && (item.date === day || item.date === lastDay));
+        return [point.id, { opening, closing, ready: Boolean(opening && closing && passed(opening) && passed(closing)) }];
+      }));
     }
 
     function deadlines() {
@@ -393,6 +417,6 @@
       });
     }
 
-    return { pointSection, todayOpenings, status, passed, deadlines };
+    return { pointSection, shiftProgress, status, passed, deadlines, menu };
   };
 })();

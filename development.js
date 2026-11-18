@@ -494,7 +494,7 @@
       }, 0);
     }
   });
-  window.panel03BarDeadlines = bar?.deadlines;
+  window.panel03BarDeadlines = bar && (() => [...bar.deadlines(), ...(bar.menu?.deadlines() || [])]);
 
   function render() {
     try {
@@ -505,7 +505,8 @@
       if (bar) {
         const guide = module('Готовность смены и качество напитков');
         guide.append(node('p', '', 'Записывай открытие и закрытие в карточке точки. Сверяй каждый пункт с процедурой и указывай факт. При отклонении или пропуске назначь срок перепроверки.'),
-          node('p', '', 'Для калибровки выбери напиток, порцию и дату, зафиксируй партию и условия. Сопоставь результат с техкартой. После изменения рецепта проведи новую проверку.'));
+          node('p', '', 'Для калибровки выбери напиток, порцию и дату, зафиксируй партию и условия. Сопоставь результат с техкартой. После изменения рецепта проведи новую проверку.'),
+          node('p', '', 'Собери общее меню, затем подтверди правила каждой точки. Эспрессо проверяй при открытии, остальные позиции — по графику. Существенное изменение сырья или техники отмечай у затронутой порции. Готовность продукта считается по всему применимому меню.'));
         const link = node('a', 'action', 'Открыть карту сети');
         link.href = '#development';
         guide.append(link);
@@ -526,11 +527,13 @@
       const ready = latest.length > 0 && latest.every(item => item.point.reviewed && item.visit);
       const visitIds = ready ? JSON.stringify(latest.map(item => item.visit.id).sort()) : '';
       const confirmed = profile && versions.findLast(version => version.profileId === profile.id && JSON.stringify(version.visitIds) === visitIds);
-      const openingChecks = bar?.todayOpenings();
+      const shifts = bar?.shiftProgress(data.points);
+      const menuReports = bar?.menu?.report(data.points);
+      const openings = data.points.map(point => ({ point, check: shifts?.get(point.id).opening }));
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
         if (!barOverview.hidden) {
-          const checks = data.points.map(point => openingChecks.get(point.id)).filter(Boolean);
+          const checks = openings.map(item => item.check).filter(Boolean);
           const confirmed = checks.filter(bar.passed).length;
           const needsAttention = checks.length - confirmed;
           const missing = data.points.length - checks.length;
@@ -538,7 +541,14 @@
           link.href = '#development';
           barOverview.replaceChildren(node('h3', '', 'Готовность бара сегодня'),
             node('p', '', 'Подтверждено ' + confirmed + ' из ' + data.points.length),
-            node('p', 'quiet', 'Требуют внимания: ' + needsAttention + ' · Без проверки: ' + missing), link);
+            node('p', 'quiet', 'Требуют внимания: ' + needsAttention + ' · Без проверки: ' + missing));
+          if (menuReports) {
+            const items = menuReports.flatMap(item => item.items);
+            const ready = items.filter(item => item.ready).length;
+            barOverview.append(node('p', 'quiet', 'Калибровки: ' + ready + ' из ' + items.length + ' известных порций по точкам.'));
+            if (menuReports.some(item => !item.configured)) barOverview.append(node('p', 'quiet', 'Состав меню подтверждён не на всех точках.'));
+          }
+          barOverview.append(link);
         }
       }
       const next = data.points.find(point => !point.reviewed);
@@ -560,11 +570,17 @@
       } else if (confirmed) {
         mission.append(node('p', '', 'Уровень 1 · Исходная картина сети подтверждена'), node('p', 'quiet', 'Открытые действия видны в рабочих сроках.'));
         if (bar) {
-          const openings = data.points.map(point => ({ point, check: openingChecks.get(point.id) }));
-          const nextOpening = openings.find(({ check }) => !check || !bar.passed(check));
-          const nextPoint = nextOpening?.point || data.points[0];
-          mission.append(node('p', '', nextOpening ? 'Уровень 2 · Проверь готовность бара' : 'Уровень 3 · Подтверди воспроизводимость напитка'),
-            button((nextOpening ? 'Сменные проверки · ' : 'Калибровки · ') + nextPoint.name, () => openMap(nextPoint), true));
+          const nextShift = data.points.find(point => !shifts.get(point.id).ready);
+          const nextMenu = menuReports?.find(item => !item.ready);
+          if (nextShift) {
+            mission.append(node('p', '', 'Уровень 2 · Проверь готовность бара'),
+              button('Сменные проверки · ' + nextShift.name, () => openMap(nextShift), true));
+          } else {
+            mission.append(node('p', '', 'Уровень 2 · Сменные проверки подтверждены'));
+            if (nextMenu) mission.append(node('p', '', 'Уровень 3 · Подтверди воспроизводимость напитка'),
+              button('Меню и калибровки · ' + nextMenu.point.name, () => openMap(nextMenu.point), true));
+            else if (menuReports?.length) mission.append(node('p', '', 'Уровень 3 · Все порции действующего меню подтверждены'));
+          }
         }
       } else if (ready) {
         mission.append(node('p', '', 'Миссия 1.4 · Подведи итоги по исходной картине сети'),
@@ -587,14 +603,14 @@
       const picture = initialPicture(latest, visits, versions, confirmed);
       const panels = picture ? [mission, map, picture] : [mission, map];
       if (bar && data.points.length) {
-        const openings = module('Готовность к работе сегодня');
-        explain(openings, 'Статус каждой точки основан на последней проверке открытия за сегодня. Открой точку, чтобы увидеть журнал и действия.');
-        for (const item of data.points) {
-          const check = openingChecks.get(item.id);
-          openings.append(button(item.name + ' · ' + bar.status(check), () => openMap(item)));
+        const readiness = module('Готовность к работе сегодня');
+        explain(readiness, 'Статус в списке основан на последнем открытии сегодня. Для уровня 2 нужны успешное открытие сегодня и последнее обязательное закрытие смены.');
+        for (const { point: item, check } of openings) {
+          readiness.append(button(item.name + ' · ' + bar.status(check), () => openMap(item)));
         }
-        panels.splice(1, 0, openings);
+        panels.splice(1, 0, readiness);
       }
+      if (menuReports) panels.splice(panels.indexOf(map), 0, bar.menu.networkSection(menuReports));
       if (point) {
         const card = module(point.name);
         showText(card, 'Управляющий', point.manager);
@@ -609,7 +625,7 @@
           links.append(link);
         }
         card.append(links, button('Заполнить карточку', () => editPoint(baseline, data, point, team, devices), true));
-        if (bar) card.append(bar.pointSection(point, focusedBarRecord));
+        if (bar) card.append(bar.pointSection(point, focusedBarRecord, menuReports?.find(item => item.point.id === point.id), shifts.get(point.id)));
         visitHistory(card, point, visits);
         panels.splice(1, 0, card);
       }

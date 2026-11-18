@@ -6,6 +6,8 @@
     'panel-03:precision-visits': ['Первичная диагностика', null],
     'panel-03:network-baselines': ['Исходные картины сети', null],
     'panel-03:bar-operations': ['Сменные проверки и калибровки', null],
+    'panel-03:menu-plans': ['Меню и графики калибровок', null],
+    'panel-03:menu-changes': ['Изменения для перепроверки меню', null],
     'panel-03:techcards': ['Техкарты', null],
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:sales': ['Дневные продажи', null],
@@ -115,9 +117,22 @@
         new Set(value.checks.map(check => check.name.toLocaleLowerCase('ru'))).size === value.checks.length
       : fields({
         type: choices('calibration'), cardId: hasText, version: Number.isSafeInteger, portion: index => Number.isSafeInteger(index) && index >= 0,
-        deviceId: text, batch: hasText, sampleId: text, attemptId: text, adjustment: hasText
+        deviceId: text, batch: hasText, sampleId: text, attemptId: text, adjustment: hasText, changeId: optional(hasText)
       })(value) && Boolean(value.sampleId) === Boolean(value.attemptId) && value.checks.every(check => check.rule !== null));
+  const portionNameKey = value => value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
+  const menuScope = { cardId: hasText, portionKey: value => hasText(value) && value === portionNameKey(value),
+    version: value => Number.isSafeInteger(value) && value > 0 };
+  const menuRow = fields({ ...menuScope, mode: choices('include', 'exclude'),
+    interval: value => Number.isInteger(value) && value >= 0 && value <= 365, since: date });
+  const recordedAt = value => text(value) && Number.isFinite(Date.parse(value));
+  const menuPlan = value => identified({ pointId: text, date, createdAt: recordedAt, rows: array(menuRow) })(value) &&
+    value.rows.every(row => row.since <= value.date && (row.mode === 'include' || (Boolean(value.pointId) && row.interval === 0))) &&
+    new Set(value.rows.map(row => JSON.stringify([row.cardId, row.portionKey]))).size === value.rows.length;
+  const menuChange = identified({ ...menuScope, pointId: hasText, date, createdAt: recordedAt,
+    cause: choices('supplies', 'equipment'), note: hasText });
   const schemas = {
+    'panel-03:menu-plans': array(menuPlan),
+    'panel-03:menu-changes': array(menuChange),
     'panel-03:bar-operations': array(barOperation),
     'panel-03:precision-visits': array(diagnosticVisit),
     'panel-03:network-baselines': array(identified({
@@ -232,6 +247,22 @@
         throw Error('Нарушена связь «Исходная картина и визиты».');
       }
     }
+    function verifyMenuPortion(item, day) {
+      const card = catalog.find(entry => entry.id === item.cardId);
+      const version = card?.versions.find(entry => entry.number === item.version && entry.effective <= day);
+      if (!version?.portions.some(portion => portionNameKey(portion.name) === item.portionKey)) {
+        throw Error('Нарушена связь «Меню и редакция техкарты».');
+      }
+    }
+    for (const plan of records['panel-03:menu-plans'] || []) {
+      if (plan.pointId) link(network?.points || [], plan.pointId, 'Меню и точка');
+      for (const row of plan.rows) verifyMenuPortion(row, plan.date);
+    }
+    const menuChanges = records['panel-03:menu-changes'] || [];
+    for (const item of menuChanges) {
+      link(network?.points || [], item.pointId, 'Изменение и точка');
+      verifyMenuPortion(item, item.date);
+    }
     for (const record of records['panel-03:bar-operations'] || []) {
       link(network?.points || [], record.pointId, 'Проверка бара и точка');
       if (record.type !== 'calibration') continue;
@@ -243,6 +274,13 @@
       if (!criteria || criteria.length !== record.checks.length ||
           record.checks.some(({ name, rule }, index) => name !== criteria[index].name || !sameRule(rule, criteria[index].rule))) {
         throw Error('Нарушена связь «Калибровка и редакция техкарты».');
+      }
+      if (record.changeId) {
+        const change = menuChanges.find(item => item.id === record.changeId);
+        if (!change || change.pointId !== record.pointId || change.cardId !== record.cardId ||
+            change.portionKey !== portionNameKey(version.portions[record.portion].name) || change.date > record.date) {
+          throw Error('Нарушена связь «Калибровка и изменение».');
+        }
       }
       if (record.deviceId) link(equipment.devices, record.deviceId, 'Калибровка и оборудование');
       if (record.sampleId) {

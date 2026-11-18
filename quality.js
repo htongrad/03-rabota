@@ -659,6 +659,7 @@
       const revision = { ...card.draft, number: card.versions.length + 1, effective: dateKey() };
       writeCard(catalog, { ...card, draft: null, versions: [...card.versions, revision] });
       renderCards(card.id);
+      window.dispatchEvent(new window.Event('panel-03:work-changed'));
     } catch (problem) {
       $('#techcards-message').textContent = problem instanceof DOMException ? 'Не удалось сохранить техкарту в браузере.' : problem.message;
     }
@@ -2615,7 +2616,7 @@
     }
   }
 
-  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
   const deadlineFilter = { point: '', section: '' };
 
   function collectDeadlines() {
@@ -2793,7 +2794,7 @@
     const week = new Date(date + 'T12:00:00');
     week.setDate(week.getDate() + 7);
     const end = dateKey(week);
-    container.append(heading('Рабочие сроки', 'Открытые действия из журналов. Нажми «Открыть запись» для результата или «Изменить срок» для переноса даты.'));
+    container.append(heading('Рабочие сроки', 'Действия из журналов и плановые проверки. Нажми «Открыть запись», чтобы увидеть результат или правило графика.'));
     const filters = el('div', '', 'quality-fields');
     const points = new Map(rows.filter(row => row.point).map(row => [normalized(row.point), row.point]));
     const point = field('Точка для сроков', 'Выбери точку. Общие пробы поставщиков находятся в варианте «Без привязки к точке».', {
@@ -2829,7 +2830,7 @@
         line(entry, 'Срок:', dateIsValid(row.date) ? formatDate(row.date) : 'не назначен');
         if (row.owner) line(entry, 'Ответственный:', row.owner);
         entry.append(action('Открыть запись', 'Переходит к исходной записи и раскрывает её для проверки результата.', () => openDeadline(row)));
-        entry.append(action('Изменить срок', 'Назначает или переносит дату в исходном журнале.', () => {
+        if (row.schedule) entry.append(action('Изменить срок', 'Назначает или переносит дату в исходном журнале.', () => {
           try { row.schedule(); }
           catch {
             container.append(el('p', 'Не удалось открыть запись. Обнови обзор и повтори действие.', 'error'));
@@ -2854,7 +2855,7 @@
         editor.close();
         openDeadline(row);
       }));
-      body.append(action('Перенести дату', 'Изменяет срок в исходной записи, календаре и обзоре.', () => {
+      if (row.schedule) body.append(action('Перенести дату', 'Изменяет срок в исходной записи, календаре и обзоре.', () => {
         try {
           if (row.section === 'diagnostics' || row.separateEditor) editor.close();
           row.schedule();
