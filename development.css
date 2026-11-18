@@ -28,3 +28,15 @@
 .dev-status { margin: 0; }
 .dev-status:empty { display: none; }
 .dev-help { margin-left: 6px; font-size: .8rem; vertical-align: middle; }
+.dev-editor select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}

@@ -3,6 +3,8 @@
 
   const groups = {
     'panel-03:network': ['Развитие и точки', ['profiles', 'points']],
+    'panel-03:precision-visits': ['Первичная диагностика', null],
+    'panel-03:network-baselines': ['Исходные картины сети', null],
     'panel-03:techcards': ['Техкарты', null],
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:sales': ['Дневные продажи', null],
@@ -62,7 +64,32 @@
     name: value => text(value) && Boolean(value.trim()), manager: text, menu: text,
     teamIds: array(text), deviceIds: array(text), equipmentNotes: text, reviewed: boolean
   });
+  const hasText = value => text(value) && Boolean(value.trim());
+  const visitTopics = ['drinks', 'bar', 'team', 'equipment', 'supply', 'economy'];
+  const diagnosticAction = fields({
+    title: hasText, owner: hasText, due: date, verification: hasText,
+    closed: nullable(fields({ date, result: hasText }))
+  });
+  const diagnosticCheck = fields({
+    topic: choices(...visitTopics), state: choices('', 'ok', 'issue', 'skipped'), note: text,
+    action: nullable(diagnosticAction)
+  });
+  const diagnosticVisit = value => identified({
+    pointId: hasText, date, checks: array(diagnosticCheck), confirmed: boolean
+  })(value) &&
+    value.checks.length === visitTopics.length &&
+    new Set(value.checks.map(check => check.topic)).size === visitTopics.length &&
+    value.checks.every(check =>
+      (!check.action || (check.state === 'issue' && check.note.trim() && check.action.due >= value.date &&
+        (!check.action.closed || (value.confirmed && check.action.closed.date >= value.date)))) &&
+      (!value.confirmed || (check.state && check.note.trim() && (check.state !== 'issue' || check.action)))
+    );
   const schemas = {
+    'panel-03:precision-visits': array(diagnosticVisit),
+    'panel-03:network-baselines': array(identified({
+      date, profileId: hasText, visitIds: value => array(hasText)(value) && value.length > 0 && new Set(value).size === value.length,
+      priority: hasText
+    })),
     'panel-03:network': fields({
       profiles: array(identified({ purpose: text, scope: text, leadership: text, authority: text, basis: text, effective: date, savedAt: text })),
       points: array(networkPoint)
@@ -156,6 +183,18 @@
     const link = (list, id, description) => {
       if (!exists(list, id)) throw Error('Нарушена связь «' + description + '».');
     };
+    const network = records['panel-03:network'];
+    for (const visit of records['panel-03:precision-visits'] || []) {
+      link(network?.points || [], visit.pointId, 'Диагностика и точка');
+    }
+    const fieldVisits = records['panel-03:precision-visits'] || [];
+    for (const baseline of records['panel-03:network-baselines'] || []) {
+      link(network?.profiles || [], baseline.profileId, 'Исходная картина и паспорт');
+      const baselineVisits = baseline.visitIds.map(id => fieldVisits.find(visit => visit.id === id && visit.confirmed));
+      if (baselineVisits.some(visit => !visit) || new Set(baselineVisits.map(visit => visit.pointId)).size !== baselineVisits.length) {
+        throw Error('Нарушена связь «Исходная картина и визиты».');
+      }
+    }
     for (const item of economy.links) {
       let parts;
       try { parts = JSON.parse(item.key); } catch { throw Error('Повреждена связь сырья с техкартой.'); }

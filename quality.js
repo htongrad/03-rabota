@@ -2456,7 +2456,7 @@
     }
   }
 
-  const deadlineSections = { quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const deadlineSections = { diagnostics: 'Первичная диагностика', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
   const deadlineFilter = { point: '', section: '' };
 
   function collectDeadlines() {
@@ -2566,6 +2566,9 @@
         });
       }
     });
+    load('Первичная диагностика', () => {
+      for (const row of window.panel03DiagnosticDeadlines?.() || []) rows.push(row);
+    });
     return { rows, warnings };
   }
 
@@ -2590,6 +2593,7 @@
   }
 
   function openDeadline(row) {
+    if (row.open) return row.open();
     location.hash = '#' + row.route;
     const renderSource = {
       quality: () => render(row.id), equipment: () => renderEquipment(row.id),
@@ -2687,8 +2691,10 @@
         openDeadline(row);
       }));
       body.append(action('Перенести дату', 'Изменяет срок в исходной записи, календаре и обзоре.', () => {
-        try { row.schedule(); }
-        catch { error.textContent = 'Запись недоступна. Обнови календарь.'; error.hidden = false; }
+        try {
+          if (row.section === 'diagnostics') editor.close();
+          row.schedule();
+        } catch { error.textContent = 'Запись недоступна. Обнови календарь.'; error.hidden = false; }
       }));
       return () => null;
     });
@@ -2807,6 +2813,9 @@
     if (location.hash === '#training') renderTraining();
     if (location.hash === '#equipment') renderEquipment();
     if (location.hash === '#suppliers') renderSuppliers();
+  });
+  window.addEventListener('panel-03:work-changed', () => {
+    if (!location.hash || location.hash === '#overview') renderDeadlines();
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && (!location.hash || location.hash === '#overview')) renderDeadlines();
