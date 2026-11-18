@@ -1,0 +1,10 @@
+{
+  "name": "panel-03-qa",
+  "private": true,
+  "scripts": {
+    "test": "node acceptance.cjs"
+  },
+  "dependencies": {
+    "linkedom": "0.18.15"
+  }
+}
