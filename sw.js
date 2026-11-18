@@ -1,11 +1,11 @@
 'use strict';
 
 const cachePrefix = 'panel-03-shell-';
-const cacheName = cachePrefix + 'v18';
+const cacheName = cachePrefix + 'v19';
 const scope = new URL(self.registration.scope);
 const home = scope.href;
 const index = new URL('index.html', scope).href;
-const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=18', 'quality.js?v=18', 'backup.js?v=18', 'google-sync.js?v=18', 'calendar-sync.js?v=18', 'development.css?v=18', 'development.js?v=18']
+const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=19', 'quality.js?v=19', 'backup.js?v=19', 'google-sync.js?v=19', 'calendar-sync.js?v=19', 'development.css?v=19', 'development.js?v=19']
   .map(path => new URL(path, scope).href);
 
 self.addEventListener('install', event => {

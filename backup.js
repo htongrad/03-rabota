@@ -10,6 +10,7 @@
     'panel-03:sales': ['Дневные продажи', null],
     'panel-03:stock': ['Списания и сверки', ['writeOffs', 'checks']],
     'panel-03:training': ['Обучение', ['team', 'skills', 'attempts']],
+    'panel-03:training-plans': ['Планы проверок навыков', null],
     'panel-03:equipment': ['Оборудование и вода', ['devices', 'jobs', 'water']],
     'panel-03:suppliers': ['Сырьё и поставщики', ['suppliers', 'specs', 'samples']]
   };
@@ -30,7 +31,8 @@
   const numericRule = fields({ type: choices('numeric'), min: number, max: number, unit: text });
   const rule = value => (numericRule(value) && value.min <= value.max) ||
     fields({ type: choices('observable'), expected: text })(value);
-  const criterion = fields({ name: text, rule });
+  const importance = optional(choices('required', 'critical', 'advisory'));
+  const criterion = fields({ name: text, rule, importance });
   const templateCriterion = value => criterion(value) || fields({ name: text, rule: fields({ type: choices('recipe') }) })(value);
   const ingredient = fields({ name: text, amount: nullable(number), unit: text });
   const portion = fields({ name: text, ingredients: array(ingredient), preparation: text, service: text, criteria: array(criterion) });
@@ -55,11 +57,16 @@
   const price = fields({ cost: number, amount: value => number(value) && value > 0, unit: text, date, density: nullable(number) });
   const waterPlan = fields({ action: text, owner: text, date });
   const waterAttempt = fields({ date, amount: number, passed: boolean, plan: nullable(waterPlan) });
-  const sampleAttempt = identified({
+  const sampleAttempt = attempt => identified({
     date, conditions: text, results: array(performance), quote: nullable(fields({ cost: number, amount: value => number(value) && value > 0, unit: text })),
-    decision: choices('approved', 'repeat', 'rejected'), reason: text, follow: text, next: maybeDate,
-    transition: maybeDate, impactNote: text, impact: array(fields({ title: text, delta: nullable(number) }))
-  });
+    decision: choices('approved', 'conditional', 'repeat', 'rejected'), reason: text, follow: text, next: maybeDate,
+    transition: maybeDate, impactNote: text, impact: array(fields({ title: text, delta: nullable(number) })),
+    approval: optional(fields({ approver: value => text(value) && Boolean(value.trim()), until: date, conditions: value => text(value) && Boolean(value.trim()) }))
+  })(attempt) && (attempt.decision === 'conditional'
+    ? Boolean(attempt.approval) && attempt.approval.until >= attempt.date &&
+      attempt.results.some(item => !item.passed && (item.importance || 'required') === 'required') &&
+      !attempt.results.some(item => !item.passed && item.importance === 'critical')
+    : attempt.approval === undefined);
   const networkPoint = identified({
     name: value => text(value) && Boolean(value.trim()), manager: text, menu: text,
     teamIds: array(text), deviceIds: array(text), equipmentNotes: text, reviewed: boolean
@@ -112,9 +119,12 @@
       checks: array(identified({ point: text, supply: text, from: date, to: date, unit: text, coverage: choices('open', 'complete'), note: text,
         opening: number, closing: number, received: number, incoming: number, outgoing: number, returned: number }))
     }),
+    'panel-03:training-plans': array(identified({ personId: hasText, skillId: hasText, requiredVersion: value => Number.isSafeInteger(value) && value > 0, owner: hasText, due: date })),
     'panel-03:training': fields({
       team: array(identified({ name: text, point: text })),
-      skills: array(identified({ version: number, name: text, task: text, criteria: array(templateCriterion) })),
+      skills: array(item => identified({ version: number, requiredVersion: optional(Number.isSafeInteger), name: text, task: text,
+        criteria: array(templateCriterion) })(item) &&
+        (item.requiredVersion === undefined || (item.requiredVersion > 0 && item.requiredVersion <= item.version))),
       attempts: array(identified({ personId: text, skillId: text, version: number, skill: text, task: text, date,
         point: text, reviewer: text, independent: boolean, passed: boolean, results: array(performance), feedback: text, exercise: text, next: maybeDate }))
     }),
@@ -204,6 +214,11 @@
     }
     for (const item of records['panel-03:sales'] || []) if (item.cardId) link(catalog, item.cardId, 'Продажи и техкарта');
     for (const item of [...stock.checks, ...stock.writeOffs]) link(economy.supplies, item.supply, 'Расход сырья');
+    for (const plan of records['panel-03:training-plans'] || []) {
+      link(training.team, plan.personId, 'План проверки и бариста');
+      link(training.skills, plan.skillId, 'План проверки и навык');
+      if (plan.id !== JSON.stringify([plan.personId, plan.skillId])) throw Error('Нарушен идентификатор плана проверки.');
+    }
     for (const item of training.attempts) {
       link(training.team, item.personId, 'Бариста и попытка');
       link(training.skills, item.skillId, 'Навык и попытка');

@@ -116,17 +116,20 @@
     for (const item of wrapper.querySelectorAll('input, select, textarea')) item.disabled = !enabled;
   }
 
-  function planFields(container) {
+  function planFields(container, saved = {}) {
     const group = el('div', '', 'quality-fields');
-    const actionField = field('Что сделать', 'Укажи конкретное исправление. Например, вернуть утверждённую настройку и приготовить новую пробу.', { multiline: true });
-    const owner = field('Ответственный', 'Укажи сотрудника или роль, которая выполнит действие. Для исправления на месте можно указать себя.');
-    const due = dateField('Срок', 'Дата, к которой должно быть выполнено действие. Для исправления на месте укажи текущую дату.');
-    const method = field('Как перепроверить', 'Опиши, когда и в каких условиях повторить тот же замер или наблюдение.', { multiline: true });
+    const actionField = field('Что сделать', 'Укажи конкретное исправление. Например, вернуть утверждённую настройку и приготовить новую пробу.',  { multiline: true, value: saved.action });
+    const owner = field('Ответственный', 'Укажи сотрудника или роль, которая выполнит действие. Для исправления на месте можно указать себя.', { value: saved.owner });
+    const due = field('Срок', 'Дата выполнения действия или повторной проверки.', { type: 'date', value: saved.due || dateKey() });
+    const method = field('Как перепроверить', 'Опиши, когда и в каких условиях повторить тот же замер или наблюдение.', { multiline: true, value: saved.method });
     group.append(actionField.wrapper, owner.wrapper, due.wrapper, method.wrapper);
     container.append(group);
     return {
       toggle(enabled) { setActive(group, enabled); },
-      read() { return { action: requireText(actionField), owner: requireText(owner), due: value(due), method: requireText(method) }; }
+      read() {
+        if (!dateIsValid(value(due))) throw Error('Укажи срок действия.');
+        return { action: requireText(actionField), owner: requireText(owner), due: value(due), method: requireText(method) };
+      }
     };
   }
 
@@ -170,7 +173,7 @@
       const current = result();
       output.textContent = status[current] || 'Результат появится после ввода';
       output.dataset.result = current;
-      plan.toggle(current === 'fail');
+      plan.toggle(current === 'fail' || current === 'skip');
     }
 
     return {
@@ -181,7 +184,7 @@
         const detail = outcome === 'skip' ? requireText(reason) :
           definition().type === 'numeric' ? value(note) : requireText(actualText);
         const measured = outcome !== 'skip' && definition().type === 'numeric' ? actualNumber.control.valueAsNumber : null;
-        return { outcome, detail, measured, plan: outcome === 'fail' ? plan.read() : null };
+        return { outcome, detail, measured, plan: outcome !== 'pass' ? plan.read() : null };
       }
     };
   }
@@ -343,6 +346,42 @@
     return criterion.repeats.findLast(attempt => attempt.outcome !== 'skip') || criterion.initial;
   }
 
+  function latestAttempt(criterion) {
+    return criterion.repeats.at(-1) || criterion.initial;
+  }
+
+  function nextQualityAction(criterion) {
+    const attempt = latestAttempt(criterion);
+    return attempt.outcome === 'pass' ? null : attempt;
+  }
+
+  function updateQualityPlan(record, index, attempt, original, plan) {
+    if (localStorage.getItem(prefix + record.id) !== original) throw Error('Проверка изменилась. Открой её заново.');
+    if (plan.due < (attempt.date || record.date)) throw Error('Срок должен быть не раньше даты проверки.');
+    const updated = { ...attempt, plan };
+    const criteria = record.criteria.map((item, i) => i === index ? {
+      ...item, initial: item.initial === attempt ? updated : item.initial,
+      repeats: item.repeats.map(repeat => repeat === attempt ? updated : repeat)
+    } : item);
+    localStorage.setItem(prefix + record.id, JSON.stringify({ ...record, criteria }));
+  }
+
+  function scheduleQualityAction(record, index, attempt, original) {
+    if (attempt.plan) {
+      editDeadline('Срок повторной проверки', attempt.plan.due, date =>
+        updateQualityPlan(record, index, attempt, original, { ...attempt.plan, due: date }), attempt.date || record.date);
+      return;
+    }
+    showEditor('Назначить повторную проверку', body => {
+      const prior = latest(record.criteria[index]);
+      const plan = planFields(body, prior.outcome === 'fail' ? prior.plan || {} : {});
+      return () => {
+        updateQualityPlan(record, index, attempt, original, plan.read());
+        return record.id;
+      };
+    });
+  }
+
   function ruleLabel(rule) {
     return rule.type === 'numeric' ? rule.min + '–' + rule.max + ' ' + rule.unit : rule.expected;
   }
@@ -353,7 +392,7 @@
       body.append(el('p', record.location + ' · ' + record.drink + ' · ' + criterion.name, 'quality-title'));
       body.append(el('p', 'Стандарт: ' + ruleLabel(criterion.rule), 'quality-note'));
       line(body, 'Способ проверки:', criterion.method);
-      if (latest(criterion).plan) body.append(el('p', 'План: ' + latest(criterion).plan.method, 'quality-note'));
+      if (latestAttempt(criterion).plan) body.append(el('p', 'План: ' + latestAttempt(criterion).plan.method, 'quality-note'));
       const date = dateField('Дата повторной проверки', 'Укажи день повторного замера или наблюдения по этому же стандарту.');
       date.control.min = criterion.repeats.at(-1)?.date || record.date;
       body.append(date.wrapper);
@@ -415,9 +454,15 @@
     try {
       const records = savedRecords();
       let openIssues = 0;
+      let total = 0;
+      let checked = 0;
+      let passed = 0;
       for (const { record, original } of records) {
         const failures = record.criteria.filter(criterion => latest(criterion).outcome === 'fail').length;
-        const skipped = record.criteria.filter(criterion => latest(criterion).outcome === 'skip').length;
+        const skipped = record.criteria.filter(criterion => latestAttempt(criterion).outcome === 'skip').length;
+        total += record.criteria.length;
+        checked += record.criteria.length - skipped;
+        passed += record.criteria.filter(criterion => latestAttempt(criterion).outcome === 'pass').length;
         openIssues += failures;
         const details = el('details', '', 'module quality-record');
         details.dataset.id = record.id;
@@ -435,7 +480,13 @@
           line(block, 'Способ проверки:', criterion.method);
           showAttempt(block, 'Исходная проверка', criterion.initial, criterion.rule);
           for (const repeat of criterion.repeats) showAttempt(block, formatDate(repeat.date), repeat, criterion.rule);
-          if (latest(criterion).outcome !== 'pass') {
+          const pending = nextQualityAction(criterion);
+          if (pending) {
+            if (pending.outcome === 'skip' && latest(criterion).outcome === 'fail') {
+              line(block, 'Отклонение:', 'предыдущий результат остаётся открытым до успешной перепроверки.');
+            }
+            if (!pending.plan) block.append(action('Назначить повторную проверку', 'Укажи ответственного, срок и способ проверки.',
+              () => scheduleQualityAction(record, index, pending, original)));
             block.append(action('Перепроверить', 'Добавляет результат по тому же критерию. Исходное наблюдение и все предыдущие попытки сохраняются.', () => openRepeat(record, index, original)));
           }
           body.append(block);
@@ -453,7 +504,10 @@
         details.append(body);
         journal.append(details);
       }
-      $('#quality-count').textContent = openIssues ? 'Открытые отклонения: ' + openIssues : 'Открытых отклонений нет';
+      $('#quality-count').textContent = total
+        ? 'Охват: ' + checked + ' из ' + total + ' · Соответствуют: ' + passed + ' из ' + checked +
+          ' · Не проверено: ' + (total - checked) + ' · Открытые отклонения: ' + openIssues
+        : 'Проверок пока нет.';
       $('#quality-storage-message').textContent = records.length ? '' : 'Проверок пока нет.';
     } catch {
       $('#quality-storage-message').textContent = 'Журнал недоступен. Проверь разрешения браузера.';
@@ -1099,24 +1153,29 @@
   function costForSale(row, cards, economy) {
     const { card, version, portion } = saleRecipe(row, cards);
     if (!portion) return { cost: null, card, reason: version ? 'В техкарте на эту дату нет такого размера порции.' : 'На дату продажи нет однозначно подходящей техкарты.' };
+    const returnsUnknown = row.returned === null;
     const count = row.quantity + (row.returned ?? 0);
-    if (count === 0) return { cost: 0, card, version };
+    const partial = returnsUnknown ? 'Количество приготовленных возвратов неизвестно.' : '';
+    if (count === 0) return { cost: 0, card, version, partial };
     const items = portion.ingredients.map(ingredient => ({
       ingredient, ...estimateIngredient(economy, card.id, portion.name, ingredient, row.date)
     }));
     const missing = items.filter(item => item.cost === null);
     if (missing.length) return { cost: null, version, card, portion, missing, reason: 'Нужны закупочные данные по составу.' };
     const total = items.reduce((sum, item) => sum + item.cost, 0) * count;
-    return Number.isSafeInteger(total) ? { cost: total, card, version } : { cost: null, card, version, reason: 'Сумма выходит за пределы расчёта.' };
+    return Number.isSafeInteger(total) ? { cost: total, card, version, partial } : { cost: null, card, version, reason: 'Сумма выходит за пределы расчёта.' };
   }
 
   function salesTotals(entries) {
-    const result = { quantity: 0, revenue: 0, cost: 0, coveredRevenue: 0, positiveRevenue: 0, coveredPositiveRevenue: 0, coveredRows: 0 };
+    const result = { quantity: 0, revenue: 0, cost: 0, coveredRevenue: 0, positiveRevenue: 0, coveredPositiveRevenue: 0, coveredRows: 0, partialRows: 0, partialCost: 0 };
     for (const { row, estimate } of entries) {
       result.quantity += row.quantity;
       result.revenue += row.revenue;
       result.positiveRevenue += Math.max(0, row.revenue);
-      if (estimate.cost !== null) {
+      if (estimate.partial) {
+        result.partialRows++;
+        result.partialCost += estimate.cost;
+      } else if (estimate.cost !== null) {
         result.cost += estimate.cost;
         result.coveredRevenue += row.revenue;
         result.coveredPositiveRevenue += Math.max(0, row.revenue);
@@ -1133,22 +1192,26 @@
     line(card, 'Продано порций:', String(stats.quantity));
     line(card, 'Выручка:', money(stats.revenue));
     const covered = stats.coveredRows + ' из ' + entries.length;
-    line(card, 'Строк с себестоимостью:', covered);
+    line(card, 'Строк с полной расчётной себестоимостью:', covered);
+    if (stats.partialRows) {
+      line(card, 'Строк с неизвестными возвратами:', String(stats.partialRows));
+      line(card, 'Нижняя оценка затрат по этим строкам:', money(stats.partialCost));
+    }
     if (stats.positiveRevenue > 0) {
       line(card, 'Покрытие положительной выручки:', percentFormat.format(stats.coveredPositiveRevenue / stats.positiveRevenue));
     }
     if (stats.coveredRows) {
       if (stats.coveredRows < entries.length) line(card, 'Выручка по рассчитанным строкам:', money(stats.coveredRevenue));
-      line(card, 'Прямая себестоимость:', money(stats.cost));
-      line(card, 'Маржинальный доход:', money(stats.coveredRevenue - stats.cost));
+      line(card, 'Нормативная себестоимость:', money(stats.cost));
+      line(card, 'Расчётный маржинальный доход:', money(stats.coveredRevenue - stats.cost));
     } else {
-      line(card, 'Прямая себестоимость и маржинальный доход:', 'нет данных');
+      line(card, 'Нормативная себестоимость и расчётный маржинальный доход:', 'нет полных строк');
     }
     const rates = el('div', '', 'quality-pair');
     const food = el('div');
     const margin = el('div');
-    food.append(heading('Фудкост', 'Прямая себестоимость сырья и упаковки, делённая на выручку по тем же строкам. Рассчитывается при положительной выручке.', 'h4'));
-    margin.append(heading('Маржинальность', 'Маржинальный доход, делённый на выручку по тем же строкам. Рассчитывается при положительной выручке.', 'h4'));
+    food.append(heading('Нормативный фудкост', 'Затраты по техкартам и закупочным ценам, делённые на выручку по строкам с полными данными. Фактический расход оценивается отдельно при сверке сырья.', 'h4'));
+    margin.append(heading('Расчётная маржинальность', 'Выручка за вычетом нормативных затрат, делённая на выручку по тем же строкам. Покрытие расчёта указано выше.', 'h4'));
     food.append(el('p', stats.coveredRevenue > 0 ? percentFormat.format(stats.cost / stats.coveredRevenue) : '—', 'quality-result'));
     margin.append(el('p', stats.coveredRevenue > 0 ? percentFormat.format((stats.coveredRevenue - stats.cost) / stats.coveredRevenue) : '—', 'quality-result'));
     rates.append(food, margin);
@@ -1170,7 +1233,8 @@
       line(body, 'Продано порций:', String(row.quantity));
       line(body, 'Приготовлено и возвращено:', row.returned === null ? 'не указано' : String(row.returned));
       if (estimate.version) line(body, 'Техкарта:', 'версия ' + estimate.version.number);
-      if (estimate.cost !== null) line(body, 'Прямая себестоимость:', money(estimate.cost));
+      if (estimate.cost !== null) line(body, estimate.partial ? 'Нижняя оценка затрат по известным порциям:' : 'Нормативная себестоимость:', money(estimate.cost));
+      if (estimate.partial) body.append(el('p', estimate.partial + ' Строка исключена из расчёта процентов.', 'quiet'));
       if (estimate.reason) body.append(el('p', estimate.reason, 'error'));
       for (const missing of estimate.missing || []) {
         const problem = el('section', '', 'quality-criterion quality-fields');
@@ -1517,6 +1581,42 @@
     localStorage.setItem(trainingKey, JSON.stringify({ ...snapshot.data, [group]: [...updated, item] }));
   }
 
+  const trainingPlansKey = 'panel-03:training-plans';
+  const minimumSkillVersion = skill => skill.requiredVersion ?? skill.version;
+  const trainingPlanId = (person, skill) => JSON.stringify([person.id, skill.id]);
+  const currentTrainingPlan = (plans, person, skill) => plans.entries.find(item =>
+    item.id === trainingPlanId(person, skill) && item.requiredVersion === minimumSkillVersion(skill));
+
+  function trainingPlans() {
+    const raw = localStorage.getItem(trainingPlansKey);
+    return { raw, entries: raw === null ? [] : JSON.parse(raw) };
+  }
+
+  function latestTrainingAttempt(attempts, skill) {
+    return attempts.find(item => item.skillId === skill.id);
+  }
+
+  function scheduleSkill(snapshot, plans, person, skill, prior) {
+    const plan = currentTrainingPlan(plans, person, skill);
+    showEditor('Назначить проверку навыка', body => {
+      body.append(heading(person.name + ' · ' + skill.name, 'Проверка проводится по действующей версии требований.'));
+      const owner = field('Ответственный', 'Кто проведёт практическую проверку.', { value: plan?.owner || prior?.reviewer });
+      const due = field('Срок', 'Когда провести проверку.', { type: 'date', value: plan?.due || prior?.next || dateKey() });
+      body.append(owner.wrapper, due.wrapper);
+      return () => {
+        const deadline = value(due);
+        if (!dateIsValid(deadline) || (prior && deadline < prior.date)) throw Error('Укажи срок не раньше предыдущей попытки.');
+        if (localStorage.getItem(trainingKey) !== snapshot.raw || localStorage.getItem(trainingPlansKey) !== plans.raw) {
+          throw Error('Данные обучения изменились. Открой форму заново.');
+        }
+        const id = trainingPlanId(person, skill);
+        const entry = { id, personId: person.id, skillId: skill.id, requiredVersion: minimumSkillVersion(skill), owner: requireText(owner), due: deadline };
+        localStorage.setItem(trainingPlansKey, JSON.stringify([...plans.entries.filter(item => item.id !== id), entry]));
+        return person.id;
+      };
+    });
+  }
+
   function trainingError(problem) {
     $('#training-message').textContent = problem instanceof DOMException ? 'Не удалось сохранить данные в браузере.' : problem.message;
   }
@@ -1564,7 +1664,12 @@
           }
           names.add(label);
         }
-        const skill = { id: previous?.id ?? crypto.randomUUID(), version: (previous?.version ?? 0) + 1, name: title, task: requireText(task), criteria: rules };
+        const version = (previous?.version ?? 0) + 1;
+        const instruction = requireText(task);
+        const requirementsChanged = !previous || previous.task !== instruction ||
+          JSON.stringify(previous.criteria) !== JSON.stringify(rules);
+        const requiredVersion = requirementsChanged ? version : minimumSkillVersion(previous);
+        const skill = { id: previous?.id ?? crypto.randomUUID(), version, requiredVersion, name: title, task: instruction, criteria: rules };
         writeTraining(snapshot, 'skills', skill);
         return skill.id;
       };
@@ -1794,7 +1899,9 @@
     skillList.replaceChildren();
     $('#training-message').textContent = '';
     try {
-      const { data } = readTraining();
+      const snapshot = readTraining();
+      const { data } = snapshot;
+      const plans = trainingPlans();
       if (!data.team.length) teamList.append(el('p', 'Карточек бариста пока нет.', 'quiet'));
       for (const person of data.team) {
         const record = el('details', '', 'module quality-record');
@@ -1805,12 +1912,18 @@
         body.append(trainingAction('Изменить карточку', 'Открывает имя и текущую точку для правки.', () => openTeamMember(person)));
         const attempts = data.attempts.filter(item => item.personId === person.id).reverse().sort((a, b) => b.date.localeCompare(a.date));
         for (const skill of data.skills) {
-          const latest = attempts.find(item => item.skillId === skill.id);
+          const latest = latestTrainingAttempt(attempts, skill);
           const row = el('section', '', 'quality-criterion');
-          const state = !latest ? 'Не проверен' : latest.passed ? 'Подтверждён' : 'На отработке';
+          const stale = latest && latest.version < minimumSkillVersion(skill);
+          const state = !latest ? 'Не проверен' : stale ? 'Нужна проверка по новой версии' : latest.passed ? 'Подтверждён' : 'На отработке';
           line(row, skill.name + ':', state);
           if (latest?.version !== undefined && latest.version !== skill.version) line(row, 'Проверен по шаблону:', 'версия ' + latest.version);
-          if (latest?.next) line(row, 'Перепроверка:', formatDate(latest.next));
+          if (!latest || stale) {
+            const plan = currentTrainingPlan(plans, person, skill);
+            if (plan) line(row, 'План проверки:', plan.owner + ' · ' + formatDate(plan.due));
+            row.append(trainingAction('Назначить проверку', 'Добавляет ответственного и срок в календарь рабочих действий.',
+              () => scheduleSkill(snapshot, plans, person, skill, latest)));
+          } else if (latest.next) line(row, 'Перепроверка:', formatDate(latest.next));
           row.append(trainingAction('Проверить навык', 'Добавляет практическую попытку для этого бариста и навыка.', () => pickTraining(person.id, skill.id)));
           body.append(row);
         }
@@ -2155,7 +2268,19 @@
 
   const suppliersKey = 'panel-03:suppliers';
   const sampleKinds = { lot: 'Партия', sample: 'Образец', replacement: 'Образец для замены' };
-  const sampleDecisions = { approved: 'Одобрено', repeat: 'Нужна повторная проба', rejected: 'Отклонено' };
+  const sampleDecisions = { approved: 'Одобрено', conditional: 'Условно одобрено', repeat: 'Нужна повторная проба', rejected: 'Отклонено' };
+  const criterionLevels = { required: 'Обязательный', critical: 'Критический', advisory: 'Рекомендательный' };
+  const criterionLevel = criterion => criterion.importance || 'required';
+
+  function unmetMandatory(results) {
+    return results.filter(result => !result.passed && criterionLevel(result) !== 'advisory');
+  }
+
+  function sampleDecisionLabel(attempt) {
+    if (attempt.decision === 'approved' && unmetMandatory(attempt.results).length) return 'Требует пересмотра';
+    if (attempt.decision === 'conditional' && attempt.approval.until < dateKey()) return 'Исключение истекло';
+    return sampleDecisions[attempt.decision];
+  }
 
   function readSuppliers() {
     const raw = localStorage.getItem(suppliersKey);
@@ -2226,8 +2351,11 @@
       }, (group, saved) => {
         const fields = definitionFields(group, saved, true);
         const method = field('Способ проверки', 'Укажи, как воспроизвести проверку: прибор, условия дегустации или порядок наблюдения.', { multiline: true, value: saved?.method });
-        group.append(method.wrapper);
-        return () => ({ ...fields.read(), method: requireText(method) });
+        const importance = field('Обязательность', 'Рекомендательный пункт не блокирует одобрение. Для обязательного возможно согласованное исключение. Критическое отклонение его блокирует.', {
+          choices: criterionLevels, value: criterionLevel(saved || {})
+        });
+        group.append(method.wrapper, importance.wrapper);
+        return () => ({ ...fields.read(), method: requireText(method), importance: value(importance) });
       });
       return () => {
         const criteria = readings();
@@ -2310,7 +2438,9 @@
       const readings = sample.spec.criteria.map(criterion => {
         const group = el('fieldset', '', 'quality-criterion quality-fields');
         body.append(group);
-        return criterionObservation(group, criterion, 'Отклонение');
+        const observation = criterionObservation(group, criterion, 'Отклонение');
+        line(group, 'Обязательность:', criterionLevels[criterionLevel(criterion)]);
+        return observation;
       });
       const cost = field('Цена образца или упаковки, ₽', 'Если поставщик дал цену, укажи её целиком за указанное количество.', { type: 'number', required: false, value: previous?.quote ? previous.quote.cost / 100 : undefined });
       cost.control.min = '0';
@@ -2320,15 +2450,21 @@
       pair.append(amount.wrapper, unit.wrapper);
       const decision = field('Решение', 'Фиксирует итог пробы после оценки критериев.', { choices: { '': 'Выбери решение', ...sampleDecisions } });
       const reason = field('Обоснование решения', 'Запиши, почему принято решение и какие наблюдения на него повлияли.', { multiline: true });
+      const exception = el('div', '', 'quality-fields');
+      const approver = field('Кто согласовал исключение', 'Укажи согласовавшего в рамках полномочий сети.');
+      const until = field('Исключение действует до', 'Последний день действия исключения включительно.', { type: 'date' });
+      const conditionsOfUse = field('Условия применения', 'Укажи, где и на каких условиях разрешено использовать сырьё.', { multiline: true });
+      exception.append(approver.wrapper, until.wrapper, conditionsOfUse.wrapper);
       const follow = field('Что проверить повторно', 'Укажи, что уточнить на повторной пробе.', { multiline: true, required: false });
       const next = field('Срок повторной пробы', 'Плановая дата повторной пробы, если известна.', { type: 'date', required: false });
       const transition = field('Дата перехода', 'Плановая дата применения новой цены или сырья, если переход согласован.', { type: 'date', required: false });
       const impactNote = field('Заметка о замене', 'Уточни затронутые напитки, изменение рецептуры или условия перехода. Панель посчитает разницу цены для уже связанных техкарт.', { multiline: true, required: false });
-      body.append(cost.wrapper, pair, decision.wrapper, reason.wrapper, follow.wrapper, next.wrapper, transition.wrapper, impactNote.wrapper);
+      body.append(cost.wrapper, pair, decision.wrapper, reason.wrapper, exception, follow.wrapper, next.wrapper, transition.wrapper, impactNote.wrapper);
       function update() {
         setActive(follow.wrapper, value(decision) === 'repeat');
         setActive(next.wrapper, value(decision) === 'repeat');
         setActive(transition.wrapper, value(decision) === 'approved');
+        setActive(exception, value(decision) === 'conditional');
         setActive(impactNote.wrapper, sample.kind === 'replacement');
       }
       decision.control.addEventListener('change', update);
@@ -2349,10 +2485,23 @@
           quote = { cost: cents(price), amount: size, unit: requireText(unit) };
         }
         const results = readings.map(item => item.read());
+        const unmet = unmetMandatory(results);
+        const failedNames = unmet.map(item => item.name).join(', ');
+        if (state === 'approved' && unmet.length) throw Error('Не выполнены обязательные критерии: ' + failedNames + '.');
+        let approval = null;
+        if (state === 'conditional') {
+          if (!unmet.length) throw Error('Исключение требуется при невыполненном обязательном критерии.');
+          if (unmet.some(result => criterionLevel(result) === 'critical')) {
+            throw Error('Критическое отклонение блокирует исключение.');
+          }
+          const validUntil = value(until);
+          if (!dateIsValid(validUntil) || validUntil < day) throw Error('Укажи срок исключения не раньше даты пробы.');
+          approval = { approver: requireText(approver), until: validUntil, conditions: requireText(conditionsOfUse) };
+        }
         const attempt = {
           id: crypto.randomUUID(), date: day, conditions: requireText(conditions), results, quote, decision: state,
           reason: requireText(reason), follow: state === 'repeat' ? value(follow) : '', next: nextDate, transition: transitionDate,
-          impactNote: value(impactNote),
+          ...(approval ? { approval } : {}), impactNote: value(impactNote),
           impact: sample.kind === 'replacement' ? sampleImpact(sample.supply, quote, transitionDate || day) : []
         };
         return writeSuppliers(snapshot, 'samples', { ...sample, attempts: [...sample.attempts, attempt] });
@@ -2362,19 +2511,28 @@
 
   function showSampleAttempt(attempt) {
     const details = el('details', '', 'quality-criterion');
-    details.append(el('summary', formatDate(attempt.date) + ' · ' + sampleDecisions[attempt.decision]));
+    details.append(el('summary', formatDate(attempt.date) + ' · ' + sampleDecisionLabel(attempt)));
     const body = el('div', '', 'quality-details');
     line(body, 'Условия:', attempt.conditions);
     for (const result of attempt.results) {
       const item = el('div', '', 'quality-criterion');
       line(item, result.name + ':', result.passed ? 'соответствует' : 'отклонение');
       line(item, 'Требование:', ruleLabel(result.rule));
+      line(item, 'Обязательность:', criterionLevels[criterionLevel(result)]);
       line(item, 'Способ проверки:', result.method);
       if (result.measured !== null) line(item, 'Замер:', result.measured + ' ' + result.rule.unit);
       line(item, 'Наблюдение:', result.notes);
       body.append(item);
     }
     line(body, 'Обоснование:', attempt.reason);
+    if (attempt.approval) {
+      line(body, 'Исключение согласовал:', attempt.approval.approver);
+      line(body, 'Действует до:', formatDate(attempt.approval.until));
+      line(body, 'Условия применения:', attempt.approval.conditions);
+    }
+    if (attempt.decision === 'approved' && unmetMandatory(attempt.results).length) {
+      line(body, 'Причина пересмотра:', 'В сохранённой пробе есть невыполненные обязательные критерии.');
+    }
     line(body, 'Повторная проба:', attempt.follow);
     if (attempt.next) line(body, 'Срок повторной пробы:', formatDate(attempt.next));
     if (attempt.transition) line(body, 'Дата перехода:', formatDate(attempt.transition));
@@ -2422,7 +2580,7 @@
         for (const criterion of spec?.criteria ?? []) line(body, criterion.name + ':', ruleLabel(criterion.rule) + ' · ' + criterion.method);
         for (const sample of data.samples.filter(item => item.supply === supply.id)) {
           const last = sample.attempts.at(-1);
-          line(body, 'Проба:', formatDate(last.date) + ' · ' + companyName(sample.supplier) + ' · ' + sampleDecisions[last.decision]);
+          line(body, 'Проба:', formatDate(last.date) + ' · ' + companyName(sample.supplier) + ' · ' + sampleDecisionLabel(last));
         }
         body.append(supplierAction('Настроить требования', 'Открывает критерии и методы проверки для этой позиции.', () => openSupplySpec(supply.id)));
         specs.append(record);
@@ -2431,12 +2589,13 @@
       for (const sample of sorted) {
         const last = sample.attempts.at(-1);
         const { record, body } = makeJournalRecord(sample.id, supplyName(sample.supply) + ' · ' + companyName(sample.supplier),
-          sampleKinds[sample.kind] + ' · ' + sampleDecisions[last.decision], opened);
+          sampleKinds[sample.kind] + ' · ' + sampleDecisionLabel(last), opened);
         line(body, 'Номер партии:', sample.lot);
         line(body, 'Требования:', 'версия ' + sample.spec.version);
         for (const attempt of sample.attempts) body.append(showSampleAttempt(attempt));
-        if (last.decision === 'repeat') body.append(supplierAction('Повторить пробу', 'Добавляет ещё одну попытку по тем же требованиям.', () => openSampleAttempt(sample)));
-        if (last.decision === 'approved' && last.quote) {
+        const review = last.decision === 'approved' && unmetMandatory(last.results).length;
+        if (last.decision === 'repeat' || last.decision === 'conditional' || review) body.append(supplierAction('Повторить пробу', 'Добавляет ещё одну попытку по тем же требованиям.', () => openSampleAttempt(sample)));
+        if (last.decision === 'approved' && !review && last.quote) {
           const recorded = supplies.find(item => item.id === sample.supply)?.prices.some(price => price.reviewId === last.id);
           if (recorded) line(body, 'Закупочная цена:', 'записана в истории цен');
           else body.append(supplierAction('Добавить закупочную цену', 'Открывает форму цены с данными этой пробы. Дату действия можно проверить перед сохранением.', () => {
@@ -2469,23 +2628,19 @@
     load('Качество', () => {
       for (const { record, original } of savedRecords()) {
         for (const [index, criterion] of record.criteria.entries()) {
-          const attempt = latest(criterion);
-          if (attempt.outcome !== 'fail') continue;
+          const attempt = nextQualityAction(criterion);
+          if (!attempt) continue;
+          const prior = latest(criterion);
+          const activePlan = attempt.plan || (prior.outcome === 'fail' ? prior.plan : null);
+          const detail = attempt.outcome === 'skip' && !attempt.plan
+            ? 'Назначить проверку пропущенного критерия' + (activePlan ? '. Действующий план: ' + activePlan.action : '')
+            : activePlan?.action || 'Уточнить действие по отклонению';
           rows.push({
             key: JSON.stringify(['quality', record.id, index]),
-            section: 'quality', point: record.location, owner: attempt.plan?.owner || '',
-            date: attempt.plan?.due || '', title: record.drink + ' · ' + criterion.name,
-            detail: attempt.plan?.action || 'Уточнить действие по отклонению',
+            section: 'quality', point: record.location, owner: activePlan?.owner || '',
+            date: activePlan?.due || '', title: record.drink + ' · ' + criterion.name, detail,
             route: 'quality', id: record.id, selector: '[data-id]',
-            schedule: () => editDeadline('Срок исправления', attempt.plan?.due, (date) => {
-              if (localStorage.getItem(prefix + record.id) !== original) throw Error('Проверка изменилась. Открой её заново.');
-              const plan = { ...attempt.plan, due: date };
-              const updated = { ...attempt, plan };
-              const initial = attempt === criterion.initial ? updated : criterion.initial;
-              const repeats = criterion.repeats.map(item => item === attempt ? updated : item);
-              const criteria = record.criteria.map((item, i) => i === index ? { ...item, initial, repeats } : item);
-              localStorage.setItem(prefix + record.id, JSON.stringify({ ...record, criteria }));
-            })
+            schedule: () => scheduleQualityAction(record, index, attempt, original)
           });
         }
       }
@@ -2526,21 +2681,27 @@
     load('Обучение', () => {
       const snapshot = readTraining();
       const { data } = snapshot;
+      const plans = trainingPlans();
       for (const person of data.team) {
         for (const skill of data.skills) {
           const attempts = data.attempts.filter(item => item.personId === person.id && item.skillId === skill.id)
             .reverse().sort((a, b) => b.date.localeCompare(a.date));
           const last = attempts[0];
-          if (!last || (last.passed && !last.next)) continue;
+          const needsCurrent = !last || last.version < minimumSkillVersion(skill);
+          if (!needsCurrent && last.passed && !last.next) continue;
+          const plan = needsCurrent ? currentTrainingPlan(plans, person, skill) : null;
           rows.push({
             key: JSON.stringify(['training', person.id, skill.id]),
-            section: 'training', point: person.point, owner: last.reviewer,
-            date: last.next || '', title: person.name + ' · ' + skill.name,
-            detail: last.exercise || 'Повторная проверка подтверждённого навыка',
+            section: 'training', point: person.point, owner: plan?.owner || last?.reviewer || '',
+            date: plan?.due || last?.next || '', title: person.name + ' · ' + skill.name,
+            detail: needsCurrent ? 'Проверить навык по действующим требованиям' : last.exercise || 'Повторная проверка подтверждённого навыка',
             route: 'training', id: person.id, selector: '[data-training-id]',
-            schedule: () => editDeadline('Дата повторной проверки', last.next, date => {
-              writeTraining(snapshot, 'attempts', { ...last, next: date });
-            }, last.date)
+            schedule: () => {
+              if (needsCurrent) scheduleSkill(snapshot, plans, person, skill, last);
+              else editDeadline('Дата повторной проверки', last.next, date => {
+                writeTraining(snapshot, 'attempts', { ...last, next: date });
+              }, last.date);
+            }
           });
         }
       }
@@ -2801,7 +2962,7 @@
       if (location.hash === '#sales') renderSales();
     }
     if (location.hash === '#stock' && [null, cardKey, economyKey, salesKey, stockKey].includes(event.key)) renderStock();
-    if (location.hash === '#training' && (event.key === null || event.key === trainingKey)) renderTraining();
+    if (location.hash === '#training' && [null, trainingKey, trainingPlansKey].includes(event.key)) renderTraining();
     if (location.hash === '#equipment' && (event.key === null || event.key === equipmentKey)) renderEquipment();
     if (location.hash === '#suppliers' && [null, suppliersKey, economyKey].includes(event.key)) renderSuppliers();
   });
