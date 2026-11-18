@@ -429,6 +429,12 @@
       return source.points.map(point => ({ point, ready: reviewed.has(point.id) && calculate(source, period, point).ready }));
     }
 
+    window.panel03FinancialTargets = (pointId, day) => {
+      if (!dateIsValid(day)) return null;
+      const ledger = read().data;
+      const period = periodFor('week', day);
+      return currentPlan(ledger, period, pointId) || currentPlan(ledger, period, '');
+    };
     window.panel03FinancialProgress = progress;
     return { render, deadlines, key };
   };

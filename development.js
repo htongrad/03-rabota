@@ -495,6 +495,10 @@
     }
   });
   window.panel03BarDeadlines = bar && (() => [...bar.deadlines(), ...(bar.menu?.deadlines() || [])]);
+  if (bar) {
+    window.panel03BarReadinessFor = point => bar.shiftProgress([point]).get(point.id);
+    window.panel03MenuForPoint = point => bar.menu?.report([point])[0];
+  }
 
   function render() {
     try {
@@ -536,6 +540,14 @@
         guide.append(link);
         instruction.append(guide);
       }
+      if (window.panel03LaunchProgress) {
+        const guide = module('Пилот и фактический ввод');
+        guide.append(node('p', '', 'Подготовь критерии для одной точки, сверь источники и запиши старт. По итогам зафиксируй решение. После согласованного запуска запиши фактический ввод и проверь эффект на пилотной точке перед расширением.'));
+        const link = node('a', 'action', 'Открыть запуски');
+        link.href = '#launches';
+        guide.append(link);
+        instruction.append(guide);
+      }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
       function openMap(point) {
@@ -556,6 +568,7 @@
       const teamReports = window.panel03TeamReadinessReport?.(data.points);
       const financial = window.panel03FinancialProgress?.();
       const operations = window.panel03OperationsProgress?.();
+      const launches = window.panel03LaunchProgress?.();
       const openings = data.points.map(point => ({ point, check: shifts?.get(point.id).opening }));
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
@@ -587,6 +600,11 @@
             const cases = node('a', 'action', 'Работа точек');
             cases.href = '#operations';
             barOverview.append(cases);
+          }
+          if (launches?.active) {
+            const work = node('a', 'action', 'Запуски в работе · ' + launches.active);
+            work.href = '#launches';
+            barOverview.append(work);
           }
           barOverview.append(link);
         }
@@ -639,6 +657,12 @@
                     link.href = '#operations';
                     mission.append(node('p', '', needsVisit ? 'Уровень 6 · Проверь визиты и открытые случаи · ' + needsVisit.point.name :
                       'Уровень 6 · Рабочий цикл точек подтверждён'), link);
+                    if (!needsVisit && launches) {
+                      const route = node('a', 'action', 'Открыть запуски');
+                      route.href = '#launches';
+                      mission.append(node('p', '', launches.verified ? 'Уровень 7 · Эффект запуска на пилотной точке подтверждён' :
+                        'Уровень 7 · Проведи пилот и проверь эффект первого ввода'), route);
+                    }
                   }
                 }
               }

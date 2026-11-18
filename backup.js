@@ -12,6 +12,7 @@
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
     'panel-03:financial-review': ['План-факт и разборы', ['plans', 'reviews']],
     'panel-03:point-operations': ['Визиты и случаи по точкам', ['plans', 'visits', 'incidents']],
+    'panel-03:launches': ['Пилоты и запуск на точках', ['settings', 'projects']],
     'panel-03:sales': ['Дневные продажи', null],
     'panel-03:stock': ['Списания и сверки', ['writeOffs', 'checks']],
     'panel-03:training': ['Обучение', ['team', 'skills', 'attempts', 'programs', 'clearances']],
@@ -187,7 +188,55 @@
       if (check.passed) return (row.impact === 'observe' || hasText(check.approval)) && (!row.deviceId || Boolean(check.calibrationId));
       return !check.calibrationId;
     });
+  const pilotSetting = identified({ id: choices('pilot'), pointId: hasText });
+  const positiveInteger = value => Number.isSafeInteger(value) && value > 0;
+  const nonNegativeInteger = value => Number.isSafeInteger(value) && value >= 0;
+  const pilotCriteria = fields({ quality: positiveInteger, food: percentage, margin: percentage, feedback: positiveInteger, negative: percentage });
+  const launchApprovals = fields({ leader: hasText, finance: text, supply: text });
+  const launchBasis = { cost: nonNegativeInteger, calibrationId: hasText, lots: array(fields({ sampleId: hasText, attemptId: hasText })) };
+  const pilotStart = fields({ ...launchBasis, date, recordedAt, approvals: launchApprovals });
+  const sourceIds = value => array(hasText)(value) && new Set(value).size === value.length;
+  const pilotFacts = fields({ sales: sourceIds, sold: nonNegativeInteger, revenue: Number.isSafeInteger, quality: sourceIds,
+    food: nullable(number), margin: nullable(number) });
+  const pilotFeedback = item => fields({ total: nonNegativeInteger, negative: nonNegativeInteger, evidence: hasText })(item) && item.negative <= item.total;
+  const pilotDecision = fields({ result: choices('launch', 'revise', 'stop'), by: hasText, date, note: hasText,
+    observed: nullable(pilotFacts), feedback: nullable(pilotFeedback), approvals: nullable(launchApprovals) });
+  const releaseReview = fields({ date, by: hasText, note: hasText, observed: pilotFacts, feedback: pilotFeedback, passed: boolean });
+  const projectRelease = fields({ ...launchBasis, pointId: hasText, date, recordedAt, due: date, by: hasText, note: hasText,
+    reviews: array(releaseReview), withdrawal: optional(fields({ date, approved: hasText, reason: hasText })) });
+  const launchProject = item => identified({
+    title: hasText, goal: hasText, owner: hasText, pointId: hasText, parentId: text, cardId: hasText, version: positiveInteger,
+    portion: nonNegativeInteger, plannedFrom: date, plannedTo: date, retail: positiveInteger,
+    flags: fields({ price: boolean, expense: boolean, supplier: boolean }), criteria: pilotCriteria,
+    start: nullable(pilotStart), decision: nullable(pilotDecision), releases: array(projectRelease)
+  })(item) && validateLaunchProject(item);
+  function validateLaunchProject(project) {
+    const { start, decision, releases, criteria, flags, plannedFrom, plannedTo } = project;
+    const signed = item => item && (!(flags.price || flags.expense) || hasText(item.finance)) &&
+      (!flags.supplier || hasText(item.supply));
+    function passed(observed, feedback) {
+      return observed && feedback && observed.quality.length >= criteria.quality && observed.food !== null &&
+        observed.food <= criteria.food && observed.margin !== null && observed.margin >= criteria.margin &&
+        feedback.total >= criteria.feedback && feedback.negative / feedback.total <= criteria.negative;
+    }
+    if (plannedFrom > plannedTo || (start && (start.date < plannedFrom || start.date > plannedTo || !signed(start.approvals)))) return false;
+    if (decision) {
+      if (start && (decision.date < start.date || !decision.observed || !decision.feedback)) return false;
+      if (decision.result === 'launch' && (!start || decision.date < plannedTo || !signed(decision.approvals) ||
+          !passed(decision.observed, decision.feedback))) return false;
+    }
+    if (!releases.length) return true;
+    if (decision?.result !== 'launch' || releases[0].pointId !== project.pointId ||
+        new Set(releases.map(item => item.pointId)).size !== releases.length) return false;
+    const pilotCheck = releases[0].reviews.find(item => item.passed);
+    return releases.every((item, index) =>
+      item.date >= decision.date && item.due >= item.date && (index === 0 || (pilotCheck && item.date >= pilotCheck.date)) &&
+      (!item.withdrawal || item.withdrawal.date >= (item.reviews.at(-1)?.date || item.date)) &&
+      item.reviews.every((review, i) => review.date >= (item.reviews[i - 1]?.date || item.date) &&
+        (!review.passed || (i === item.reviews.length - 1 && passed(review.observed, review.feedback)))));
+  }
   const schemas = {
+    'panel-03:launches': fields({ settings: array(pilotSetting), projects: array(launchProject) }),
     'panel-03:point-operations': fields({ plans: array(visitPlan), incidents: array(incident), visits: array(operationsVisit) }),
     'panel-03:financial-review': fields({ plans: array(financialPlan), reviews: array(financialReview) }),
     'panel-03:menu-plans': array(menuPlan),
@@ -299,6 +348,51 @@
       if (!exists(list, id)) throw Error('Нарушена связь «' + description + '».');
     };
     const network = records['panel-03:network'];
+    const launches = records['panel-03:launches'];
+    if (launches) {
+      const pointList = network?.points || [];
+      const calibrations = records['panel-03:bar-operations'] || [];
+      const sales = records['panel-03:sales'] || [];
+      for (const item of launches.settings) link(pointList, item.pointId, 'Точка пилота и сеть');
+      for (const project of launches.projects) {
+        link(pointList, project.pointId, 'Проект и пилотная точка');
+        const recipe = catalog.find(card => card.id === project.cardId)?.versions.find(version => version.number === project.version);
+        if (!recipe?.portions[project.portion]?.criteria.length) throw Error('Нарушена связь «Пилот и редакция техкарты».');
+        if (project.parentId) link(launches.projects.filter(item => item.id !== project.id && item.decision?.result === 'revise'),
+          project.parentId, 'Доработка и прошлый пилот');
+        function matchingChecks(pointId) {
+          return calibrations.filter(item => item.type === 'calibration' && item.pointId === pointId &&
+            item.cardId === project.cardId && item.version === project.version && item.portion === project.portion &&
+            item.checks.length && item.checks.every(check => check.outcome === 'pass'));
+        }
+        function checkBasis(item, pointId) {
+          link(matchingChecks(pointId).filter(check => check.date <= item.date), item.calibrationId, 'Допуск к пилоту или вводу и калибровка');
+          for (const row of item.lots) {
+            const sample = suppliers.samples.find(entry => entry.kind === 'lot' && entry.id === row.sampleId);
+            if (!sample?.attempts.some(attempt => attempt.id === row.attemptId && attempt.decision === 'approved' && attempt.date <= item.date)) {
+              throw Error('Нарушена связь «Пилот и одобренная партия».');
+            }
+          }
+        }
+        function checkFacts(item, pointId, from, to, recordedAfter) {
+          if (!item) return;
+          const matching = matchingChecks(pointId).filter(check => check.date <= to &&
+            (check.date > from || check.date === from && check.createdAt >= recordedAfter));
+          for (const id of item.quality) link(matching, id, 'Результат запуска и калибровка');
+          for (const id of item.sales) link(sales, id, 'Результат запуска и продажи');
+        }
+        if (project.start) {
+          checkBasis(project.start, project.pointId);
+          if (project.decision) checkFacts(project.decision.observed, project.pointId, project.start.date,
+            [project.decision.date, project.plannedTo].sort()[0], project.start.recordedAt);
+        }
+        for (const rollout of project.releases) {
+          link(pointList, rollout.pointId, 'Ввод и точка');
+          checkBasis(rollout, rollout.pointId);
+          for (const review of rollout.reviews) checkFacts(review.observed, rollout.pointId, rollout.date, review.date, rollout.recordedAt);
+        }
+      }
+    }
     const operations = records['panel-03:point-operations'];
     if (operations) {
       const pointList = network?.points || [];

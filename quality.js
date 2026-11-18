@@ -2723,7 +2723,19 @@
     catch { container.replaceChildren(el('p', 'Не удалось открыть журнал работы точек.', 'error')); }
   }
 
-  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', 'financial-review': 'Экономика', 'point-operations': 'Работа точек', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
+  const productLaunch = window.panel03ProductLaunch?.({
+    el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized,
+    readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat
+  });
+
+  function renderLaunches() {
+    const container = $('#launch-content');
+    if (!container || !productLaunch) return;
+    try { productLaunch.render(container); }
+    catch { $('#launch-message').textContent = 'Не удалось открыть журнал запусков.'; }
+  }
+
+  const deadlineSections = { diagnostics: 'Первичная диагностика', bar: 'Проверки бара', 'menu-check': 'График калибровок', 'financial-review': 'Экономика', 'point-operations': 'Работа точек', launches: 'Запуски', quality: 'Качество', equipment: 'Оборудование', water: 'Вода', training: 'Обучение', suppliers: 'Сырьё и поставщики' };
   const deadlineFilter = { point: '', section: '' };
 
   function collectDeadlines() {
@@ -2850,6 +2862,9 @@
     });
     load('Работа точек', () => {
       for (const row of pointOperations?.deadlines() || []) rows.push(row);
+    });
+    load('Запуски', () => {
+      for (const row of productLaunch?.deadlines() || []) rows.push(row);
     });
     return { rows, warnings };
   }
@@ -3065,6 +3080,7 @@
         else if (location.hash === '#training') renderTraining(id);
         else if (location.hash === '#equipment') renderEquipment(id);
         else if (location.hash === '#operations') renderOperations();
+        else if (location.hash === '#launches') renderLaunches();
         else if (location.hash === '#suppliers') renderSuppliers(id);
         else if (location.hash !== '#calendar') render(id);
         window.dispatchEvent(new window.Event('panel-03:work-changed'));
@@ -3098,10 +3114,12 @@
     if (location.hash === '#equipment') renderEquipment();
     if (location.hash === '#suppliers') renderSuppliers();
     if (location.hash === '#operations') renderOperations();
+    if (location.hash === '#launches') renderLaunches();
   });
   window.addEventListener('panel-03:work-changed', () => {
     if (!location.hash || location.hash === '#overview') renderDeadlines();
     if (location.hash === '#operations') renderOperations();
+    if (location.hash === '#launches') renderLaunches();
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && (!location.hash || location.hash === '#overview')) renderDeadlines();
@@ -3120,4 +3138,5 @@
   if (location.hash === '#equipment') renderEquipment();
   if (location.hash === '#suppliers') renderSuppliers();
   if (location.hash === '#operations') renderOperations();
+  if (location.hash === '#launches') renderLaunches();
 })();
