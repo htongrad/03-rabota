@@ -10,6 +10,7 @@
     'panel-03:menu-changes': ['Изменения для перепроверки меню', null],
     'panel-03:techcards': ['Техкарты', null],
     'panel-03:economy': ['Экономика', ['supplies', 'links']],
+    'panel-03:financial-review': ['План-факт и разборы', ['plans', 'reviews']],
     'panel-03:sales': ['Дневные продажи', null],
     'panel-03:stock': ['Списания и сверки', ['writeOffs', 'checks']],
     'panel-03:training': ['Обучение', ['team', 'skills', 'attempts', 'programs', 'clearances']],
@@ -57,7 +58,8 @@
     })(value))
   });
   const performance = value => criterion(value) && fields({ passed: boolean, measured: nullable(number), notes: text })(value);
-  const price = fields({ cost: number, amount: value => number(value) && value > 0, unit: text, date, density: nullable(number) });
+  const price = fields({ cost: number, amount: value => number(value) && value > 0, unit: text, date, density: nullable(number),
+    pointId: optional(value => text(value) && Boolean(value)) });
   const waterPlan = fields({ action: text, owner: text, date });
   const waterAttempt = fields({ date, amount: number, passed: boolean, plan: nullable(waterPlan) });
   const sampleAttempt = attempt => identified({
@@ -137,7 +139,19 @@
     personId: hasText, programId: hasText, assignmentId: optional(hasText), point: hasText, approver: hasText,
     date, createdAt: recordedAt, attemptIds: uniqueIds
   });
+  const periodType = choices('week', 'month');
+  const percentage = value => number(value) && value >= 0 && value <= 1;
+  const reportPeriod = { kind: periodType, from: date };
+  const financialPlan = identified({ ...reportPeriod, pointId: text, savedAt: recordedAt,
+    revenue: value => Number.isSafeInteger(value) && value > 0, food: percentage, margin: percentage });
+  const financialNumbers = fields({ revenue: Number.isSafeInteger, food: nullable(number), margin: nullable(number) });
+  const financialReview = item => identified({ ...reportPeriod, pointId: hasText, to: date, date, savedAt: recordedAt, reviewer: hasText,
+    note: hasText, evidence: value => text(value) && /^[0-9a-f]{16}$/.test(value),
+    observed: financialNumbers, normative: financialNumbers,
+    follow: nullable(fields({ title: hasText, owner: hasText, due: date, result: text }))
+  })(item) && item.from <= item.to && item.to < item.date && (!item.follow || item.follow.due >= item.date);
   const schemas = {
+    'panel-03:financial-review': fields({ plans: array(financialPlan), reviews: array(financialReview) }),
     'panel-03:menu-plans': array(menuPlan),
     'panel-03:menu-changes': array(menuChange),
     'panel-03:bar-operations': array(barOperation),
@@ -155,7 +169,7 @@
       versions: array(value => recipe(value) && fields({ number, effective: date })(value))
     })),
     'panel-03:economy': fields({
-      supplies: array(identified({ name: text, prices: array(price) })),
+      supplies: array(identified({ name: text, kind: optional(choices('ingredient', 'packaging')), prices: array(price) })),
       links: array(fields({ key: text, supply: text }))
     }),
     'panel-03:sales': array(identified({
@@ -164,7 +178,7 @@
       returned: nullable(value => Number.isSafeInteger(value) && value >= 0), revenue: Number.isSafeInteger
     })),
     'panel-03:stock': fields({
-      writeOffs: array(identified({ point: text, supply: text, date, amount: number, unit: text, reason: choices('tuning', 'tasting', 'training', 'spoilage', 'other'), note: text })),
+      writeOffs: array(identified({ point: text, supply: text, date, amount: number, unit: text, reason: choices('tuning', 'tasting', 'training', 'spoilage', 'remake', 'other'), note: text })),
       checks: array(identified({ point: text, supply: text, from: date, to: date, unit: text, coverage: choices('open', 'complete'), note: text,
         opening: number, closing: number, received: number, incoming: number, outgoing: number, returned: number }))
     }),
@@ -247,6 +261,13 @@
       if (!exists(list, id)) throw Error('Нарушена связь «' + description + '».');
     };
     const network = records['panel-03:network'];
+    const financial = records['panel-03:financial-review'];
+    if (financial) for (const item of [...financial.plans, ...financial.reviews]) {
+      if (item.pointId) link(network?.points || [], item.pointId, 'Разбор экономики и точка');
+    }
+    for (const supply of economy.supplies) for (const price of supply.prices) {
+      if (price.pointId) link(network?.points || [], price.pointId, 'Закупочная цена и точка');
+    }
     for (const visit of records['panel-03:precision-visits'] || []) {
       link(network?.points || [], visit.pointId, 'Диагностика и точка');
     }

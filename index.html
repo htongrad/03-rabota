@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=22">
-  <link rel="stylesheet" href="./development.css?v=22">
+  <link rel="stylesheet" href="./quality.css?v=23">
+  <link rel="stylesheet" href="./development.css?v=23">
   <title>03 Работа</title>
   <style>
     :root {
@@ -335,6 +335,7 @@
       <div class="page-heading"><h2>Экономика</h2></div>
       <div class="stack">
         <p id="economy-message" class="error" role="alert"></p>
+        <section id="economy-review" class="module stack" aria-label="План-факт и разбор периода"></section>
         <div class="quality-actions"><a class="action" id="economy-sales-link" href="#sales">Продажи и отчёт</a></div>
         <div class="quality-actions"><a class="action" id="economy-stock-link" href="#stock">Списания и сверка</a></div>
         <div class="quality-actions"><a class="action" id="economy-suppliers-link" href="#suppliers">Сырьё и поставщики</a></div>
@@ -704,7 +705,7 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=22"></script>
+  <script src="./backup.js?v=23"></script>
   <script>
     'use strict';
 
@@ -1050,12 +1051,13 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./team-readiness.js?v=22"></script>
-  <script src="./quality.js?v=22"></script>
-  <script src="./calendar-sync.js?v=22"></script>
-  <script src="./google-sync.js?v=22"></script>
-  <script src="./bar-menu.js?v=22"></script>
-  <script src="./bar-operations.js?v=22"></script>
-  <script src="./development.js?v=22"></script>
+  <script src="./team-readiness.js?v=23"></script>
+  <script src="./financial-review.js?v=23"></script>
+  <script src="./quality.js?v=23"></script>
+  <script src="./calendar-sync.js?v=23"></script>
+  <script src="./google-sync.js?v=23"></script>
+  <script src="./bar-menu.js?v=23"></script>
+  <script src="./bar-operations.js?v=23"></script>
+  <script src="./development.js?v=23"></script>
 </body>
 </html>

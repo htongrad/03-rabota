@@ -520,6 +520,14 @@
         guide.append(link);
         instruction.append(guide);
       }
+      if (window.panel03FinancialProgress) {
+        const guide = module('Экономика и разбор периода');
+        guide.append(node('p', '', 'Сверь полноту кассовых строк и остатков за одинаковый период. Приготовленные возвраты записывай в продажи, расход на дополнительные переделки — в списания. В расчёте факта используй сверку сырья и упаковки. Зафиксируй вывод и действие по отклонению.'));
+        const link = node('a', 'action', 'Открыть экономику');
+        link.href = '#economy';
+        guide.append(link);
+        instruction.append(guide);
+      }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
       function openMap(point) {
@@ -538,6 +546,7 @@
       const shifts = bar?.shiftProgress(data.points);
       const menuReports = bar?.menu?.report(data.points);
       const teamReports = window.panel03TeamReadinessReport?.(data.points);
+      const financial = window.panel03FinancialProgress?.();
       const openings = data.points.map(point => ({ point, check: shifts?.get(point.id).opening }));
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
@@ -560,6 +569,8 @@
           if (teamReports?.length) {
             barOverview.append(node('p', 'quiet', 'Команда подготовлена на ' + teamReports.filter(item => item.ready).length + ' из ' + teamReports.length + ' точек.'));
           }
+          if (financial?.length) barOverview.append(node('p', 'quiet', 'Экономика за прошлую неделю подтверждена на ' +
+            financial.filter(item => item.ready).length + ' из ' + financial.length + ' точек.'));
           barOverview.append(link);
         }
       }
@@ -599,6 +610,13 @@
                 link.href = '#training';
                 mission.append(node('p', '', pending ? 'Уровень 4 · Сверь навыки и допуски · ' + pending.point.name :
                   'Уровень 4 · Команда подготовлена'), link);
+                if (!pending && financial?.length) {
+                  const needsReview = financial.find(item => !item.ready);
+                  const economy = node('a', 'action', 'Открыть экономику');
+                  economy.href = '#economy';
+                  mission.append(node('p', '', needsReview ? 'Уровень 5 · Сверь экономику прошлой недели · ' + needsReview.point.name :
+                    'Уровень 5 · Экономика прошлой недели подтверждена'), economy);
+                }
               }
             }
           }
