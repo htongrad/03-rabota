@@ -98,7 +98,7 @@
     return Boolean(first.etag && first.etag === second.etag);
   }
 
-  async function findFile(settings) {
+  async function findFile(settings, recovering = false) {
     let rememberedProblem;
     if (settings.fileId) {
       const info = await metadata(settings.fileId, true);
@@ -106,6 +106,8 @@
         verifyFile(info, settings);
         return info;
       } catch (problem) {
+        if (recovering && info && !info.labels?.trashed &&
+            info.parents?.some(parent => parent.id === settings.folder)) throw problem;
         rememberedProblem = problem;
       }
     }
@@ -126,7 +128,7 @@
     const candidates = tagged.length ? tagged : list;
     if (candidates.length > 1) throw Error('В выбранной папке несколько возможных копий панели 03. Уточни, какую использовать.');
     if (!candidates.length) {
-      if (rememberedProblem) throw rememberedProblem;
+      if (rememberedProblem && !recovering) throw rememberedProblem;
       return null;
     }
     const info = await metadata(candidates[0].id);
@@ -314,10 +316,29 @@
     }
   }
 
-  async function sync() {
-    const send = () => syncUnlocked();
-    if (navigator.locks) return navigator.locks.request(stateKey, send);
-    return send();
+  function withSyncLock(task) {
+    return navigator.locks ? navigator.locks.request(stateKey, task) : task();
+  }
+
+  function sync() {
+    return withSyncLock(syncUnlocked);
+  }
+
+  function createMissingCopy() {
+    return withSyncLock(async () => {
+      const settings = read();
+      if (!settings.folder) throw Error('Сначала выбери папку «03 РАБОТА».');
+      const folder = await metadata(settings.folder);
+      if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.title?.trim() !== folderName || folder.labels?.trashed) {
+        throw Error('Подтверди рабочую папку через «Выбрать папку».');
+      }
+      if (await findFile(settings, true)) conflict();
+      // Keep the reserved ID when a creation request may have reached Google.
+      const pending = settings.pending?.id !== settings.fileId ? settings.pending : null;
+      if (JSON.stringify(read()) !== JSON.stringify(settings)) throw Error('Настройки Google изменились. Повтори действие.');
+      update({ fileId: null, etag: null, version: null, pending, hash: null, paused: false, lastSync: null });
+      await syncUnlocked();
+    });
   }
 
   async function run(task) {
@@ -334,7 +355,7 @@
     const settings = read();
     if (!settings.folder) throw Error('Выбери папку «03 РАБОТА».');
     const info = await findFile(settings);
-    if (!info) throw Error('В выбранной папке пока нет копии панели.');
+    if (!info) throw Error('В выбранной папке нет копии панели. Нажми «Создать копию, если её нет».');
     const { backup, info: downloaded } = await download(info, settings);
     const hash = await digest(JSON.stringify(backup.records));
     update({ paused: true });
@@ -385,6 +406,8 @@
     $('#google-folder').disabled = busy || !ready();
     $('#google-sync-now').disabled = busy || !ready() || !enabled || settings.paused;
     $('#google-restore').disabled = busy || !ready() || !enabled;
+    $('#google-create-copy').hidden = !enabled || (!settings.paused && Boolean(settings.fileId));
+    $('#google-create-copy').disabled = busy || !ready() || !enabled;
     $('#google-connect').disabled = connecting || busy || !settings.clientId || !tokenClient;
     $('#google-overview-connect').disabled = $('#google-connect').disabled;
     $('#google-disconnect').disabled = busy || connecting;
@@ -480,6 +503,7 @@
   $('#google-folder').addEventListener('click', () => run(pickFolder));
   $('#google-sync-now').addEventListener('click', () => run(sync));
   $('#google-restore').addEventListener('click', () => run(restoreRemote));
+  $('#google-create-copy').addEventListener('click', () => run(createMissingCopy));
   $('#google-disconnect').addEventListener('click', () => {
     token = ''; expires = 0; calendarGranted = false; calendarMessage = ''; calendarError = false; calendarRetryAfter = 0;
     message = 'Доступ в этой вкладке отключён. Рабочие данные сохранены в браузере.';
