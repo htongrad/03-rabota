@@ -70,7 +70,7 @@
   }
 
   async function metadata(id, allow404 = false) {
-    const response = await request(api + '/' + encode(id) + query({ fields: metaFields }), {}, allow404);
+    const response = await request(api + '/' + encode(id) + query({ fields: metaFields }), { cache: 'no-store' }, allow404);
     return response ? response.json() : null;
   }
 
@@ -80,6 +80,11 @@
         !info.properties?.some(property => property.key === 'panelBackup' && property.value === tag)) {
       throw Error('Копия перемещена, удалена или имеет другой формат. Проверь выбранную папку.');
     }
+  }
+
+  function sameVersion(first, second) {
+    if (first.version && second.version) return String(first.version) === String(second.version);
+    return Boolean(first.etag && first.etag === second.etag);
   }
 
   async function findFile(settings) {
@@ -101,16 +106,25 @@
       pageToken = result.nextPageToken;
     } while (pageToken);
     if (list.length > 1) throw Error('В папке несколько копий панели 03. Уточни файлы на Диске перед отправкой.');
-    if (list[0]) verifyFile(list[0], settings);
-    return list[0] || null;
+    if (!list.length) return null;
+    const info = await metadata(list[0].id);
+    verifyFile(info, settings);
+    return info;
   }
 
-  async function download(info) {
-    const response = await request(api + '/' + encode(info.id) + '?alt=media', { headers: { 'If-Match': info.etag } });
-    const backup = core.parseBackup(await response.text());
-    const after = await metadata(info.id);
-    if (after.etag !== info.etag) conflict();
-    return backup;
+  async function download(info, settings) {
+    const url = api + '/' + encode(info.id) + '?alt=media';
+    // Compare file metadata around the content read. The download can have a different HTTP ETag.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await request(url, { cache: 'no-store' });
+      const contents = await response.text();
+      const after = await metadata(info.id);
+      verifyFile(after, settings);
+      if (sameVersion(info, after)) return { backup: core.parseBackup(contents), info: after };
+      info = after;
+    }
+    update({ paused: true });
+    throw Error('Копия меняется во время скачивания. Дождись окончания отправки и повтори «Восстановить с Диска».');
   }
 
   async function digest(text) {
@@ -190,7 +204,7 @@
     const info = await metadata(folder.id);
     if (info.mimeType !== 'application/vnd.google-apps.folder' || info.title?.trim() !== folderName || info.labels?.trashed) throw Error('Проверь название и доступ к папке.');
     if (settings.folder !== folder.id) {
-      update({ folder: folder.id, fileId: null, etag: null, pending: null, paused: false, hash: null, lastSync: null });
+      update({ folder: folder.id, fileId: null, etag: null, version: null, pending: null, paused: false, hash: null, lastSync: null });
     }
     await sync();
   }
@@ -204,17 +218,18 @@
       const info = await metadata(settings.pending.id, true);
       if (info) {
         verifyFile(info, settings);
-        const remote = await download(info);
-        const remoteHash = await digest(JSON.stringify(remote.records));
-        if (remote.sync?.commit !== settings.pending.commit || remoteHash !== settings.pending.hash) conflict();
-        update({ fileId: info.id, etag: info.etag, hash: remoteHash, pending: null, lastSync: new Date().toISOString() });
+        const { backup, info: downloaded } = await download(info, settings);
+        const remoteHash = await digest(JSON.stringify(backup.records));
+        if (backup.sync?.commit !== settings.pending.commit || remoteHash !== settings.pending.hash) conflict();
+        update({ fileId: downloaded.id, etag: downloaded.etag, version: downloaded.version,
+          hash: remoteHash, pending: null, lastSync: new Date().toISOString() });
       } else if (settings.fileId) throw Error('Сохранённая копия недоступна. Проверь доступ к файлу.');
       // A lost response must retry the same preallocated id, never create a second file.
     }
 
     const current = read();
     const existing = await findFile(current);
-    if (existing && (!current.fileId || existing.id !== current.fileId || existing.etag !== current.etag)) conflict();
+    if (existing && (!current.fileId || existing.id !== current.fileId || !sameVersion(existing, current))) conflict();
     const backup = core.exportData(localStorage);
     const hash = await digest(JSON.stringify(backup.records));
     if (existing && hash === current.hash) { message = 'Копия актуальна.'; remotePoll = Date.now(); return; }
@@ -242,7 +257,7 @@
     }
     const saved = await response.json();
     if (!saved.id || !saved.etag) throw Error('Google не подтвердил версию копии. Повторная отправка сначала проверит результат.');
-    update({ fileId: saved.id, etag: saved.etag, pending: null, hash, lastSync: new Date().toISOString() });
+    update({ fileId: saved.id, etag: saved.etag, version: saved.version, pending: null, hash, lastSync: new Date().toISOString() });
     remotePoll = Date.now();
     message = 'Копия успешно обновлена.';
   }
@@ -298,14 +313,15 @@
     if (!settings.folder) throw Error('Выбери папку «03 РАБОТА».');
     const info = await findFile(settings);
     if (!info) throw Error('В выбранной папке пока нет копии панели.');
-    const backup = await download(info);
+    const { backup, info: downloaded } = await download(info, settings);
+    const hash = await digest(JSON.stringify(backup.records));
     update({ paused: true });
-    const previewMeta = { id: info.id, etag: info.etag };
     $('#google-dialog').close();
     window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: {
       backup,
       restored: () => {
-        update({ fileId: previewMeta.id, etag: previewMeta.etag, hash: null, paused: false, pending: null });
+        update({ fileId: downloaded.id, etag: downloaded.etag, version: downloaded.version,
+          hash, paused: false, pending: null });
         message = 'Копия восстановлена. Обновлю её после проверки изменений.';
         dirtySince = Date.now() - 4000;
         paint();
