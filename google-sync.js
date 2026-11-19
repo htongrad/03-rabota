@@ -74,11 +74,22 @@
     return response ? response.json() : null;
   }
 
+  function isTagged(info) {
+    return info.properties?.some(property => property.key === 'panelBackup' && property.value === tag);
+  }
+
   function verifyFile(info, settings) {
-    if (info.labels?.trashed || info.mimeType !== 'application/json' ||
-        !info.parents?.some(parent => parent.id === settings.folder) ||
-        !info.properties?.some(property => property.key === 'panelBackup' && property.value === tag)) {
-      throw Error('Копия перемещена, удалена или имеет другой формат. Проверь выбранную папку.');
+    if (!info) throw Error('Запомненная копия недоступна на Google Диске.');
+    if (info.labels?.trashed) throw Error('Запомненная копия находится в корзине Google Диска.');
+    if (!info.parents?.some(parent => parent.id === settings.folder)) {
+      throw Error('Запомненная копия находится вне выбранной папки «03 РАБОТА».');
+    }
+    const type = info.mimeType?.split(';', 1)[0].trim().toLowerCase();
+    if (type && !['application/json', 'application/octet-stream', 'text/plain', 'text/json'].includes(type)) {
+      throw Error('Файл с копией имеет тип «' + type + '». Для восстановления нужна сохранённая копия панели в формате JSON.');
+    }
+    if (!isTagged(info) && info.id !== settings.fileId && info.title?.trim() !== fileName) {
+      throw Error('В папке найден файл, принадлежность которого панели 03 не подтверждена.');
     }
   }
 
@@ -88,26 +99,37 @@
   }
 
   async function findFile(settings) {
+    let rememberedProblem;
     if (settings.fileId) {
-      const info = await metadata(settings.fileId);
-      verifyFile(info, settings);
-      return info;
+      const info = await metadata(settings.fileId, true);
+      try {
+        verifyFile(info, settings);
+        return info;
+      } catch (problem) {
+        rememberedProblem = problem;
+      }
     }
     const list = [];
     let pageToken = '';
     do {
+      const label = "properties has { key='panelBackup' and value='" + tag + "' and visibility='PRIVATE' }";
       const params = {
-        q: "trashed = false and '" + settings.folder + "' in parents and properties has { key='panelBackup' and value='" + tag + "' and visibility='PRIVATE' }",
+        q: "trashed = false and '" + settings.folder + "' in parents and (" + label + " or title = '" + fileName + "')",
         fields: 'nextPageToken,items(' + metaFields + ')', maxResults: '100',
         ...(pageToken ? { pageToken } : {})
       };
-      const result = await (await request(api + query(params))).json();
+      const result = await (await request(api + query(params), { cache: 'no-store' })).json();
       list.push(...(result.items || []));
       pageToken = result.nextPageToken;
     } while (pageToken);
-    if (list.length > 1) throw Error('В папке несколько копий панели 03. Уточни файлы на Диске перед отправкой.');
-    if (!list.length) return null;
-    const info = await metadata(list[0].id);
+    const tagged = list.filter(isTagged);
+    const candidates = tagged.length ? tagged : list;
+    if (candidates.length > 1) throw Error('В выбранной папке несколько возможных копий панели 03. Уточни, какую использовать.');
+    if (!candidates.length) {
+      if (rememberedProblem) throw rememberedProblem;
+      return null;
+    }
+    const info = await metadata(candidates[0].id);
     verifyFile(info, settings);
     return info;
   }
@@ -320,6 +342,10 @@
     window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: {
       backup,
       restored: () => {
+        const current = read();
+        if (current.folder !== settings.folder || current.account !== settings.account) {
+          throw Error('Настройки Google изменились во время предпросмотра.');
+        }
         update({ fileId: downloaded.id, etag: downloaded.etag, version: downloaded.version,
           hash, paused: false, pending: null });
         message = 'Копия восстановлена. Обновлю её после проверки изменений.';

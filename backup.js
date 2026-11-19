@@ -779,9 +779,9 @@
     try {
       generation++;
       reset();
+      if (!dialog.open) dialog.showModal();
       const data = parseBackup(JSON.stringify(event.detail.backup));
       previewCandidate(data, event.detail.restored);
-      if (!dialog.open) dialog.showModal();
     } catch (problem) { status(problem.message); }
   });
 
