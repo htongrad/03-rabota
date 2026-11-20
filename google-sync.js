@@ -14,21 +14,20 @@
   let token = '';
   let expires = 0;
   let tokenClient;
-  let calendarTokenClient;
+  let afterConnect;
   let calendarGranted = false;
   let calendarMessage = '';
   let calendarPoll = 0;
-  let calendarRetryAfter = 0;
-  let calendarError = false;
+  let driveError = '';
   let authLoading;
   let busy = false;
   let connecting = false;
   let message = '';
+  let syncError = '';
   let retryAfter = 0;
   let cachedLocal = '';
   let localHash = '';
   let dirtySince = 0;
-  let remotePoll = 0;
   let monitoring = false;
 
   function read() {
@@ -45,20 +44,14 @@
   const metaFields = 'id,etag,version,title,mimeType,parents(id),labels(trashed),properties';
   const encode = encodeURIComponent;
   const query = data => '?' + new URLSearchParams(data);
-  function conflict() {
-    update({ paused: true });
-    throw Error('Версия копии на Диске отличается от сохранённой в панели. Сначала восстанови её.');
-  }
-
   async function request(url, options = {}, allow404 = false, acceptedStatuses = []) {
-    if (!ready()) throw Error('Доступ Google истёк. Нажми «Подключить Google».');
+    if (!ready()) throw Error('Доступ Google истёк. Нажми «Синхронизировать».');
     const response = await fetch(url, {
       ...options, headers: { Authorization: 'Bearer ' + token, ...options.headers }
     });
     if (response.status === 401) { token = ''; expires = 0; }
-    if (response.status === 412) {
-      if (url.startsWith('https://www.googleapis.com/calendar/')) throw Error('Событие изменилось во время отправки. Повторю проверку календаря.');
-      conflict();
+    if (response.status === 412 && url.startsWith('https://www.googleapis.com/calendar/')) {
+      throw Error('Событие изменилось во время отправки. Повторю проверку календаря.');
     }
     if (acceptedStatuses.includes(response.status)) return response;
     if (response.status === 404 && allow404) return null;
@@ -98,42 +91,22 @@
     return Boolean(first.etag && first.etag === second.etag);
   }
 
-  async function findFile(settings, recovering = false) {
-    let rememberedProblem;
-    if (settings.fileId) {
-      const info = await metadata(settings.fileId, true);
-      try {
+  async function findLatestBackup(settings) {
+    const label = "properties has { key='panelBackup' and value='" + tag + "' and visibility='PRIVATE' }";
+    const params = {
+      q: "trashed = false and '" + settings.folder + "' in parents and (" + label + " or title = '" + fileName + "')",
+      fields: 'nextPageToken,items(' + metaFields + ')', maxResults: '100', orderBy: 'createdDate desc'
+    };
+    do {
+      const result = await (await request(api + query(params), { cache: 'no-store' })).json();
+      if (result.items?.length) {
+        const info = await metadata(result.items[0].id);
         verifyFile(info, settings);
         return info;
-      } catch (problem) {
-        if (recovering && info && !info.labels?.trashed &&
-            info.parents?.some(parent => parent.id === settings.folder)) throw problem;
-        rememberedProblem = problem;
       }
-    }
-    const list = [];
-    let pageToken = '';
-    do {
-      const label = "properties has { key='panelBackup' and value='" + tag + "' and visibility='PRIVATE' }";
-      const params = {
-        q: "trashed = false and '" + settings.folder + "' in parents and (" + label + " or title = '" + fileName + "')",
-        fields: 'nextPageToken,items(' + metaFields + ')', maxResults: '100',
-        ...(pageToken ? { pageToken } : {})
-      };
-      const result = await (await request(api + query(params), { cache: 'no-store' })).json();
-      list.push(...(result.items || []));
-      pageToken = result.nextPageToken;
-    } while (pageToken);
-    const tagged = list.filter(isTagged);
-    const candidates = tagged.length ? tagged : list;
-    if (candidates.length > 1) throw Error('В выбранной папке несколько возможных копий панели 03. Уточни, какую использовать.');
-    if (!candidates.length) {
-      if (rememberedProblem && !recovering) throw rememberedProblem;
-      return null;
-    }
-    const info = await metadata(candidates[0].id);
-    verifyFile(info, settings);
-    return info;
+      params.pageToken = result.nextPageToken;
+    } while (params.pageToken);
+    return null;
   }
 
   async function download(info, settings) {
@@ -144,11 +117,10 @@
       const contents = await response.text();
       const after = await metadata(info.id);
       verifyFile(after, settings);
-      if (sameVersion(info, after)) return { backup: core.parseBackup(contents), info: after };
+      if (sameVersion(info, after)) return core.parseBackup(contents);
       info = after;
     }
-    update({ paused: true });
-    throw Error('Копия меняется во время скачивания. Дождись окончания отправки и повтори «Восстановить с Диска».');
+    throw Error('Копия меняется во время скачивания. Повтори восстановление.');
   }
 
   async function digest(text) {
@@ -170,39 +142,44 @@
     if (authLoading) return authLoading;
     authLoading = (async () => {
       if (!window.google?.accounts?.oauth2) await script('https://accounts.google.com/gsi/client');
-      const settings = read();
-      function makeClient(withCalendar) {
-        return window.google.accounts.oauth2.initTokenClient({
-          client_id: settings.clientId,
-          scope: ['openid', scope, ...(withCalendar ? calendar.scopes : [])].join(' '),
-          callback: result => {
-            connecting = false;
-            if (result.error || !window.google.accounts.oauth2.hasGrantedAllScopes(result, 'openid', scope)) {
-              message = 'Разреши доступ к выбранным файлам Google Диска для резервирования.';
-              if (withCalendar) calendarMessage = 'Подключение календаря не завершено. Можно повторить.';
-              paint();
-              return;
-            }
-            token = result.access_token;
-            expires = Date.now() + Number(result.expires_in) * 1000 - 30000;
-            calendarGranted = window.google.accounts.oauth2.hasGrantedAllScopes(result, ...calendar.scopes);
-            if (withCalendar && !calendarGranted) calendarMessage = 'Для зеркала разреши доступ к списку календарей и событиям своих календарей.';
-            run(async () => {
-              try {
-                const profile = await (await request('https://openidconnect.googleapis.com/v1/userinfo')).json();
-                const current = read();
-                if (!profile.sub || (current.account && current.account !== profile.sub)) throw Error('Выбери тот же аккаунт Google, который подключал ранее.');
-                update({ account: profile.sub, ...(withCalendar && calendarGranted ? { calendarEnabled: true } : {}) });
-              } catch (error) { token = ''; calendarGranted = false; throw error; }
-              calendarRetryAfter = 0;
-              await sync();
-            });
-          },
-          error_callback: () => { connecting = false; message = 'Окно Google закрыто или заблокировано.'; paint(); }
-        });
-      }
-      tokenClient = makeClient(false);
-      calendarTokenClient = makeClient(true);
+      const { clientId } = read();
+      if (!clientId) return;
+      const oauth = window.google.accounts.oauth2;
+      tokenClient = oauth.initTokenClient({
+        client_id: clientId,
+        scope: ['openid', scope, ...calendar.scopes].join(' '),
+        callback: result => {
+          connecting = false;
+          const action = afterConnect;
+          afterConnect = null;
+          if (result.error || !oauth.hasGrantedAllScopes(result, 'openid', scope)) {
+            syncError = message = 'Разреши доступ к выбранным файлам Google Диска для резервирования.';
+            paint();
+            return;
+          }
+          token = result.access_token;
+          expires = Date.now() + Number(result.expires_in) * 1000 - 30000;
+          calendarGranted = oauth.hasGrantedAllScopes(result, ...calendar.scopes);
+          run(async () => {
+            try {
+              const profile = await (await request('https://openidconnect.googleapis.com/v1/userinfo')).json();
+              const current = read();
+              if (current.clientId !== clientId) throw Error('Настройки Google изменились. Повтори подключение.');
+              if (!profile.sub || (current.account && current.account !== profile.sub)) {
+                throw Error('Выбери тот же аккаунт Google, который подключал ранее.');
+              }
+              update({ account: profile.sub });
+            } catch (error) { token = ''; calendarGranted = false; throw error; }
+            await perform(action);
+          });
+        },
+        error_callback: () => {
+          afterConnect = null;
+          connecting = false;
+          syncError = message = 'Окно Google закрыто или заблокировано.';
+          paint();
+        }
+      });
     })().finally(() => { authLoading = null; });
     return authLoading;
   }
@@ -223,196 +200,210 @@
           if (result.action === window.google.picker.Action.ERROR) reject(Error('Не удалось открыть папку.'));
         }).build().setVisible(true);
     });
-    if (!folder) { message = 'Выбор папки отменён.'; return; }
-    if (folder.name?.trim() !== folderName || !/^[\w-]+$/.test(folder.id)) throw Error('Выбери папку с названием «' + folderName + '».');
+    if (!folder) return false;
+    if (folder.name?.trim() !== folderName || !/^[\w-]+$/.test(folder.id ?? '')) throw Error('Выбери папку с названием «' + folderName + '».');
     const info = await metadata(folder.id);
     if (info.mimeType !== 'application/vnd.google-apps.folder' || info.title?.trim() !== folderName || info.labels?.trashed) throw Error('Проверь название и доступ к папке.');
-    if (settings.folder !== folder.id) {
-      update({ folder: folder.id, fileId: null, etag: null, version: null, pending: null, paused: false, hash: null, lastSync: null });
-    }
-    await sync();
+    await withSyncLock(() => {
+      const current = read();
+      if (['clientId', 'account', 'folder'].some(key => current[key] !== settings[key])) {
+        throw Error('Настройки Google изменились. Повтори выбор папки.');
+      }
+      if (settings.folder !== folder.id) {
+        update({ folder: folder.id, autoSync: false, fileId: undefined, etag: undefined, version: undefined,
+          pending: undefined, paused: undefined, hash: undefined, lastSync: undefined, lastBackup: undefined, upload: undefined });
+        driveError = '';
+      }
+    });
+    return true;
   }
 
-  async function syncDriveUnlocked() {
-    const settings = read();
-    if (!settings.folder) { message = 'Google подключён. Выбери папку «03 РАБОТА».'; return; }
-    if (settings.paused) { message = 'Отправка приостановлена. Восстанови актуальную копию с Диска.'; return; }
+  async function isSavedSnapshot({ id, hash }, folder) {
+    const file = await metadata(id, true);
+    return file && !file.labels?.trashed && file.parents?.some(parent => parent.id === folder) && isTagged(file) &&
+      file.properties?.some(property => property.key === 'snapshotHash' && property.value === hash);
+  }
 
-    if (settings.pending) {
-      const info = await metadata(settings.pending.id, true);
-      if (info) {
-        verifyFile(info, settings);
-        const { backup, info: downloaded } = await download(info, settings);
-        const remoteHash = await digest(JSON.stringify(backup.records));
-        if (backup.sync?.commit !== settings.pending.commit || remoteHash !== settings.pending.hash) conflict();
-        update({ fileId: downloaded.id, etag: downloaded.etag, version: downloaded.version,
-          hash: remoteHash, pending: null, lastSync: new Date().toISOString() });
-      } else if (settings.fileId) throw Error('Сохранённая копия недоступна. Проверь доступ к файлу.');
-      // A lost response must retry the same preallocated id, never create a second file.
+  async function uploadSnapshot(meta, contents) {
+    const blob = new Blob([contents], { type: 'application/json' });
+    if (blob.size > 5000000) {
+      const session = await request(upload + query({ uploadType: 'resumable', fields: 'id' }), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': blob.type, 'X-Upload-Content-Length': String(blob.size) },
+        body: JSON.stringify(meta)
+      }, false, [409]);
+      if (session.status === 409) return session;
+      const location = session.headers.get('Location');
+      if (!location || new URL(location).origin !== new URL(upload).origin) throw Error('Google не вернул адрес загрузки копии.');
+      return request(location, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob }, false, [409]);
     }
+    const boundary = 'rabota03_' + crypto.randomUUID();
+    const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
+      '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + contents + '\r\n--' + boundary + '--';
+    return request(upload + query({ uploadType: 'multipart', fields: 'id' }), {
+      method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body
+    }, false, [409]);
+  }
 
-    const current = read();
-    const existing = await findFile(current);
-    if (existing && (!current.fileId || existing.id !== current.fileId || !sameVersion(existing, current))) conflict();
+  async function syncDrive(backup, hash) {
+    const settings = read();
+    const { folder, lastBackup } = settings;
+    if (lastBackup?.hash === hash && await isSavedSnapshot(lastBackup, folder)) {
+      return 'Копия на Диске актуальна.';
+    }
+    let pending = settings.upload;
+    if (pending?.hash !== hash) {
+      const ids = await (await request(api + '/generateIds' + query({ maxResults: '1', space: 'drive' }))).json();
+      if (!ids.ids?.[0]) throw Error('Google не выдал идентификатор для копии.');
+      pending = { id: ids.ids[0], hash, createdAt: backup.createdAt };
+      update({ upload: pending });
+    }
+    const { id, createdAt } = pending;
+    const date = createdAt.slice(0, 19).replace('T', ' ').replaceAll(':', '-');
+    const meta = { id, title: 'Работа — ' + date + ' UTC.json', parents: [{ id: folder }], mimeType: 'application/json',
+      properties: [{ key: 'panelBackup', value: tag, visibility: 'PRIVATE' },
+        { key: 'snapshotHash', value: hash, visibility: 'PRIVATE' }] };
+    const response = await uploadSnapshot(meta, JSON.stringify({ ...backup, createdAt }));
+    if (response.status === 409) {
+      if (!await isSavedSnapshot(pending, folder)) {
+        update({ upload: undefined });
+        throw Error('Google не подтвердил копию. Повтори синхронизацию.');
+      }
+    } else if ((await response.json()).id !== id) {
+      throw Error('Google не подтвердил идентификатор сохранённой копии.');
+    }
+    update({ lastBackup: { id, hash }, upload: undefined, lastSync: new Date().toISOString(),
+      fileId: undefined, etag: undefined, version: undefined, hash: undefined, pending: undefined, paused: undefined });
+    return 'Копия сохранена на Диске.';
+  }
+
+  async function syncUnlocked({ drive = true, sendCalendar = true } = {}) {
+    const settings = read();
+    if (!settings.folder || !/^[\w-]+$/.test(settings.folder)) throw Error('Выбери рабочую папку «03 РАБОТА».');
     const backup = core.exportData(localStorage);
-    const hash = await digest(JSON.stringify(backup.records));
-    if (existing && hash === current.hash) { message = 'Копия актуальна.'; remotePoll = Date.now(); return; }
-
-    const commit = crypto.randomUUID();
-    const id = existing?.id || current.pending?.id || (await (await request(api + '/generateIds' + query({ maxResults: '1', space: 'drive' }))).json()).ids?.[0];
-    if (!id) throw Error('Google не выдал идентификатор для копии.');
-    backup.sync = { commit };
-    update({ pending: { id, commit, hash } });
-    let response;
-    if (existing) {
-      if (!existing.etag) throw Error('Google не вернул версию файла. Отправка остановлена.');
-      response = await request(upload + '/' + encode(id) + query({ uploadType: 'media', fields: metaFields }), {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': existing.etag }, body: JSON.stringify(backup)
-      });
-    } else {
-      const boundary = 'rabota03_' + crypto.randomUUID();
-      const meta = { id, title: fileName, parents: [{ id: current.folder }], mimeType: 'application/json',
-        properties: [{ key: 'panelBackup', value: tag, visibility: 'PRIVATE' }] };
-      const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
-        '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + JSON.stringify(backup) + '\r\n--' + boundary + '--';
-      response = await request(upload + query({ uploadType: 'multipart', fields: metaFields }), {
-        method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body
-      });
-    }
-    const saved = await response.json();
-    if (!saved.id || !saved.etag) throw Error('Google не подтвердил версию копии. Повторная отправка сначала проверит результат.');
-    update({ fileId: saved.id, etag: saved.etag, version: saved.version, pending: null, hash, lastSync: new Date().toISOString() });
-    remotePoll = Date.now();
-    message = 'Копия успешно обновлена.';
-  }
-
-  async function syncUnlocked() {
-    await syncDriveUnlocked();
-    const settings = read();
-    if (!settings.calendarEnabled || !calendarGranted || !ready()) return;
-    if (!settings.folder || !settings.fileId || settings.paused) {
-      calendarMessage = 'Сначала настрой копию на Диске и восстанови её, если панель предлагает это.';
+    const { records } = backup;
+    const hash = await digest(JSON.stringify(records));
+    if (!Object.keys(records).length && !settings.lastBackup && !settings.fileId) {
+      update({ autoSync: true });
+      message = 'В панели пока нет записей для отправки.';
       return;
     }
-    if (Date.now() < calendarRetryAfter) return;
-    try {
-      calendarMessage = 'Проверяю события календаря…';
-      paint();
-      const records = core.snapshot(localStorage);
-      const hash = await digest(JSON.stringify(records));
-      if (!window.panel03CalendarWork) throw Error('Рабочие журналы ещё не готовы. Обнови панель.');
-      const count = await calendar.mirror({ request, settings, update, digest,
-        events: Object.entries(records).filter(([key]) => key.startsWith('panel-03:event:')).map(([, value]) => value),
-        work: window.panel03CalendarWork() });
-      update({ calendarHash: hash });
-      calendarPoll = Date.now();
-      calendarRetryAfter = 0;
-      calendarError = false;
-      calendarMessage = 'Зеркало обновлено. Событий и рабочих действий: ' + count + '.';
-    } catch (error) {
-      calendarError = true;
-      calendarMessage = error.message || 'Не удалось обновить календарь.';
-      calendarRetryAfter = Date.now() + 30000;
+    update({ autoSync: true });
+    let errorFound = false;
+    if (drive) {
+      driveError = '';
+      try { message = await syncDrive(backup, hash); }
+      catch (error) {
+        errorFound = true;
+        driveError = error.message || 'Не удалось сохранить копию.';
+        message = 'Диск: ' + driveError;
+      }
     }
+    if (sendCalendar) {
+      if (!calendarGranted) {
+        calendarMessage = 'Для отправки событий разреши доступ к календарю при синхронизации.';
+      } else {
+        try {
+          calendarMessage = 'Обновляю календарь…';
+          paint();
+          if (!window.panel03CalendarWork) throw Error('Рабочие журналы ещё не готовы. Обнови панель.');
+          const count = await calendar.mirror({ request, settings: read(), update, digest,
+            events: Object.entries(records).filter(([key]) => key.startsWith('panel-03:event:')).map(([, value]) => value),
+            work: window.panel03CalendarWork() });
+          update({ calendarHash: hash });
+          calendarPoll = Date.now();
+          calendarMessage = 'Календарь обновлён. Событий и рабочих действий: ' + count + '.';
+        } catch (error) {
+          errorFound = true;
+          calendarMessage = error.message || 'Не удалось обновить календарь.';
+        }
+      }
+    }
+    return errorFound;
   }
 
   function withSyncLock(task) {
     return navigator.locks ? navigator.locks.request(stateKey, task) : task();
   }
 
-  function sync() {
-    return withSyncLock(syncUnlocked);
+  function sync(options) {
+    return withSyncLock(() => syncUnlocked(options));
   }
 
-  function createMissingCopy() {
-    return withSyncLock(async () => {
-      const settings = read();
-      if (!settings.folder) throw Error('Сначала выбери папку «03 РАБОТА».');
-      const folder = await metadata(settings.folder);
-      if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.title?.trim() !== folderName || folder.labels?.trashed) {
-        throw Error('Подтверди рабочую папку через «Выбрать папку».');
-      }
-      if (await findFile(settings, true)) conflict();
-      // Keep the reserved ID when a creation request may have reached Google.
-      const pending = settings.pending?.id !== settings.fileId ? settings.pending : null;
-      if (JSON.stringify(read()) !== JSON.stringify(settings)) throw Error('Настройки Google изменились. Повтори действие.');
-      update({ fileId: null, etag: null, version: null, pending, hash: null, paused: false, lastSync: null });
-      await syncUnlocked();
-    });
+  async function perform(action) {
+    if (!action) return;
+    if (action === 'folder') {
+      message = await pickFolder() ? 'Папка сохранена.' : 'Выбор папки отменён.';
+      return;
+    }
+    if (!read().folder && !await pickFolder()) {
+      message = 'Выбор папки отменён.';
+      return;
+    }
+    return action === 'restore' ? restoreRemote() : sync();
   }
 
   async function run(task) {
     if (busy) return;
     busy = true;
-    message = 'Проверяю копию на Google Диске…';
+    message = '';
+    syncError = '';
     paint();
-    try { await task(); retryAfter = 0; }
-    catch (error) { message = error.message || 'Операция не завершена.'; retryAfter = Date.now() + 30000; }
+    try { retryAfter = await task() ? Date.now() + 30000 : 0; }
+    catch (error) {
+      syncError = message = error.message || 'Операция не завершена.';
+      retryAfter = Date.now() + 30000;
+    }
     finally { busy = false; paint(); }
   }
 
   async function restoreRemote() {
     const settings = read();
-    if (!settings.folder) throw Error('Выбери папку «03 РАБОТА».');
-    const info = await findFile(settings);
-    if (!info) throw Error('В выбранной папке нет копии панели. Нажми «Создать копию, если её нет».');
-    const { backup, info: downloaded } = await download(info, settings);
-    const hash = await digest(JSON.stringify(backup.records));
-    update({ paused: true });
+    if (!settings.folder || !/^[\w-]+$/.test(settings.folder)) throw Error('Выбери папку «03 РАБОТА».');
+    const info = await findLatestBackup(settings);
+    if (!info) throw Error('В выбранной папке пока нет копии панели.');
+    const backup = await download(info, settings);
     $('#google-dialog').close();
-    window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: {
-      backup,
-      restored: () => {
-        const current = read();
-        if (current.folder !== settings.folder || current.account !== settings.account) {
-          throw Error('Настройки Google изменились во время предпросмотра.');
-        }
-        update({ fileId: downloaded.id, etag: downloaded.etag, version: downloaded.version,
-          hash, paused: false, pending: null });
-        message = 'Копия восстановлена. Обновлю её после проверки изменений.';
-        dirtySince = Date.now() - 4000;
-        paint();
-      }
-    } }));
-    message = 'Проверь состав копии и нажми «Восстановить».';
+    window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: { backup } }));
+    message = 'Копия загружена. Проверь её состав и подтверди восстановление.';
   }
 
   function paint() {
     let settings;
     try { settings = read(); } catch { return; }
+    const configured = Boolean(settings.clientId);
     const enabled = Boolean(settings.folder);
-    const localPending = Boolean(localHash && localHash !== settings.hash);
-    const summary = busy ? 'Отправка копии…' :
-      settings.paused ? 'Копия на Диске требует восстановления.' :
-      !enabled ? 'Резервная копия Google ещё не настроена.' :
-      !ready() ? 'Для отправки изменений подключи Google.' :
-      localPending ? 'Есть изменения для отправки.' : 'Копия на Диске актуальна.';
-    const calendarSummary = !settings.calendarEnabled ? 'Google Календарь ещё не подключён.' :
-      settings.paused ? 'Календарь ожидает восстановления копии с Диска.' :
-      !ready() || !calendarGranted ? 'Подключи Google для отправки событий.' :
-      localHash && localHash !== settings.calendarHash ? 'Есть изменения для календаря.' :
-      settings.calendarLastSync ? 'Календарь «03 РАБОТА» обновлён.' : 'Ожидает первой отправки событий.';
-    $('#google-calendar-overview').textContent = settings.paused || !ready() || !calendarGranted ? calendarSummary : calendarError ? 'Календарь: ' + calendarMessage : calendarSummary;
-    $('#google-calendar-status').textContent = settings.paused ? calendarSummary : calendarMessage || calendarSummary;
-    $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
-    $('#google-calendar-connect').hidden = Boolean(settings.calendarEnabled && ready() && calendarGranted);
-    $('#google-calendar-connect').disabled = busy || connecting || !settings.clientId || !calendarTokenClient;
-    $('#google-calendar-send').disabled = busy || connecting || !ready() || !calendarGranted || !settings.calendarEnabled || !settings.fileId || settings.paused;
+    const localPending = Boolean(localHash && localHash !== settings.lastBackup?.hash);
+    const waiting = busy || connecting || Boolean(authLoading);
+    const summary = busy || connecting ? 'Идёт синхронизация…' :
+      !configured ? 'Настрой подключение Google.' :
+      navigator.onLine === false ? 'Панель ждёт интернет.' :
+      syncError ? syncError :
+      driveError ? 'Диск: ' + driveError :
+      !enabled ? 'Рабочая папка ещё не выбрана.' :
+      !ready() ? 'Для отправки нажми «Синхронизировать».' :
+      localPending ? 'Есть изменения для копии.' :
+      settings.lastSync ? 'Копия на Диске актуальна.' : 'Ожидает первой копии.';
+    const calendarSummary = calendarMessage || (settings.calendarLastSync
+      ? 'Календарь «03 РАБОТА» обновлён.' : 'Календарь ожидает первой отправки.');
     $('#google-overview-text').textContent = summary;
-    $('#google-last-sync').textContent = settings.lastSync ? 'Последняя отправка: ' + new Date(settings.lastSync).toLocaleString('ru-RU') : '';
-    $('#google-status').textContent = message || summary;
-    $('#google-connect').hidden = ready();
-    $('#google-overview-connect').hidden = ready() || !settings.clientId;
-    $('#google-folder').disabled = busy || !ready();
-    $('#google-sync-now').disabled = busy || !ready() || !enabled || settings.paused;
-    $('#google-restore').disabled = busy || !ready() || !enabled;
-    $('#google-create-copy').hidden = !enabled || (!settings.paused && Boolean(settings.fileId));
-    $('#google-create-copy').disabled = busy || !ready() || !enabled;
-    $('#google-connect').disabled = connecting || busy || !settings.clientId || !tokenClient;
-    $('#google-overview-connect').disabled = $('#google-connect').disabled;
-    $('#google-disconnect').disabled = busy || connecting;
-    $('#google-folder-status').textContent = enabled ? 'Папка «03 РАБОТА» запомнена.' : 'После подключения выбери папку «03 РАБОТА».';
-    for (const item of $('#google-config').querySelectorAll('input,button')) item.disabled = busy || connecting;
+    $('#google-last-sync').textContent = settings.lastSync ? 'Последняя копия: ' + new Date(settings.lastSync).toLocaleString('ru-RU') : '';
+    $('#google-calendar-overview').textContent = calendarSummary;
+    $('#google-calendar-status').textContent = calendarSummary;
+    $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
+    $('#google-status').textContent = busy || connecting ? summary : message || summary;
+    $('#google-overview-sync').textContent = configured ? 'Синхронизировать' : 'Настроить синхронизацию';
+    $('#google-overview-sync').disabled = waiting;
+    $('#google-sync-now').hidden = !configured;
+    $('#google-sync-now').disabled = waiting;
+    $('#google-folder').hidden = !enabled;
+    $('#google-folder').disabled = waiting || !configured;
+    $('#google-restore').hidden = !configured;
+    $('#google-restore').disabled = waiting;
+    $('#google-disconnect').hidden = !ready();
+    $('#google-disconnect').disabled = waiting;
+    $('#google-folder-status').textContent = enabled ? 'Папка «03 РАБОТА» запомнена.' : 'При первом подключении выбери папку «03 РАБОТА».';
+    for (const item of $('#google-config').querySelectorAll('input,button')) item.disabled = waiting;
   }
 
   function configValues() {
@@ -422,15 +413,36 @@
     $('#google-api-key').value = settings.apiKey || '';
   }
 
-  function connect() {
-    if (!tokenClient || busy || connecting || ready()) return;
+  function start(action) {
+    if (busy || connecting || authLoading) return;
+    const settings = read();
+    if (!settings.clientId) { openGoogle(); return; }
+    if (navigator.onLine === false) {
+      message = 'Подключись к интернету и повтори синхронизацию.';
+      paint();
+      return;
+    }
+    if (ready() && (action !== 'sync' || calendarGranted)) { run(() => perform(action)); return; }
+    if (!tokenClient) { warmUp(); return; }
+    afterConnect = action;
     connecting = true;
     message = '';
+    syncError = '';
     paint();
-    const settings = read();
-    (settings.calendarEnabled ? calendarTokenClient : tokenClient).requestAccessToken({
-      prompt: '', ...(settings.account ? { login_hint: settings.account } : {})
-    });
+    try {
+      tokenClient.requestAccessToken({ prompt: '', ...(settings.account ? { login_hint: settings.account } : {}) });
+    } catch {
+      afterConnect = null;
+      connecting = false;
+      syncError = message = 'Не удалось открыть окно Google.';
+      paint();
+    }
+  }
+
+  function warmUp() {
+    if (tokenClient || authLoading || navigator.onLine === false || !read().clientId) return;
+    prepare().then(paint).catch(error => { syncError = message = error.message; paint(); });
+    paint();
   }
 
   $('#google-config').addEventListener('submit', event => {
@@ -448,8 +460,9 @@
       }
       update({ clientId, projectNumber, apiKey });
       tokenClient = null;
-      calendarTokenClient = null;
-      prepare().then(() => { message = 'Настройки сохранены. Нажми «Подключить Google».'; paint(); }).catch(error => { message = error.message; paint(); });
+      syncError = '';
+      message = 'Настройки сохранены. Нажми «Синхронизировать».';
+      warmUp();
     } catch (error) { message = error.message; }
     paint();
   });
@@ -469,6 +482,7 @@
   function openGoogle() {
     $('#app-menu-dialog').close();
     configValues();
+    if (!read().clientId) $('#google-settings').open = true;
     if (!$('#google-dialog').open) $('#google-dialog').showModal();
     paint();
   }
@@ -480,33 +494,16 @@
     });
   }
 
-  $('#google-calendar-connect').addEventListener('click', () => {
-    if (!calendarTokenClient || busy || connecting) return;
-    if (ready() && calendarGranted) {
-      update({ calendarEnabled: true });
-      run(sync);
-      return;
-    }
-    const { account } = read();
-    connecting = true;
-    calendarMessage = 'Подтверди доступ к календарю в окне Google.';
-    paint();
-    calendarTokenClient.requestAccessToken({ prompt: '', ...(account ? { login_hint: account } : {}) });
-  });
-  $('#google-calendar-send').addEventListener('click', () => { calendarRetryAfter = 0; run(sync); });
-
   $('#google-open').addEventListener('click', openGoogle);
-  $('#google-overview-open').addEventListener('click', openGoogle);
   $('#google-close').addEventListener('click', () => $('#google-dialog').close());
-  $('#google-connect').addEventListener('click', connect);
-  $('#google-overview-connect').addEventListener('click', connect);
-  $('#google-folder').addEventListener('click', () => run(pickFolder));
-  $('#google-sync-now').addEventListener('click', () => run(sync));
-  $('#google-restore').addEventListener('click', () => run(restoreRemote));
-  $('#google-create-copy').addEventListener('click', () => run(createMissingCopy));
+  $('#google-overview-sync').addEventListener('click', () => start('sync'));
+  $('#google-folder').addEventListener('click', () => start('folder'));
+  $('#google-sync-now').addEventListener('click', () => start('sync'));
+  $('#google-restore').addEventListener('click', () => start('restore'));
   $('#google-disconnect').addEventListener('click', () => {
-    token = ''; expires = 0; calendarGranted = false; calendarMessage = ''; calendarError = false; calendarRetryAfter = 0;
-    message = 'Доступ в этой вкладке отключён. Рабочие данные сохранены в браузере.';
+    token = ''; expires = 0; calendarGranted = false; calendarMessage = '';
+    syncError = '';
+    message = 'Доступ в этой вкладке отключён.';
     paint();
   });
 
@@ -514,7 +511,8 @@
     if (monitoring || busy || connecting || document.hidden) return;
     monitoring = true;
     try {
-      const signature = JSON.stringify(core.snapshot(localStorage));
+      const records = core.snapshot(localStorage);
+      const signature = JSON.stringify(records);
       if (signature !== cachedLocal) {
         localHash = await digest(signature);
         cachedLocal = signature;
@@ -522,24 +520,26 @@
       }
       const settings = read();
       paint();
-      if (navigator.onLine === false || !ready() || !settings.folder || settings.paused || Date.now() < retryAfter) return;
-      if ((localHash !== settings.hash && Date.now() - dirtySince >= 3000) || settings.pending || Date.now() - remotePoll > 60000 ||
-          (settings.calendarEnabled && calendarGranted && Date.now() >= calendarRetryAfter &&
-            ((localHash !== settings.calendarHash && Date.now() - dirtySince >= 3000) || Date.now() - calendarPoll > 60000))) {
-        await run(sync);
-      }
+      const automatic = settings.autoSync ?? Boolean(settings.fileId);
+      if (navigator.onLine === false || !ready() || !settings.folder || !automatic || Date.now() < retryAfter) return;
+      if (!Object.keys(records).length && !settings.lastBackup && !settings.fileId) return;
+      if (Date.now() - dirtySince < 3000) return;
+      const drive = localHash !== settings.lastBackup?.hash || Boolean(settings.upload);
+      const sendCalendar = calendarGranted && (localHash !== settings.calendarHash || Date.now() - calendarPoll > 60000);
+      if (drive || sendCalendar) await run(() => sync({ drive, sendCalendar }));
     } catch (error) { message = error.message; paint(); }
     finally { monitoring = false; }
   }
 
-  window.addEventListener('online', () => { retryAfter = 0; calendarRetryAfter = 0; dirtySince = Date.now() - 4000; monitor(); });
+  window.addEventListener('online', () => { retryAfter = 0; dirtySince = Date.now() - 4000; warmUp(); monitor(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) monitor(); });
+  window.addEventListener('offline', paint);
   window.addEventListener('storage', () => monitor());
   window.addEventListener('panel-03:work-changed', () => monitor());
   setInterval(monitor, 5000);
   try {
     configValues();
-    if (read().clientId) prepare().then(paint).catch(error => { message = error.message; paint(); });
+    warmUp();
     monitor();
     paint();
   } catch (error) { message = error.message; }
