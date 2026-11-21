@@ -61,7 +61,9 @@
       const roster = point.teamIds.map(id => statuses.get(id));
       const ready = roster.filter(item => item?.clearance ||
         (item?.person.role === 'trainee' && item.complete && statuses.get(item.mentor?.id)?.clearance));
-      return { point, total: roster.length, confirmed: ready.length, ready: Boolean(roster.length && ready.length === roster.length && ready.some(item => item.clearance)) };
+      const firstPendingId = roster.find(item => item && !ready.includes(item))?.person.id || '';
+      return { point, total: roster.length, confirmed: ready.length, firstPendingId,
+        ready: Boolean(roster.length && ready.length === roster.length && ready.some(item => item.clearance)) };
     });
   }
 

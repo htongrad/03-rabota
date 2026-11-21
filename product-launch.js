@@ -17,7 +17,8 @@
 
   window.panel03ProductLaunch = ({
     el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized, pointKey,
-    readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat
+    readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat,
+    openPreparationSource
   }) => {
     let focus = '';
 
@@ -120,12 +121,12 @@
       const cost = costs.length && costs.every(item => item.cost !== null && item.supply?.kind) ?
         sum(costs.map(item => item.cost)) : null;
       const gaps = [];
-      if (!active) gaps.push('Нужна действующая версия техкарты с критериями');
-      if (!checks.length) gaps.push('Нет успешной калибровки этой порции на точке');
-      if (!team?.ready) gaps.push('Не подтверждены навыки и допуски команды');
-      if (!bar?.ready) gaps.push('Не подтверждены актуальные сменные проверки точки');
-      if (!operations || operations.limited || operations.overdue) gaps.push('Проверь ограничения и просроченные случаи точки');
-      if (cost === null || !Number.isSafeInteger(cost)) gaps.push('Не подтверждены связи с сырьём, типы или закупочные цены');
+      if (!active) gaps.push({ label: 'Нужна действующая версия техкарты с критериями', section: 'techcards', id: project.cardId, action: 'Открыть техкарту' });
+      if (!checks.length) gaps.push({ label: 'Нет успешной калибровки этой порции на точке', section: 'development', action: 'Открыть калибровки точки' });
+      if (!team?.ready) gaps.push({ label: 'Не подтверждены навыки и допуски команды', section: 'training', id: team?.firstPendingId, action: 'Открыть допуски команды' });
+      if (!bar?.ready) gaps.push({ label: 'Не подтверждены актуальные сменные проверки точки', section: 'development', action: 'Открыть сменные проверки точки' });
+      if (!operations || operations.limited || operations.overdue) gaps.push({ label: 'Проверь ограничения и просроченные случаи точки', section: 'operations', action: 'Открыть случаи точки' });
+      if (cost === null || !Number.isSafeInteger(cost)) gaps.push({ label: 'Не подтверждены связи с сырьём, типы или закупочные цены', section: 'economy', action: 'Открыть экономику' });
       return { gaps, supplies, cost, calibrationId: checks.toSorted((a, b) => b.date.localeCompare(a.date) ||
         b.createdAt.localeCompare(a.createdAt))[0]?.id || '' };
     }
@@ -136,6 +137,16 @@
         const attempt = sample.attempts.findLast(item => item.date <= day);
         return window.panel03Backup.approvedLot(attempt) ? [{ sample, attempt }] : [];
       });
+    }
+
+    function pilotPreparation(project, point, source, day) {
+      const basis = prerequisites(project, point, source, day);
+      for (const id of basis.supplies) if (!lotsFor(source, id, day).length) {
+        const supply = source.economy.data.supplies.find(item => item.id === id);
+        basis.gaps.push({ label: 'Нет принятой партии · ' + supply.name, section: 'suppliers', action: 'Открыть журнал партий' });
+      }
+      if (day > project.plannedTo) basis.gaps.unshift({ label: 'Плановый период закончился. Назначь новые даты.' });
+      return basis;
     }
 
     function lotsStillApproved(snapshot, source, day) {
@@ -157,7 +168,7 @@
     }
 
     function readinessFields(body, basis, project, source, day) {
-      for (const gap of basis.gaps) line(body, 'Требуется:', gap);
+      for (const gap of basis.gaps) line(body, 'Требуется:', gap.label);
       if (basis.cost !== null) line(body, 'Нормативная себестоимость / плановая цена:', money(basis.cost) + ' / ' + money(project.retail));
       const lots = basis.supplies.map(id => {
         const supply = source.economy.data.supplies.find(item => item.id === id);
@@ -296,7 +307,7 @@
         if (project.start || project.decision) throw Error('Пилот уже изменился.');
         const day = dateKey();
         const point = source.points.find(item => item.id === project.pointId);
-        const basis = prerequisites(project, point, source, day);
+        const basis = pilotPreparation(project, point, source, day);
         line(body, 'Точка и стандарт:', point.name + ' · ' + labelFor(project, source));
         const readiness = readinessFields(body, basis, project, source, day);
         const signed = approvals(body, project, 'Кто согласовал пилот');
@@ -412,7 +423,7 @@
           const selected = candidates.find(item => item.id === value(point));
           specific.replaceChildren();
           const basis = prerequisites(project, selected, source, day);
-          if (!menuIncludes(project, selected, source)) basis.gaps.push('Подтверди порцию и действующую версию в меню точки');
+          if (!menuIncludes(project, selected, source)) basis.gaps.push({ label: 'Подтверди порцию и действующую версию в меню точки' });
           readiness = readinessFields(specific, basis, project, source, day);
         }
         point.control.addEventListener('change', update);
@@ -436,8 +447,8 @@
         const observed = facts(project, point, source, entry.date, day, entry.recordedAt);
         showFacts(body, observed, project.criteria);
         const basis = prerequisites(project, point, source, day);
-        if (!menuIncludes(project, point, source)) basis.gaps.push('Проверь действующее меню точки');
-        for (const gap of basis.gaps) line(body, 'Требуется:', gap);
+        if (!menuIncludes(project, point, source)) basis.gaps.push({ label: 'Проверь действующее меню точки' });
+        for (const gap of basis.gaps) line(body, 'Требуется:', gap.label);
         const by = field('Кто проверил эффект', 'Кто сверил записи и результаты после ввода.');
         const note = field('Вывод и следующий шаг', 'Зафиксируй эффект и действие, если условия не подтвердились.', { multiline: true });
         const next = field('Срок повторной оценки', 'Станет рабочим сроком, если эффект ещё не подтвердился.', { type: 'date', value: plusDays(day, 7), required: false });
@@ -516,11 +527,13 @@
     function cardView(project, source, ledger) {
       const day = dateKey();
       const point = source.points.find(item => item.id === project.pointId);
+      const preparation = !project.start && !project.decision ? pilotPreparation(project, point, source, day) : null;
       const card = el('details', '', 'module quality-record');
       card.dataset.launchId = project.id;
       card.open = focus === project.id;
       const summary = el('summary', project.title);
-      summary.append(el('p', point.name + ' · ' + status(project), 'quiet'));
+      const stage = preparation && !preparation.gaps.length ? (day < project.plannedFrom ? 'Старт запланирован' : 'Готов к старту') : status(project);
+      summary.append(el('p', point.name + ' · ' + stage, 'quiet'));
       const body = el('div', '', 'quality-details');
       line(body, 'Задача:', project.goal);
       line(body, 'Техкарта:', labelFor(project, source));
@@ -539,10 +552,19 @@
       body.append(references);
       const parent = ledger.projects.find(item => item.id === project.parentId);
       if (parent) body.append(action('Предыдущий пилот', 'Открывает решение и факты, которые послужили основанием для доработки.', () => open(parent.id)));
-      if (!project.start && !project.decision) {
-        const basis = prerequisites(project, point, source, day);
-        for (const gap of basis.gaps) line(body, 'Перед стартом:', gap);
-        body.append(action('Изменить план', 'Открывает план и критерии до старта.', () => safely(() => editDraft(project))),
+      if (preparation) {
+        if (preparation.gaps.length) {
+          const steps = el('section', '', 'quality-criterion quality-fields');
+          steps.append(el('h4', 'Подготовить пилот'));
+          for (const gap of preparation.gaps) {
+            steps.append(el('p', gap.label));
+            if (gap.action) steps.append(action(gap.action, 'Открывает источник для выбранной точки или записи.',
+              () => openPreparationSource(gap.section, point, gap.id)));
+          }
+          body.append(steps);
+        }
+        body.append(action('Изменить план', 'Открывает план и критерии до старта.', () => safely(() => editDraft(project))));
+        if (!preparation.gaps.length && day >= project.plannedFrom) body.append(
           action('Подтвердить старт пилота', 'Сверяет данные точки и фиксирует подготовленные партии.', () => safely(() => startPilot(project.id))));
       }
       if (project.start) {
@@ -615,16 +637,21 @@
       const today = dateKey();
       const { projects } = read();
       const allPoints = points();
+      const preparationSource = projects.some(project => !project.start && !project.decision) ? context() : null;
       const rows = [];
       for (const project of projects) {
         const point = allPoints.find(item => item.id === project.pointId);
         if (!point) throw Error('Не найдена точка пилота.');
-        if (!project.decision) rows.push({
-          key: JSON.stringify(['pilot', project.id]), section: 'launches', point: point.name, owner: project.owner,
-          title: (project.start ? 'Итог пилота · ' : 'Старт пилота · ') + project.title,
-          date: project.start ? project.plannedTo : project.plannedFrom, detail: project.goal,
-          open: () => open(project.id), ...(project.start ? {} : { schedule: () => editDraft(project) })
-        });
+        if (!project.decision) {
+          const firstGap = !project.start && pilotPreparation(project, point, preparationSource, today).gaps[0];
+          const label = project.start ? 'Итог пилота' : firstGap ? 'Подготовить пилот' : 'Старт пилота';
+          rows.push({
+            key: JSON.stringify(['pilot', project.id]), section: 'launches', point: point.name, owner: project.owner,
+            title: label + ' · ' + project.title, date: project.start ? project.plannedTo : project.plannedFrom,
+            detail: firstGap?.label || project.goal,
+            open: () => open(project.id), ...(project.start ? {} : { schedule: () => editDraft(project) })
+          });
+        }
         if (project.decision?.result === 'launch' && !project.releases.length) rows.push({
           key: JSON.stringify(['launch-first', project.id]), section: 'launches', point: point.name, owner: project.owner,
           title: 'Подтвердить ввод · ' + project.title, date: project.decision.date, detail: 'Ввод на пилотной точке после решения',

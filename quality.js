@@ -1358,6 +1358,26 @@
     }
   }
 
+  function revealRecord(selector, dataKey, id) {
+    if (!id) return;
+    const row = [...document.querySelectorAll(selector)].find(item => item.dataset[dataKey] === id);
+    if (row) {
+      row.open = true;
+      row.scrollIntoView?.({ block: 'start' });
+      row.querySelector('summary')?.focus({ preventScroll: true });
+    }
+  }
+
+  function openSalesPeriod(point, period, id = '') {
+    Object.assign(reportFilter, { from: period.from, to: period.to, point: pointKey(point) });
+    location.hash = '#sales';
+    setTimeout(() => {
+      if (location.hash !== '#sales') return;
+      renderSales();
+      revealRecord('#sales-rows [data-sale]', 'sale', id);
+    }, 0);
+  }
+
   function renderSales() {
     const report = $('#sales-report');
     if (!report) return;
@@ -2762,7 +2782,7 @@
   const financialReview = window.panel03FinancialReview?.({
     readSales, readStock, readEconomy, readCatalog, saleRecipe, estimateIngredient, reconcileStock,
     priceFor, convertAmount, normalized, pointKey, cents, money, percentFormat, dateKey, dateIsValid, formatDate,
-    el, heading, line, field, value, requireText, action, showEditor
+    el, heading, line, field, value, requireText, action, showEditor, openSalesPeriod
   });
 
   const pointOperations = window.panel03PointOperations?.({
@@ -2776,9 +2796,22 @@
     catch { container.replaceChildren(el('p', 'Не удалось открыть журнал работы точек.', 'error')); }
   }
 
+  function openPreparationSource(section, point, id) {
+    if (section === 'development' && window.panel03OpenPoint) return window.panel03OpenPoint(point);
+    if (section === 'operations' && pointOperations) return pointOperations.openPoint(point.id);
+    location.hash = '#' + section;
+    if (!id) return;
+    setTimeout(() => {
+      if (location.hash !== '#' + section) return;
+      if (section === 'techcards') revealRecord('#techcards-list [data-card-id]', 'cardId', id);
+      if (section === 'training') revealRecord('#training-team [data-training-id]', 'trainingId', id);
+    }, 0);
+  }
+
   const productLaunch = window.panel03ProductLaunch?.({
     el, heading, line, field, value, requireText, action, showEditor, setActive, dateKey, dateIsValid, formatDate, normalized, pointKey,
-    readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat
+    readCatalog, historicalVersion, readSuppliers, readEconomy, readSales, estimateIngredient, costForSale, cents, money, percentFormat,
+    openPreparationSource
   });
 
   function renderLaunches() {

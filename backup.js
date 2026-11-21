@@ -169,13 +169,25 @@
   const incidentFollowUp = fields({ fixedOn: date, cause: hasText, work: hasText, acceptance: hasText, rule: nullable(incidentRule),
     due: date, check: nullable(incidentCheck) });
   const impact = choices('observe', 'limited', 'stopped');
+  const restriction = value => fields({ kind: choices('item', 'equipment', 'bar'), target: text })(value) &&
+    (value.kind === 'bar' ? value.target === '' : hasText(value.target));
+  const handoff = fields({
+    cycle: value => Number.isSafeInteger(value) && value >= 0,
+    date, due: date, executor: hasText, result: hasText, verifier: hasText,
+    accepted: nullable(fields({ who: hasText, date }))
+  });
   const incident = row => identified({
     pointId: hasText, kind: choices('complaint', 'failure', 'audit'), category: choices(...operationTopics, 'other'),
     title: hasText, description: hasText, pattern: hasText, impact, approval: text, date, due: date, createdAt: recordedAt, owner: hasText,
     deputy: boolean, deviceId: text, jobId: text, sampleId: text, fixes: array(incidentFollowUp),
-    priorImpacts: optional(array(fields({ impact, approval: text, changedOn: date }))),
+    restriction: optional(restriction),
+    priorImpacts: optional(array(fields({ impact, approval: text, changedOn: date, restriction: optional(restriction) }))),
+    handoffs: optional(array(handoff)),
     visitPlan: optional(nullable(fields({ owner: hasText, due: date })))
-  })(row) && (row.impact === 'observe' || hasText(row.approval)) && row.due >= row.date && (!row.visitPlan || row.visitPlan.due >= row.date) &&
+  })(row) && (row.impact === 'observe' ? !row.restriction : hasText(row.approval)) && row.due >= row.date && (!row.visitPlan || row.visitPlan.due >= row.date) &&
+    (row.handoffs || []).every((entry, index, list) => entry.cycle <= row.fixes.length && entry.date >= row.date && entry.due >= row.date &&
+      (!entry.accepted || entry.accepted.date >= entry.date) &&
+      (!index || entry.date >= list[index - 1].date && entry.cycle >= list[index - 1].cycle)) &&
     (!row.deviceId || row.category === 'equipment') && (!row.sampleId || row.category === 'supplies') && (!row.jobId || Boolean(row.deviceId)) &&
     row.fixes.every((item, index, list) => {
       const previous = list[index - 1];

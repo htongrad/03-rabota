@@ -518,6 +518,14 @@
     window.panel03MenuForPoint = point => bar.menu?.report([point])[0];
   }
 
+  function openMap(point) {
+    selectedPoint = point?.id || '';
+    showMap = true;
+    if (location.hash !== '#development') location.hash = '#development';
+    else render();
+  }
+  window.panel03OpenPoint = openMap;
+
   function render() {
     try {
       const baseline = localStorage.getItem(key) ?? '';
@@ -576,13 +584,6 @@
       }
       const team = read('panel-03:training', { team: [] }).team;
       const devices = read('panel-03:equipment', { devices: [] }).devices;
-      function openMap(point) {
-        selectedPoint = point?.id || '';
-        showMap = true;
-        if (location.hash !== '#development') location.hash = '#development';
-        else render();
-      }
-
       const { baseline: diagnosticsRaw, visits } = visitsFromStorage();
       const latest = latestByPoint(data.points, visits);
       const versions = read(baselineKey, []);

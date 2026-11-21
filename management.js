@@ -306,15 +306,14 @@
 
     function restrictionAndDeadlines(container, rows, warnings) {
       if (!container) return;
-      container.replaceChildren(heading('Требует внимания', 'Сначала видны остановки и ограничения, затем просроченные и сегодняшние действия.'));
+      container.replaceChildren(heading('Требует внимания', 'Здесь видны действующие ограничения и количество срочных действий.'));
       let restrictions = [];
       let failed = false;
       try { restrictions = pointOperations?.restrictions() || []; }
       catch { failed = true; }
       const today = dateKey();
       const present = new Set(restrictions.map(item => item.key));
-      const pending = rows.filter(row => !present.has(row.key) && dateIsValid(row.date) && row.date <= today)
-        .sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title, 'ru'));
+      const pending = rows.filter(row => !present.has(row.key) && dateIsValid(row.date) && row.date <= today);
       const overdue = pending.filter(item => item.date < today).length;
       if (failed || warnings.length) container.append(el('p', 'Часть журналов недоступна. Сверь источники в рабочих сроках.', 'error'));
       if (!restrictions.length && !pending.length && !failed && !warnings.length) {
@@ -323,10 +322,9 @@
       }
       line(container, 'Ограничения / просрочки / сегодня:', restrictions.length + ' / ' + overdue + ' / ' + (pending.length - overdue));
       const list = el('div', '', 'stack');
-      for (const row of [...restrictions.slice(0, 4), ...pending.slice(0, 4)]) {
+      for (const row of restrictions.slice(0, 4)) {
         const item = el('div', '', 'quality-criterion quality-fields');
-        line(item, row.priority || (row.date < today ? 'Просрочено' : 'Сегодня'),
-          [row.title, row.point, row.date && formatDate(row.date), row.owner].filter(Boolean).join(' · '));
+        line(item, row.priority, [row.title, row.point, row.scope, row.date && formatDate(row.date), row.owner].filter(Boolean).join(' · '));
         item.append(action('Открыть источник', 'Открывает запись, по которой возникло ограничение или срок.', () => openDeadline(row)));
         list.append(item);
       }
@@ -335,7 +333,7 @@
         link.href = '#operations';
         list.append(link);
       }
-      if (pending.length > 4) list.append(action('Ко всем рабочим срокам', 'Прокручивает «Обзор» к полному списку.', () => {
+      if (pending.length) list.append(action('К рабочим срокам', 'Открывает на обзоре список просрочек и действий на сегодня.', () => {
         document.getElementById('working-deadlines')?.scrollIntoView({ block: 'start' });
       }));
       container.append(list);

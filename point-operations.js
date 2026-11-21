@@ -8,12 +8,16 @@
   const categories = { ...topics, other: 'Другое' };
   const kinds = { complaint: 'Жалоба', failure: 'Сбой', audit: 'Отклонение на визите' };
   const impacts = { observe: 'Работа продолжается', limited: 'Работа ограничена', stopped: 'Работа приостановлена' };
+  const restrictionScopes = { item: 'Позиция меню', equipment: 'Оборудование', bar: 'Весь бар' };
   const auditStates = { ok: 'Подтверждено', issue: 'Есть отклонение', skip: 'Не проверено' };
   const incidentStates = { open: 'Нужно исправить', verify: 'На перепроверке', closed: 'Закрыто' };
   const empty = () => ({ plans: [], visits: [], incidents: [] });
   const lastFix = incident => incident.fixes.at(-1);
   const status = incident => lastFix(incident)?.check?.passed ? 'closed' : lastFix(incident) && !lastFix(incident).check ? 'verify' : 'open';
   const dueFor = incident => status(incident) === 'verify' ? lastFix(incident).due : incident.due;
+  const handoffFor = incident => incident.handoffs?.findLast(item =>
+    item.cycle === incident.fixes.length - (status(incident) === 'open' ? 0 : 1));
+  const scopeLabel = scope => scope ? [restrictionScopes[scope.kind], scope.target].filter(Boolean).join(' · ') : '';
   const newest = records => records.toSorted((a, b) => b.date.localeCompare(a.date) ||
     b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 
@@ -55,6 +59,7 @@
 
     function changeIncident(expected, ledger, incident) {
       save(expected, { ...ledger, incidents: ledger.incidents.map(item => item.id === incident.id ? incident : item) });
+      focusId = incident.id;
       return incident.id;
     }
 
@@ -101,6 +106,38 @@
       return { id: crypto.randomUUID(), createdAt: new Date().toISOString(), fixes: [], ...row };
     }
 
+    function restrictionFields(impact, initial, recordedApproval = '') {
+      const scope = field('Объект ограничения', 'Укажи, на что распространяется решение на этой точке.', {
+        choices: { '': 'Выбери объект', ...restrictionScopes }, value: initial?.kind
+      });
+      const target = field('Название позиции или оборудования', 'Укажи точное название, которым пользуется точка.', { value: initial?.target });
+      const approval = field('Кто согласовал ограничение', 'Укажи, кто и на каком основании принял решение.', {
+        multiline: true, value: recordedApproval
+      });
+      const rule = el('p', '', 'quiet');
+      const wrapper = el('div', '', 'quality-fields');
+      wrapper.append(scope.wrapper, target.wrapper, rule, approval.wrapper);
+      function update() {
+        const active = value(impact) !== 'observe';
+        const kind = value(scope);
+        setActive(scope.wrapper, active);
+        setActive(target.wrapper, active && Boolean(kind) && kind !== 'bar');
+        setActive(approval.wrapper, active);
+        rule.hidden = !active || !kind;
+        rule.textContent = kind === 'bar' ? 'Решение по всему бару принимает шеф-бариста по согласованию с руководством.' :
+          'Временное ограничение позиции или оборудования может принять управляющий точки. Устранение причины проверяет шеф-бариста.';
+      }
+      scope.control.addEventListener('change', update);
+      impact.control.addEventListener('change', update);
+      update();
+      return { wrapper, read() {
+        if (value(impact) === 'observe') return { approval: '' };
+        const kind = value(scope);
+        if (!Object.hasOwn(restrictionScopes, kind)) throw Error('Выбери объект ограничения.');
+        return { restriction: { kind, target: kind === 'bar' ? '' : requireText(target) }, approval: requireText(approval) };
+      } };
+    }
+
     function addIncident(prefill = {}) {
       const expected = capture([key, networkKey, sources.devices, sources.samples]);
       const { ledger, points } = read();
@@ -122,7 +159,8 @@
         const description = field('Факт и влияние', 'Опиши, что произошло, кто или что затронуты, и какие сведения уже проверены.', { multiline: true, value: prefill.description });
         const pattern = field('Признак повтора', 'Укажи общий короткий признак для похожих случаев. Если поле пустое, сопоставляется название записи.', { required: false });
         const impact = field('Режим работы', 'Укажи фактический режим работы после принятого решения.', { choices: impacts, value: prefill.jobId ? 'limited' : 'observe' });
-        const approval = field('Кто согласовал ограничение', 'Запиши согласование шеф-бариста с руководством и область ограничения.', { multiline: true });
+        const linkedDevice = equipment.devices.find(item => item.id === prefill.deviceId);
+        const restriction = restrictionFields(impact, linkedDevice && { kind: 'equipment', target: linkedDevice.model });
         const date = field('Дата случая', 'Фактическая дата жалобы, сбоя или начала приёмки.', { type: 'date', value: dateKey() });
         const handling = field('Кто ведёт случай', 'В отсутствие шеф-бариста срочный случай подхватывает только управляющий точки.', {
           choices: { chef: 'Обычный порядок', manager: 'Срочно · шеф отсутствует' }, value: 'chef'
@@ -138,7 +176,6 @@
           const current = points.find(item => item.id === value(point));
           if (value(handling) === 'manager') owner.control.value = current?.manager || '';
           owner.control.readOnly = value(handling) === 'manager';
-          setActive(approval.wrapper, value(impact) !== 'observe');
           const selectedDevice = device && value(device);
           linked.replaceChildren();
           device = null;
@@ -158,7 +195,7 @@
           update();
         });
         body.append(point.wrapper, kind.wrapper, category.wrapper, title.wrapper, description.wrapper, pattern.wrapper,
-          impact.wrapper, approval.wrapper, date.wrapper, handling.wrapper, owner.wrapper, due.wrapper, linked);
+          impact.wrapper, restriction.wrapper, date.wrapper, handling.wrapper, owner.wrapper, due.wrapper, linked);
         update();
         return () => {
           const day = value(date);
@@ -175,7 +212,7 @@
           const sampleId = value(category) === 'supplies' ? value(batch) : '';
           const row = newIncident({ pointId: current.id, kind: value(kind), category: value(category), title: label,
             description: requireText(description), pattern: normalized(value(pattern) || label), impact: mode,
-            approval: mode === 'observe' ? '' : requireText(approval), date: day, due: deadline, owner: responsible, deputy,
+            ...restriction.read(), date: day, due: deadline, owner: responsible, deputy,
             deviceId: device ? value(device) : '', jobId: prefill.jobId || '', sampleId });
           save(expected, { ...ledger, incidents: [...ledger.incidents, row] });
           focusId = row.id;
@@ -255,26 +292,68 @@
       }, 'Сохранить визит', 'Сохраняет факты. Новые отклонения создают связанные записи с рабочим сроком.');
     }
 
-    function restrict(id) {
-      const expected = capture([key, networkKey]);
+    function restrict(id, clarify = false) {
+      const expected = capture([key, networkKey, sources.devices]);
       const { ledger } = read();
       const item = ledger.incidents.find(row => row.id === id);
-      if (!item || status(item) === 'closed' || item.impact === 'stopped') throw Error('Случай уже изменился.');
+      if (!item || status(item) === 'closed' || (clarify ? item.impact === 'observe' || item.restriction : item.impact === 'stopped')) {
+        throw Error('Случай уже изменился.');
+      }
       showEditor('Ограничение работы · ' + item.title, body => {
-        const options = item.impact === 'observe' ? { limited: impacts.limited, stopped: impacts.stopped } : { stopped: impacts.stopped };
+        const options = clarify ? { [item.impact]: impacts[item.impact] } :
+          item.impact === 'observe' ? { limited: impacts.limited, stopped: impacts.stopped } : { stopped: impacts.stopped };
         const impact = field('Новый режим работы', 'Укажи согласованный фактический режим. Возобновление фиксируется по результату перепроверки.', {
           choices: options, value: Object.keys(options)[0]
         });
-        const approval = field('Кто согласовал ограничение', 'Зафиксируй согласование с руководством и область ограничения.', { multiline: true });
-        body.append(impact.wrapper, approval.wrapper);
+        const device = item.deviceId && get(sources.devices, { devices: [] }).devices.find(row => row.id === item.deviceId);
+        const initial = item.restriction || (device && { kind: 'equipment', target: device.model });
+        const restriction = restrictionFields(impact, initial, clarify ? item.approval : '');
+        body.append(impact.wrapper, restriction.wrapper);
         return () => {
           const mode = value(impact);
           if (!Object.hasOwn(options, mode)) throw Error('Укажи новый режим.');
-          const previous = { impact: item.impact, approval: item.approval, changedOn: dateKey() };
-          return changeIncident(expected, ledger, { ...item, impact: mode, approval: requireText(approval),
+          const previous = { impact: item.impact, approval: item.approval, restriction: item.restriction, changedOn: dateKey() };
+          return changeIncident(expected, ledger, { ...item, impact: mode, ...restriction.read(),
             priorImpacts: [...item.priorImpacts || [], previous] });
         };
       });
+    }
+
+    function handoffEditor(id, accept = false) {
+      const expected = capture([key, networkKey]);
+      const { ledger } = read();
+      const item = ledger.incidents.find(row => row.id === id);
+      if (!item || status(item) !== 'open') throw Error('Этап случая уже изменился.');
+      const previous = handoffFor(item);
+      if (accept && (!previous || previous.accepted)) throw Error('Передача уже изменилась.');
+      showEditor((accept ? 'Принятие задачи' : 'Передача задачи') + ' · ' + item.title, body => {
+        if (accept) {
+          line(body, 'Кому поручено:', previous.executor);
+          line(body, 'Ожидаемый результат:', previous.result);
+          const who = field('Кто принял задачу', 'Запиши имя того, кто подтвердил принятие.', { value: previous.executor });
+          const date = field('Дата принятия', 'День фактического подтверждения.', { type: 'date', value: dateKey() });
+          body.append(who.wrapper, date.wrapper);
+          return () => {
+            const day = value(date);
+            if (!dateIsValid(day) || day < previous.date || day > dateKey()) throw Error('Укажи фактическую дату от дня передачи до сегодня.');
+            const accepted = { who: requireText(who), date: day };
+            return changeIncident(expected, ledger, { ...item, handoffs: item.handoffs.map(entry => entry === previous ? { ...entry, accepted } : entry) });
+          };
+        }
+        const executor = field('Исполнитель', 'Кому поручено выполнить исправление.', { value: previous?.executor });
+        const result = field('Ожидаемый результат', 'Что должно быть сделано и по какому признаку это видно.', { multiline: true, value: previous?.result });
+        const verifier = field('Кто проверит результат', 'Кто сверит результат с критерием приёмки.', { value: previous?.verifier });
+        const date = field('Срок задачи', 'Этот срок попадёт в обзор и календарь.', { type: 'date', value: item.due });
+        body.append(executor.wrapper, result.wrapper, verifier.wrapper, date.wrapper);
+        return () => {
+          const due = value(date);
+          const today = dateKey();
+          if (!dateIsValid(due) || due < (lastFix(item)?.check?.date || item.date)) throw Error('Укажи срок от даты последнего действия.');
+          const entry = { cycle: item.fixes.length, date: today, due, executor: requireText(executor),
+            result: requireText(result), verifier: requireText(verifier), accepted: null };
+          return changeIncident(expected, ledger, { ...item, due, handoffs: [...item.handoffs || [], entry] });
+        };
+      }, accept ? 'Сохранить принятие' : 'Сохранить передачу');
     }
 
     function editIncident(id, mode) {
@@ -303,7 +382,8 @@
           const date = field('Дата исправления', 'День, когда выполнили корректировку.', { type: 'date', value: dateKey() });
           const cause = field('Установленная или предполагаемая причина', 'Если причина ещё не подтверждена, отметь это в записи.', { multiline: true });
           const work = field('Что исправили', 'Опиши выполненное действие и кто выполнил его.', { multiline: true });
-          const acceptance = field('Критерий приёмки и источник', 'Укажи, какой результат должен наблюдаться и на какой документ или стандарт опирается критерий.', { multiline: true });
+          const acceptance = field('Критерий приёмки и источник', 'Укажи, какой результат должен наблюдаться и на какой документ или стандарт опирается критерий.',
+            { multiline: true, value: handoffFor(item)?.result });
           const ruleMode = field('Способ проверки', 'Привязанное оборудование требует числового критерия из документации или действующего стандарта.', {
             choices: item.deviceId ? { numeric: 'Числовой диапазон' } : { observable: 'Наблюдаемый результат', numeric: 'Числовой диапазон' },
             value: item.deviceId ? 'numeric' : 'observable'
@@ -337,7 +417,7 @@
       showEditor('Перепроверка · ' + item.title, body => {
         line(body, 'Критерий приёмки:', current.acceptance);
         const date = field('Фактическая дата перепроверки', 'Дата наблюдения или замера.', { type: 'date', value: dateKey() });
-        const who = field('Кто проверил результат', 'Ответственный, подтвердивший фактический результат.');
+        const who = field('Кто проверил результат', 'Ответственный, подтвердивший фактический результат.', { value: handoffFor(item)?.verifier });
         const proof = field('Фактический результат', 'Опиши, что измерил или наблюдал и на каких условиях.', { multiline: true });
         const actual = current.rule ? field('Замер · ' + current.rule.unit, 'Панель сравнит замер с диапазоном включительно.', { type: 'number' }) :
           field('Критерий выполнен', 'Подтверди, наблюдался ли указанный результат.', { choices: { '': 'Выбери результат', yes: 'Да', no: 'Нет' } });
@@ -347,7 +427,10 @@
         const calibration = item.deviceId && field('Проверка напитка после ремонта', 'Выбери успешную калибровку на связанной технике после исправления. Запись должна относиться к этой точке.', {
           choices: { '': 'Не выбрана', ...Object.fromEntries(afterRepair.map((row, i) => [row.id, formatDate(row.date) + ' · ' + row.author + ' · проверка ' + (i + 1)])) }, required: false
         });
-        const approval = field('Согласование возобновления', 'Если работу ограничивали или приостанавливали, запиши решение шеф-бариста, согласованное с руководством.', { multiline: true, required: false });
+        const resumed = item.restriction?.kind === 'item' ? 'Запиши решение управляющего после проверки шеф-бариста.' :
+          item.restriction?.kind === 'equipment' ? 'Запиши решение по возврату оборудования после подтверждённой проверки.' :
+          'Запиши решение шеф-бариста, согласованное с руководством.';
+        const approval = field('Согласование возобновления', resumed, { multiline: true, required: false });
         const due = field('Новый срок при отклонении', 'Если результат не прошёл проверку, этот срок вернётся в календарь.', { type: 'date', value: dateKey(), required: false });
         body.append(date.wrapper, who.wrapper, actual.wrapper, proof.wrapper);
         if (calibration) body.append(calibration.wrapper);
@@ -417,6 +500,15 @@
       return { container, body };
     }
 
+    function showHandoff(body, entry) {
+      line(body, entry.accepted ? 'Задача принята:' : 'Ожидает принятия:', entry.accepted ?
+        entry.accepted.who + ' · ' + formatDate(entry.accepted.date) : formatDate(entry.date));
+      line(body, 'Исполнитель:', entry.executor);
+      line(body, 'Ожидаемый результат:', entry.result);
+      line(body, 'Кто проверит:', entry.verifier);
+      line(body, 'Срок при передаче:', formatDate(entry.due));
+    }
+
     function incidentCard(item, point, ledger) {
       const state = status(item);
       const date = formatDate(item.date);
@@ -424,11 +516,26 @@
       line(body, 'Вид и категория:', kinds[item.kind] + ' · ' + categories[item.category]);
       line(body, 'Факт и влияние:', item.description);
       line(body, state === 'closed' ? 'Режим при регистрации:' : 'Текущий режим:', impacts[item.impact]);
+      if (item.impact !== 'observe') line(body, 'Объект ограничения:', scopeLabel(item.restriction) || 'Требует уточнения');
       line(body, 'Согласование:', item.approval);
       for (const prior of item.priorImpacts || []) line(body, 'Предыдущий режим до ' + formatDate(prior.changedOn),
-        impacts[prior.impact] + (prior.approval ? ' · ' + prior.approval : ''));
-      line(body, 'Ответственный:', item.owner + (item.deputy ? ' · управляющий подхватил срочный случай' : ''));
+        [impacts[prior.impact], scopeLabel(prior.restriction), prior.approval].filter(Boolean).join(' · '));
+      line(body, 'Ответственный за решение:', item.owner + (item.deputy ? ' · управляющий подхватил срочный случай' : ''));
       if (state !== 'closed') line(body, 'Рабочий срок:', formatDate(dueFor(item)));
+      const handoff = handoffFor(item);
+      if (handoff) showHandoff(body, handoff);
+      const history = (item.handoffs || []).filter(entry => entry !== handoff);
+      if (history.length) {
+        const previous = el('details', '', 'quality-criterion');
+        previous.append(el('summary', 'История передачи'));
+        for (const entry of history.toReversed()) {
+          const section = el('div', '', 'quality-details');
+          line(section, 'Передано:', formatDate(entry.date));
+          showHandoff(section, entry);
+          previous.append(section);
+        }
+        body.append(previous);
+      }
       if (item.deviceId || item.sampleId) {
         const device = item.deviceId && get(sources.devices, { devices: [] }).devices.find(row => row.id === item.deviceId);
         const sample = item.sampleId && get(sources.samples, { samples: [] }).samples.find(row => row.id === item.sampleId);
@@ -466,6 +573,12 @@
       }
       if (state !== 'closed' && item.impact !== 'stopped') body.append(
         action('Записать ограничение', 'Фиксирует согласованное ограничение или приостановку для действующего случая.', () => restrict(item.id)));
+      if (state !== 'closed' && item.impact !== 'observe' && !item.restriction) body.append(
+        action('Уточнить объект ограничения', 'Добавляет объект к ранее записанному режиму.', () => restrict(item.id, true)));
+      if (state === 'open') {
+        if (handoff && !handoff.accepted) body.append(action('Отметить принятие', 'Фиксирует фактическое принятие задачи.', () => handoffEditor(item.id, true)));
+        body.append(action(handoff ? 'Передать задачу заново' : 'Передать задачу', 'Записывает исполнителя, результат, срок и проверяющего.', () => handoffEditor(item.id)));
+      }
       if (state !== 'closed') body.append(
         action(state === 'verify' ? 'Записать перепроверку' : 'Записать исправление', 'Следующий этап работы по записи.', () => editIncident(item.id, state === 'verify' ? 'verify' : 'fix')),
         action('Перенести срок', 'Меняет срок текущего этапа в обзоре и календаре.', () => editIncident(item.id, 'move'))
@@ -546,11 +659,17 @@
           open: () => navigate(point.id, visit.last?.id), schedule: () => editPlan(point, true)
         });
         for (const item of ledger.incidents.filter(record => record.pointId === point.id)) {
-          if (status(item) !== 'closed') rows.push({
-            key: JSON.stringify(['point-incident', item.id]), section: 'point-operations', point: point.name, owner: item.owner,
-            title: (status(item) === 'verify' ? 'Перепроверка · ' : 'Отклонение · ') + item.title, date: dueFor(item), detail: item.description,
-            open: () => navigate(point.id, item.id), schedule: () => editIncident(item.id, 'move')
-          });
+          const state = status(item);
+          const handoff = handoffFor(item);
+          if (state !== 'closed') {
+            const owner = state === 'verify' ? handoff?.verifier : handoff?.executor;
+            rows.push({
+              key: JSON.stringify(['point-incident', item.id]), section: 'point-operations', point: point.name, owner: owner || item.owner,
+              title: (state === 'verify' ? 'Перепроверка · ' : 'Отклонение · ') + item.title, date: dueFor(item),
+              detail: handoff ? [state === 'open' && !handoff.accepted ? 'Ожидает принятия' : '', handoff.result].filter(Boolean).join(' · ') : item.description,
+              open: () => navigate(point.id, item.id), schedule: () => editIncident(item.id, 'move')
+            });
+          }
           if (item.visitPlan) rows.push({
             key: JSON.stringify(['point-extra-visit', item.id]), section: 'point-operations', point: point.name, owner: item.visitPlan.owner,
             title: 'Внеплановый визит · ' + item.title, date: item.visitPlan.due, detail: item.description,
@@ -586,12 +705,12 @@
         .toSorted((a, b) => Number(b.impact === 'stopped') - Number(a.impact === 'stopped') ||
           dueFor(a).localeCompare(dueFor(b))).map(item => ({
           key: JSON.stringify(['point-incident', item.id]), section: 'point-operations', point: byPoint.get(item.pointId),
-          title: item.title, priority: impacts[item.impact], owner: item.owner, date: dueFor(item),
+          title: item.title, priority: impacts[item.impact], scope: scopeLabel(item.restriction), owner: item.owner, date: dueFor(item),
           open: () => navigate(item.pointId, item.id)
         }));
     }
 
     window.panel03OperationsProgress = progress;
-    return { key, render, deadlines, openEquipmentCase, equipmentStatus, restrictions };
+    return { key, render, deadlines, openEquipmentCase, equipmentStatus, restrictions, openPoint: navigate };
   };
 })();

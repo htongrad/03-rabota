@@ -47,7 +47,7 @@
   window.panel03FinancialReview = ({
     readSales, readStock, readEconomy, readCatalog, saleRecipe, estimateIngredient, reconcileStock,
     priceFor, convertAmount, normalized, pointKey, cents, money, percentFormat, dateKey, dateIsValid, formatDate,
-    el, heading, line, field, value, requireText, action, showEditor
+    el, heading, line, field, value, requireText, action, showEditor, openSalesPeriod
   }) => {
     const filter = { kind: 'week', date: '', pointId: '' };
     const dataKeys = [key, 'panel-03:economy', 'panel-03:sales', 'panel-03:stock', 'panel-03:techcards', 'panel-03:network'];
@@ -97,6 +97,7 @@
       const samePoint = row => pointKey(row.point) === scope;
       const inPeriod = row => samePoint(row) && period.from <= row.date && row.date <= period.to;
       const saleRows = sales.filter(inPeriod);
+      const missingReturns = saleRows.filter(row => row.returned == null).map(row => row.id);
       const writeOffs = stock.writeOffs.filter(inPeriod);
       const checks = stock.checks.filter(row => samePoint(row) && row.from === period.from && row.to === period.to);
       const supplyById = new Map(economy.data.supplies.map(item => [item.id, item]));
@@ -184,7 +185,7 @@
       const confirmed = stored?.evidence === evidence;
       const ready = Boolean(plan && confirmed && !normGaps.size && !actualGaps.size && !lossGaps.size && revenue !== null);
       return { point, plan, stored, confirmed, ready, normative, observed, normCosts, actualCosts, normGaps, actualGaps, lossGaps, detail,
-        evidence, returns: safeSum(norm.returns), returnsUnknown: saleRows.some(row => row.returned == null) || lossGaps.has('Не хватает данных о себестоимости приготовленных возвратов'),
+        evidence, missingReturns, returns: safeSum(norm.returns), returnsUnknown: missingReturns.length > 0 || lossGaps.has('Не хватает данных о себестоимости приготовленных возвратов'),
         losses: [...losses].map(([reason, costs]) => [reason, safeSum(costs)]), salesCount: saleRows.length };
     }
 
@@ -303,7 +304,7 @@
       }
     }
 
-    function sourceDetails(parent, report) {
+    function sourceDetails(parent, report, period) {
       const item = el('details', '', 'quality-criterion');
       item.append(el('summary', 'Источники, расход и отклонения'));
       const body = el('div', '', 'quality-details');
@@ -322,11 +323,12 @@
         line(body, 'Оценка факта / разницы по цене на конец периода:', display('revenue', row.cost) + ' / ' + display('revenue', row.variance));
         line(body, 'Заметка из сверки:', row.note);
       }
-      for (const [route, label] of [['#sales', 'Дневные продажи'], ['#stock', 'Списания и сверка']]) {
-        const link = el('a', label, 'action');
-        link.href = route;
-        body.append(link);
-      }
+      const saleId = report.missingReturns.length === 1 ? report.missingReturns[0] : '';
+      body.append(action(saleId ? 'Открыть строку с возвратами' : 'Дневные продажи',
+        'Открывает продажи по этой точке и периоду.', () => openSalesPeriod(report.point.name, period, saleId)));
+      const stock = el('a', 'Списания и сверка', 'action');
+      stock.href = '#stock';
+      body.append(stock);
       item.append(body);
       parent.append(item);
     }
@@ -337,7 +339,7 @@
       const status = report.ready ? 'Период подтверждён' : report.stored && !report.confirmed ? 'Источники изменились. Повтори разбор.' : 'Период требует проверки';
       card.append(el('p', status, 'quiet'));
       metricCards(card, report);
-      sourceDetails(card, report);
+      sourceDetails(card, report, period);
       if (report.plan && !report.normGaps.size && !report.actualGaps.size && !report.lossGaps.size && period.to < dateKey() && !report.confirmed) {
         card.append(action('Подтвердить период', 'Фиксирует сверку исходных данных, вывод и при необходимости действие со сроком.', () => editorReview(period, report)));
       }
