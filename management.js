@@ -290,8 +290,9 @@
     }
 
     function open(id) {
-      location.hash = '#overview';
+      location.hash = '#development';
       setTimeout(() => {
+        if (location.hash !== '#development') return;
         const panel = document.getElementById('management-actions');
         if (!panel) return;
         panel.open = true;
@@ -304,39 +305,39 @@
       }, 0);
     }
 
-    function restrictionAndDeadlines(container, rows, warnings) {
+    function renderPriorities(container, warnings) {
       if (!container) return;
-      container.replaceChildren(heading('Требует внимания', 'Здесь видны действующие ограничения и количество срочных действий.'));
       let restrictions = [];
       let failed = false;
       try { restrictions = pointOperations?.restrictions() || []; }
       catch { failed = true; }
-      const today = dateKey();
-      const present = new Set(restrictions.map(item => item.key));
-      const pending = rows.filter(row => !present.has(row.key) && dateIsValid(row.date) && row.date <= today);
-      const overdue = pending.filter(item => item.date < today).length;
-      if (failed || warnings.length) container.append(el('p', 'Часть журналов недоступна. Сверь источники в рабочих сроках.', 'error'));
-      if (!restrictions.length && !pending.length && !failed && !warnings.length) {
-        container.append(el('p', 'Открытых ограничений и сроков до конца сегодняшнего дня в журналах нет.', 'quiet'));
-        return;
+      const title = el('div', '', 'overview-row');
+      title.append(el('h3', 'Требует внимания'));
+      if (restrictions.length) {
+        const plural = new Intl.PluralRules('ru').select(restrictions.length);
+        title.append(el('span', restrictions.length + ' ' + ({ one: 'ограничение', few: 'ограничения' }[plural] || 'ограничений'), 'priority-count'));
       }
-      line(container, 'Ограничения / просрочки / сегодня:', restrictions.length + ' / ' + overdue + ' / ' + (pending.length - overdue));
-      const list = el('div', '', 'stack');
+      container.classList.toggle('priority-alert', restrictions.length > 0);
+      container.replaceChildren(title);
+      if (failed || warnings.length) container.append(el('p', 'Часть журналов недоступна. Сверь источники в рабочих сроках.', 'error'));
+      if (!restrictions.length && !failed && !warnings.length) {
+        container.append(el('p', 'Действующих ограничений нет.', 'quiet'));
+      }
       for (const row of restrictions.slice(0, 4)) {
-        const item = el('div', '', 'quality-criterion quality-fields');
-        line(item, row.priority, [row.title, row.point, row.scope, row.date && formatDate(row.date), row.owner].filter(Boolean).join(' · '));
-        item.append(action('Открыть источник', 'Открывает запись, по которой возникло ограничение или срок.', () => openDeadline(row)));
-        list.append(item);
+        const item = el('button', '', 'overview-source');
+        item.type = 'button';
+        item.addEventListener('click', () => openDeadline(row));
+        const text = el('span', '', 'overview-copy');
+        text.append(el('strong', row.title), el('span', [row.priority, row.scope, row.point].filter(Boolean).join(' · '), 'quiet'));
+        item.append(text, el('span', '›', 'overview-arrow'));
+        item.lastElementChild.setAttribute('aria-hidden', 'true');
+        container.append(item);
       }
       if (restrictions.length > 4) {
         const link = el('a', 'Все случаи работы точек', 'action');
         link.href = '#operations';
-        list.append(link);
+        container.append(link);
       }
-      if (pending.length) list.append(action('К рабочим срокам', 'Открывает на обзоре список просрочек и действий на сегодня.', () => {
-        document.getElementById('working-deadlines')?.scrollIntoView({ block: 'start' });
-      }));
-      container.append(list);
     }
 
     function sourceButton(metric, point, period) {
@@ -486,6 +487,6 @@
       const rows = read().data;
       return { active: rows.filter(item => !item.effect).length, checked: rows.filter(item => item.effect).length };
     };
-    return { render, deadlines, restrictionAndDeadlines };
+    return { render, deadlines, renderPriorities };
   };
 })();

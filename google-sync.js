@@ -17,6 +17,7 @@
   let afterConnect;
   let calendarGranted = false;
   let calendarMessage = '';
+  let calendarIssue = false;
   let calendarPoll = 0;
   let driveError = '';
   let authLoading;
@@ -328,6 +329,7 @@
     }
     if (sendCalendar) {
       if (!calendarGranted) {
+        calendarIssue = true;
         calendarMessage = 'Для отправки событий разреши доступ к календарю при синхронизации.';
       } else {
         try {
@@ -339,9 +341,11 @@
             work });
           update({ calendarHash: hash });
           calendarPoll = Date.now();
+          calendarIssue = false;
           calendarMessage = 'Календарь обновлён. Событий и рабочих действий: ' + count + '.';
         } catch (error) {
           errorFound = true;
+          calendarIssue = true;
           calendarMessage = error.message || 'Не удалось обновить календарь.';
         }
       }
@@ -412,9 +416,12 @@
       settings.lastSync ? 'Копия на Диске актуальна.' : 'Ожидает первой копии.';
     const calendarSummary = calendarMessage || (settings.calendarLastSync
       ? 'Календарь «03 РАБОТА» обновлён.' : 'Календарь ожидает первой отправки.');
-    $('#google-overview-text').textContent = summary;
+    $('#google-overview-text').textContent = !configured ? 'Подключение не настроено.' :
+      busy || connecting || navigator.onLine === false || syncError || driveError || !enabled || !ready() || localPending ? summary :
+      calendarIssue ? 'Календарь требует внимания.' :
+      settings.lastSync ? 'Копия: ' + new Date(settings.lastSync).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Moscow' }) :
+      summary;
     $('#google-last-sync').textContent = settings.lastSync ? 'Последняя копия: ' + new Date(settings.lastSync).toLocaleString('ru-RU') : '';
-    $('#google-calendar-overview').textContent = calendarSummary;
     $('#google-calendar-status').textContent = calendarSummary;
     $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
     $('#google-status').textContent = busy || connecting ? summary : message || summary;
@@ -513,13 +520,6 @@
     paint();
   }
 
-  for (const button of document.querySelectorAll('[data-google-help]')) {
-    button.addEventListener('click', () => {
-      $('#backup-help-text').textContent = button.dataset.googleHelp;
-      $('#backup-help').showModal();
-    });
-  }
-
   $('#google-open').addEventListener('click', openGoogle);
   $('#google-close').addEventListener('click', () => $('#google-dialog').close());
   $('#google-overview-sync').addEventListener('click', () => start('sync'));
@@ -527,7 +527,7 @@
   $('#google-sync-now').addEventListener('click', () => start('sync'));
   $('#google-restore').addEventListener('click', () => start('restore'));
   $('#google-disconnect').addEventListener('click', () => {
-    token = ''; expires = 0; calendarGranted = false; calendarMessage = '';
+    token = ''; expires = 0; calendarGranted = false; calendarMessage = ''; calendarIssue = false;
     syncError = '';
     message = 'Доступ в этой вкладке отключён.';
     paint();

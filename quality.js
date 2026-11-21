@@ -9,7 +9,9 @@
   const form = $('#quality-form');
   const error = $('#quality-error');
   const journal = $('#quality-checks');
-  const tooltip = $('#quality-tooltip');
+  const hintsKey = 'panel-03:ui-hints';
+  const hints = $('#show-hints');
+  let openHelp, hintNumber = 0;
   let fieldNumber = 0;
   let active;
 
@@ -27,17 +29,70 @@
     return control;
   }
 
+  function closeHelp() {
+    if (!openHelp) return;
+    openHelp.control.setAttribute('aria-expanded', 'false');
+    openHelp.control.removeAttribute('aria-describedby');
+    openHelp.note.remove();
+    openHelp = null;
+  }
+
+  function bindHelp(control, description) {
+    control.setAttribute('aria-expanded', 'false');
+    control.addEventListener('click', () => {
+      const alreadyOpen = openHelp?.control === control;
+      closeHelp();
+      if (alreadyOpen) return;
+      const note = el('p', description, 'quality-inline-tip');
+      note.id = 'quality-hint-' + (++hintNumber);
+      note.setAttribute('role', 'status');
+      control.after(note);
+      control.setAttribute('aria-expanded', 'true');
+      control.setAttribute('aria-describedby', note.id);
+      openHelp = { control, note };
+    });
+  }
+
   function help(label, description) {
-    const control = button('', () => {
-      $('#quality-tooltip-title').textContent = label;
-      $('#quality-tooltip-text').textContent = description;
-      tooltip.showModal();
-      $('#quality-tooltip-close').focus();
-    }, 'quality-help');
+    const control = el('button', '', 'quality-help');
+    control.type = 'button';
     control.setAttribute('aria-label', 'Пояснение: ' + label);
     control.append(el('span', '?'));
+    bindHelp(control, description);
     return control;
   }
+
+  function setHints(enabled) {
+    hints.checked = enabled;
+    document.documentElement.toggleAttribute('data-hints', enabled);
+    if (!enabled) closeHelp();
+  }
+
+  function storedHints() {
+    try { return localStorage.getItem(hintsKey) === 'on'; }
+    catch { return false; }
+  }
+
+  setHints(storedHints());
+  for (const control of document.querySelectorAll('[data-help]')) bindHelp(control, control.dataset.help);
+  hints.addEventListener('change', () => {
+    setHints(hints.checked);
+    try { localStorage.setItem(hintsKey, hints.checked ? 'on' : 'off'); }
+    catch { /* Положение переключателя действует до перезагрузки. */ }
+  });
+  window.addEventListener('storage', event => {
+    if (event.key === null || event.key === hintsKey) setHints(storedHints());
+  });
+  window.addEventListener('hashchange', closeHelp);
+  document.addEventListener('close', event => {
+    if (!event.target.open && openHelp?.control.closest('dialog') === event.target) closeHelp();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && openHelp?.control === document.activeElement) {
+      event.preventDefault();
+      closeHelp();
+    }
+  });
 
   window.panel03Help = help;
 
@@ -247,6 +302,7 @@
   }
 
   function showEditor(title, render, submit = 'Сохранить', tip = 'Записывает проверку в этом браузере. После сохранения она появится в журнале.') {
+    closeHelp();
     active = null;
     error.hidden = true;
     const titleElement = $('#quality-editor-title');
@@ -3003,6 +3059,8 @@
     }, 0);
   }
 
+  const shortDeadlineDate = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+
   function deadlineGroup(day, today, end) {
     if (!day || !dateIsValid(day)) return 'Без срока';
     if (day < today) return 'Просрочено';
@@ -3014,16 +3072,24 @@
   function renderDeadlines() {
     const container = $('#working-deadlines');
     if (!container) return;
+    const opened = new Set([...container.querySelectorAll('details[open][data-deadline-group]')].map(item => item.dataset.deadlineGroup));
     container.replaceChildren();
     const { rows, warnings } = collectDeadlines();
-    management?.restrictionAndDeadlines($('#management-priorities'), rows, warnings);
-    management?.render();
+    management?.renderPriorities($('#management-priorities'), warnings);
     const date = dateKey();
     const week = fromKey(date);
     week.setUTCDate(week.getUTCDate() + 7);
     const end = civilKey(week);
-    container.append(heading('Рабочие сроки', 'Действия из журналов и плановые проверки. Нажми «Открыть запись», чтобы увидеть результат или правило графика.'));
-    const filters = el('div', '', 'quality-fields');
+    const overview = el('div', '', 'overview-row');
+    const overdue = rows.filter(row => dateIsValid(row.date) && row.date < date).length;
+    const today = rows.filter(row => row.date === date).length;
+    overview.append(el('h3', 'Рабочие сроки'));
+    if (overdue || today) overview.append(el('span', overdue + ' просрочено · ' + today + ' сегодня', 'quiet'));
+    container.append(overview);
+    const filtersPanel = el('details', '', 'deadline-filters');
+    filtersPanel.dataset.deadlineGroup = 'filters';
+    filtersPanel.open = opened.has('filters');
+    const filters = el('div', '', 'quality-pair');
     const points = new Map(rows.filter(row => row.point).map(row => [pointKey(row.point), pointName(row.point)]));
     const point = field('Точка для сроков', 'Выбери точку. Общие пробы поставщиков находятся в варианте «Без привязки к точке».', {
       choices: { '': 'Все точки', ...Object.fromEntries(points), unassigned: 'Без привязки к точке' }, value: deadlineFilter.point, required: false
@@ -3036,7 +3102,7 @@
       renderDeadlines();
     });
     filters.append(point.wrapper, section.wrapper);
-    container.append(filters);
+    filtersPanel.append(el('summary', deadlineFilter.point || deadlineFilter.section ? 'Фильтры сроков · применены' : 'Фильтры сроков'), filters);
     if (warnings.length) container.append(el('p', 'Не удалось прочитать часть журналов: ' + warnings.join(', '), 'error'));
     const filtered = rows.filter(row =>
       (!deadlineFilter.section || row.section === deadlineFilter.section) &&
@@ -3045,30 +3111,41 @@
       const items = filtered.filter(row => deadlineGroup(row.date, date, end) === group)
         .sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.title.localeCompare(b.title, 'ru'));
       if (!items.length) continue;
-      const block = el('section', '', 'quality-fields');
-      block.append(heading(group + ' · ' + items.length,
-        group === 'Ближайшие 7 дней' ? 'Сроки с завтрашнего дня по седьмой день включительно.' :
-        group === 'Без срока' ? 'Открытые действия, которым нужно назначить корректную дату.' :
-        'Открытые действия, сгруппированные по дате в браузере.', 'h4'));
+      const urgent = group === 'Просрочено' || group === 'Сегодня';
+      const block = el(urgent ? 'section' : 'details', '', 'deadline-group');
+      if (!urgent) {
+        block.dataset.deadlineGroup = group;
+        block.open = opened.has(group);
+      }
+      block.append(el(urgent ? 'h4' : 'summary', group + ' · ' + items.length, 'deadline-group-title'));
       for (const row of items) {
-        const entry = el('div', '', 'quality-criterion quality-fields');
-        line(entry, row.title, row.detail);
-        line(entry, 'Раздел:', deadlineSections[row.section]);
-        line(entry, 'Точка:', row.point || 'без привязки');
-        line(entry, 'Срок:', dateIsValid(row.date) ? formatDate(row.date) : 'не назначен');
-        if (row.owner) line(entry, 'Ответственный:', row.owner);
-        entry.append(action('Открыть запись', 'Переходит к исходной записи и раскрывает её для проверки результата.', () => openDeadline(row)));
-        if (row.schedule) entry.append(action('Изменить срок', 'Назначает или переносит дату в исходном журнале.', () => {
+        const entry = el('details', '', 'deadline-entry');
+        entry.dataset.deadlineGroup = row.key;
+        entry.open = opened.has(row.key);
+        const summary = el('summary', '', 'deadline-entry-summary');
+        const formatted = row.date === date ? 'Сегодня' : !dateIsValid(row.date) ? 'Без срока' :
+          row.date.slice(0, 4) === date.slice(0, 4) ? shortDeadlineDate.format(fromKey(row.date)) : formatDate(row.date);
+        const time = el('span', formatted, 'deadline-date');
+        const text = el('span', '', 'overview-copy');
+        text.append(el('strong', row.title));
+        const context = [row.point, row.detail].filter(Boolean).join(' · ');
+        if (context) text.append(el('span', context, 'quiet'));
+        summary.append(time, text);
+        const actions = el('div', '', 'quality-fields deadline-entry-actions');
+        line(actions, 'Раздел:', deadlineSections[row.section]);
+        if (row.owner) line(actions, 'Ответственный:', row.owner);
+        actions.append(action('Открыть запись', 'Переходит к исходной записи и раскрывает её для проверки результата.', () => openDeadline(row)));
+        if (row.schedule) actions.append(action('Изменить срок', 'Назначает или переносит дату в исходном журнале.', () => {
           try { row.schedule(); }
-          catch {
-            container.append(el('p', 'Не удалось открыть запись. Обнови обзор и повтори действие.', 'error'));
-          }
+          catch { actions.append(el('p', 'Не удалось открыть запись. Обнови обзор и повтори действие.', 'error')); }
         }));
+        entry.append(summary, actions);
         block.append(entry);
       }
       container.append(block);
     }
     if (!filtered.length) container.append(el('p', rows.length ? 'По выбранным фильтрам открытых действий нет.' : 'Открытых действий со сроками нет.', 'quiet'));
+    if (rows.length > 1 || deadlineFilter.point || deadlineFilter.section) container.append(filtersPanel);
   }
 
   function openCalendarWork(row) {
@@ -3137,7 +3214,6 @@
     }
   }
 
-  $('#quality-tooltip-close').addEventListener('click', () => tooltip.close());
   $('#quality-start').append(action('Проверка напитка', 'Создай запись для одного напитка в одной кофейне. В неё можно включить несколько критериев.', startCheck, 'action primary'));
   $('#quality-journal-title').append(heading('Журнал проверок', 'Открой запись, чтобы увидеть оценку и повторно проверить отклонение. Состояние в журнале определяется последней проверкой по каждому критерию.'));
   $('#quality-cancel').append(action('Отмена', 'Закрывает форму и отменяет изменения, сделанные после её открытия.', () => editor.close()));
@@ -3202,6 +3278,7 @@
   });
   window.addEventListener('hashchange', () => {
     if (!location.hash || location.hash === '#overview') renderDeadlines();
+    if (location.hash === '#development') management?.render();
     if (location.hash === '#economy') renderEconomy();
     if (location.hash === '#sales') renderSales();
     if (location.hash === '#stock') renderStock();
@@ -3213,6 +3290,7 @@
   });
   window.addEventListener('panel-03:work-changed', () => {
     if (!location.hash || location.hash === '#overview') renderDeadlines();
+    management?.render();
     if (location.hash === '#operations') renderOperations();
     if (location.hash === '#launches') renderLaunches();
   });

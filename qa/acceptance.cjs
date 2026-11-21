@@ -221,7 +221,16 @@ async function run(){
   app.route('overview');
   const { $, route, click, fill, submit, fire, work, get }=app;
   assert.equal($('#overview-start').hidden,false);
-  assert.equal($('#menu-sections').querySelectorAll('a').length,14);
+  assert.deepEqual([...$('#section-nav').querySelectorAll('a')].map(link=>link.hash),['#overview','#calendar','#operations','#development']);
+  fire($('#sections-open'),'click');
+  assert.equal($('#sections-dialog').open,true);
+  assert.equal($('#sections-dialog').querySelectorAll('a').length,9);
+  fire($('#sections-dialog a[href="#launches"]'),'click');
+  assert.equal($('#sections-dialog').open,false);
+  route('launches');
+  assert.equal($('#sections-open').getAttribute('aria-current'),'true');
+  route('overview');
+  assert.equal($('#sections-open').hasAttribute('aria-current'),false);
   const initial=await app.restore(configuration);
   assert.deepEqual(initial,backup.records);
   seed(app);
@@ -313,7 +322,7 @@ async function run(){
   assert.ok(!remoteHas(effectKey));
 
   quality(app,'base','2026-11-12',false);
-  route('overview');
+  route('development');
   $('#management-comparison').open=true;
   fire($('#management-comparison'),'toggle');
   const comparison=$('#management-comparison-content');

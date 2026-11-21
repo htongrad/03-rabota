@@ -577,8 +577,8 @@
       if (window.panel03ManagementProgress) {
         const guide = module('Управление по показателям');
         guide.append(node('p', '', 'Начни с ограничений и просрочек в «Обзоре». Для сравнения выбери одну неделю или месяц и раскрой данные нужной точки. Назначь действие от исходного значения, зафиксируй выполнение и проверь тот же показатель за сопоставимый период.'));
-        const link = node('a', 'action', 'Открыть обзор сети');
-        link.href = '#overview';
+        const link = node('a', 'action', 'Открыть развитие');
+        link.href = '#development';
         guide.append(link);
         instruction.append(guide);
       }
@@ -601,40 +601,11 @@
       if (barOverview) {
         barOverview.hidden = !bar || !data.points.length;
         if (!barOverview.hidden) {
-          const checks = openings.map(item => item.check).filter(Boolean);
-          const confirmed = checks.filter(bar.passed).length;
-          const needsAttention = checks.length - confirmed;
-          const missing = data.points.length - checks.length;
-          const link = node('a', 'action', 'Открыть карту сети');
-          link.href = '#development';
-          barOverview.replaceChildren(node('h3', '', 'Готовность бара сегодня'),
-            node('p', '', 'Подтверждено ' + confirmed + ' из ' + data.points.length),
-            node('p', 'quiet', 'Требуют внимания: ' + needsAttention + ' · Без проверки: ' + missing));
-          if (menuReports) {
-            const items = menuReports.flatMap(item => item.items);
-            const ready = items.filter(item => item.ready).length;
-            barOverview.append(node('p', 'quiet', 'Калибровки: ' + ready + ' из ' + items.length + ' известных порций по точкам.'));
-            if (menuReports.some(item => !item.configured)) barOverview.append(node('p', 'quiet', 'Состав меню подтверждён не на всех точках.'));
-          }
-          if (teamReports?.length) {
-            barOverview.append(node('p', 'quiet', 'Команда подготовлена на ' + teamReports.filter(item => item.ready).length + ' из ' + teamReports.length + ' точек.'));
-          }
-          if (financial?.length) barOverview.append(node('p', 'quiet', 'Экономика за прошлую неделю подтверждена на ' +
-            financial.filter(item => item.ready).length + ' из ' + financial.length + ' точек.'));
-          if (operations?.length) {
-            const restricted = operations.filter(item => item.limited).length;
-            const overdue = operations.reduce((sum, item) => sum + item.overdue, 0);
-            barOverview.append(node('p', 'quiet', 'Точек с ограничениями: ' + restricted + ' · Просроченных случаев: ' + overdue));
-            const cases = node('a', 'action', 'Работа точек');
-            cases.href = '#operations';
-            barOverview.append(cases);
-          }
-          if (launches?.active) {
-            const work = node('a', 'action', 'Запуски в работе · ' + launches.active);
-            work.href = '#launches';
-            barOverview.append(work);
-          }
-          barOverview.append(link);
+          const confirmedCount = openings.filter(item => item.check && bar.passed(item.check)).length;
+          const title = node('div');
+          title.append(node('strong', '', 'Готовность бара'),
+            node('p', 'quiet', 'Готовы ' + confirmedCount + ' из ' + data.points.length + ' точек'));
+          barOverview.querySelector('.readiness-copy').replaceChildren(title);
         }
       }
       const next = data.points.find(point => !point.reviewed);
@@ -766,7 +737,8 @@
       }
       page.replaceChildren(...panels);
     } catch (error) {
-      if (barOverview && !barOverview.hidden) barOverview.replaceChildren(node('p', 'error', 'Сведения о готовности бара недоступны.'));
+      if (barOverview && !barOverview.hidden) barOverview.querySelector('.readiness-copy')
+        .replaceChildren(node('p', 'error', 'Сведения о готовности бара недоступны.'));
       page.replaceChildren(node('p', 'error', 'Не удалось открыть карту сети: ' + error.message));
     }
   }

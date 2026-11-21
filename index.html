@@ -2,14 +2,14 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="panel-build" content="35">
+  <meta name="panel-build" content="36">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
   <meta name="description" content="Рабочая панель шеф-бариста сети спешелти-кофеен">
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=35">
-  <link rel="stylesheet" href="./development.css?v=35">
+  <link rel="stylesheet" href="./quality.css?v=36">
+  <link rel="stylesheet" href="./development.css?v=36">
   <title>03 Работа</title>
   <style>
     :root {
@@ -47,34 +47,40 @@
     .header-inner {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: max(14px, env(safe-area-inset-top)) 18px 14px;
+      gap: 8px;
+      padding: max(7px, env(safe-area-inset-top)) 14px 7px;
     }
     .mark {
       display: grid;
       place-items: center;
       background: var(--on-accent);
       color: #ffd697;
-      border-radius: 12px;
-      width: 42px;
-      height: 42px;
+      border-radius: 9px;
+      width: 34px;
+      height: 34px;
       font-weight: 750;
     }
-    .app-header h1 { font-size: 19px; }
-    .install-app {
-      margin-left: auto;
+    .brand-title { display: flex; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
       min-height: 44px;
-      border: 1px solid #bb781e;
-      border-radius: 10px;
-      background: #fff4df;
-      color: var(--on-accent);
-      padding: 6px 10px;
-      font-weight: 650;
-      font-size: .83rem;
+      font-size: 1.07rem;
+      font-weight: 750;
+      text-decoration: none;
     }
-    .install-app:focus-visible { outline-color: var(--on-accent); }
-    main { padding: 18px 16px calc(158px + var(--safe-bottom)); }
-    .page-heading { margin-bottom: 16px; }
+    .brand:focus-visible { outline-color: var(--on-accent); }
+    main { padding: 12px 14px calc(136px + var(--safe-bottom)); }
+    .page-heading {
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      background: var(--accent);
+      color: var(--on-accent);
+      border-radius: 13px;
+      overflow-wrap: anywhere;
+    }
+    .page-heading .quiet { color: #543412; }
     .page-heading h2 { font-size: 29px; line-height: 1.16; letter-spacing: -.035em; }
     .page-heading p { margin-top: 5px; }
     .quiet { color: var(--muted); font-size: .88rem; line-height: 1.4; }
@@ -83,7 +89,7 @@
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 16px;
-      padding: 14px;
+      padding: 12px;
     }
     .module h3 { font-size: 1.03rem; margin-bottom: 9px; }
 
@@ -95,41 +101,44 @@
       border-top: 1px solid var(--line);
       padding-bottom: var(--safe-bottom);
     }
-    .bottom-bar { display: flex; align-items: center; gap: 2px; padding-inline: 4px; }
     .nav {
-      display: flex; flex: 1; min-width: 0; gap: 5px; padding: 6px 2px;
-      overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
-      scroll-padding-inline: 2px;
+      display: grid;
+      grid-template-columns: minmax(0, .93fr) minmax(0, 1.14fr) minmax(0, 1.035fr) minmax(0, 1.035fr) minmax(0, .86fr);
+      gap: 4px;
+      padding: 5px 7px 7px;
     }
-    .nav-scroll { border: 0; background: transparent; }
-    .nav-scroll:disabled { opacity: .3; cursor: default; }
-    .nav a {
+    .nav > :is(a, button) {
       display: grid;
       justify-items: center;
       align-content: center;
       gap: 3px;
-      flex: 0 0 104px;
-      min-height: 64px;
-      padding: 4px 5px;
+      min-height: 54px;
+      min-width: 0;
+      padding: 4px 2px;
       text-align: center;
-      line-height: 1.2;
+      line-height: 1.14;
       overflow-wrap: anywhere;
-      border-radius: 11px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
       color: var(--muted);
-      font-size: .76rem;
+      font-size: clamp(.63rem, 2.9vw, .75rem);
       text-decoration: none;
       font-weight: 650;
     }
-    .nav a[aria-current="page"] { background: var(--soft); color: var(--ink); }
+    .nav span:not(.breakable-label) { white-space: nowrap; }
+    .nav .icon { width: 18px; height: 18px; }
+    .nav [aria-current] { background: var(--soft); color: var(--ink); }
+    .breakable-label { max-width: 7ch; }
     .add-event {
       display: grid;
       place-items: center;
       position: fixed;
       z-index: 1;
       right: max(16px, calc((100vw - 540px) / 2 + 16px));
-      bottom: calc(96px + var(--safe-bottom));
-      width: 54px;
-      height: 54px;
+      bottom: calc(74px + var(--safe-bottom));
+      width: 48px;
+      height: 48px;
       border: 1px solid #d68d30;
       border-radius: 50%;
       background: var(--accent);
@@ -250,24 +259,61 @@
     .dev-field { display: grid; gap: 3px; }
     .dev-field label { font-size: .89rem; }
     .dev-feature { border-inline-start: 4px solid #cf841b; }
-    .menu-sections { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; padding-block: 8px; }
-    .menu-sections a { display: flex; align-items: center; gap: 6px; min-height: 46px; border-radius: 8px; padding: 5px; text-decoration: none; overflow-wrap: anywhere; font-size: .88rem; }
-    .menu-sections a[aria-current] { background: var(--soft); font-weight: 700; }
     .bottom { box-shadow: 0 -3px 16px #39250b0d; }
-    .nav a { flex-basis: clamp(80px,21vw,104px); }
+    .sheet {
+      inset: auto 0 0;
+      width: min(100%, 540px);
+      max-width: 100%;
+      margin: 0 auto;
+      max-height: min(90dvh, calc(100dvh - 16px));
+      padding: 12px 14px calc(12px + var(--safe-bottom));
+      border-radius: 18px 18px 0 0;
+    }
+    .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .sheet-heading h2 { font-size: 1.43rem; }
+    .sheet-group h3 { margin: 0 0 4px 3px; font-size: .82rem; color: var(--muted); }
+    .sheet-links { display: grid; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+    .sheet-links > * + * { border-top: 1px solid var(--line); }
+    .sheet-link {
+      display: flex; align-items: center; gap: 8px; min-height: 44px;
+      padding: 7px 10px; border: none; color: var(--ink); background: var(--surface);
+      text-align: left; text-decoration: none; overflow-wrap: anywhere;
+    }
+    .sheet-links .sheet-link + .sheet-link { border-top: 1px solid var(--line); }
+    .sheet-link .icon { width: 17px; height: 17px; color: var(--focus); }
+    .sheet-link .chevron { margin-left: auto; width: 14px; }
+    .sheet-link[aria-current] { background: var(--soft); font-weight: 700; }
+    .sheet-link:focus-visible, .sheet-link:focus-within { outline-offset: -3px; }
+    .preference { justify-content: space-between; cursor: pointer; }
+    .preference input { width: 18px; height: 18px; flex: none; accent-color: var(--focus); }
+    .settings-note { padding: 0 10px 8px; border: 0; }
+    .module .overview-row h3 { margin: 0; }
+    .agenda-week { border-top: 1px solid var(--line); }
+    .agenda-week summary { min-height: 44px; padding: 10px 1px; }
+    .agenda-week[open] #events-week { padding-top: 6px; }
+    .overview-google { margin-inline-end: 58px; }
+    .google-overview-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .google-overview-row h3 { margin-bottom: 2px; }
+    .google-overview-row p { max-width: 38ch; }
+    .google-overview-row .action { font-size: .82rem; }
+    .overview-readiness { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .overview-readiness .icon { color: var(--focus); }
+    .overview-readiness .chevron { margin-inline-start: auto; width: 14px; }
     .quality-details { min-width: 0; }
     dialog { overscroll-behavior: contain; scroll-padding-block: 12px; }
     button.action, a.action { max-width: 100%; overflow-wrap: anywhere; }
     .mark { flex-shrink: 0; }
     @media (max-width: 400px) {
       .quality-pair { grid-template-columns: minmax(0,1fr); }
-      .header-inner { gap: 8px; }
-      .menu-sections .icon { width: 16px; height: 16px; }
+
     }
     @media (max-width: 350px) {
       main { padding-inline: 12px; }
       .module { padding-inline: 10px; }
-      dialog { padding: 13px; }
+      dialog:not(.sheet) { padding: 13px; }
+    }
+    @media (pointer: coarse) {
+      html:has(main :is(input:not([type=checkbox]):not([type=radio]), textarea):focus) :is(.bottom, .add-event) { visibility: hidden; }
     }
   </style>
 </head>
@@ -286,13 +332,15 @@
     <symbol id="icon-suppliers" viewBox="0 0 24 24"><path d="M3 7h11v12H3zM14 11h4l3 4v4h-7M5 7V4h7v3M7 19v2M18 19v2"/></symbol>
     <symbol id="icon-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
     <symbol id="icon-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+    <symbol id="icon-point" viewBox="0 0 24 24"><path d="m3 10 2-6h14l2 6m-17 0v10h16V10M3 10h18m-12 9v-6h6v6"/></symbol>
+    <symbol id="icon-sections" viewBox="0 0 24 24"><path stroke-linecap="round" d="M8 5h12M8 12h12M8 19h12M4 5h.01M4 12h.01M4 19h.01"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
     <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   </svg>
   <header class="app-header">
     <div class="wrap header-inner">
-      <span class="mark" aria-hidden="true">03</span><h1>Работа</h1>
-      <button type="button" class="install-app" id="install-app" hidden>Установить</button>
-      <button type="button" id="app-menu" class="menu-button" aria-label="Меню панели">⋯</button>
+      <h1 class="brand-title"><a href="#overview" class="brand" aria-label="Работа. Открыть обзор"><span class="mark" aria-hidden="true">03</span>Работа</a></h1>
+      <button type="button" id="app-menu" class="menu-button" aria-label="Настройки" aria-haspopup="dialog" aria-controls="app-menu-dialog">⋯</button>
     </div>
   </header>
   <main class="wrap">
@@ -309,28 +357,16 @@
             <button type="button" id="start-import" class="action">Загрузить настройки</button>
           </div>
         </section>
-        <p id="management-message" class="error" role="alert"></p>
-        <details class="module" id="management-comparison">
-          <summary>Сравнение точек</summary>
-          <div id="management-comparison-content" class="quality-details"></div>
-        </details>
-        <details class="module" id="management-actions">
-          <summary>План улучшений</summary>
-          <div id="management-actions-content" class="quality-details"></div>
-        </details>
-        <section class="module stack" id="bar-overview" aria-label="Готовность бара" hidden></section>
         <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
-        <section class="module"><h3>Сегодня</h3><div id="events-today"></div></section>
-        <section class="module"><h3>До конца недели</h3><div id="events-week"></div></section>
-        <section class="module"><h3>Качество напитков</h3><p class="quiet" id="quality-count">Журнал проверок</p></section>
-        <section class="module stack" aria-label="Резервная копия Google">
-          <h3>Google: копия и календарь</h3>
-          <p id="google-overview-text" role="status">Проверяю состояние копии…</p>
-          <p id="google-last-sync" class="quiet"></p>
-          <p id="google-calendar-overview" class="quiet" role="status">Google Календарь ещё не подключён.</p>
-          <p id="google-calendar-last-sync" class="quiet"></p>
-          <div class="quality-actions">
-            <button type="button" id="google-overview-sync" class="action primary">Настроить синхронизацию</button>
+        <section class="module stack" aria-label="События">
+          <div><h3>Сегодня</h3><div id="events-today"></div></div>
+          <details class="agenda-week"><summary id="overview-week-label">До конца недели</summary><div id="events-week"></div></details>
+        </section>
+        <a class="module overview-readiness" id="bar-overview" href="#development" hidden><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-point"/></svg><div class="readiness-copy"></div><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <section class="module overview-google" aria-label="Резервная копия Google и календарь">
+          <div class="google-overview-row">
+            <div><h3>Google</h3><p id="google-overview-text" class="quiet" role="status">Проверяю состояние подключения…</p></div>
+            <button type="button" id="google-overview-sync" class="action">Настроить синхронизацию</button>
           </div>
         </section>
       </div>
@@ -354,6 +390,7 @@
       <div class="page-heading"><h2>Качество</h2><p class="quiet">Проверки напитков по точкам</p></div>
       <div class="stack">
         <div class="quality-actions" id="quality-start"></div>
+        <section class="module" aria-label="Сводка качества напитков"><h3>Сводка проверок</h3><p class="quiet" id="quality-count">Журнал проверок</p></section>
         <div class="quality-actions"><a class="action" id="quality-techcards-link" href="#techcards">Техкарты</a></div>
         <section class="stack" aria-label="Журнал проверок">
           <div id="quality-journal-title"></div>
@@ -490,7 +527,18 @@
     </section>
     <section data-page="development" hidden>
       <div class="page-heading"><h2>Развитие</h2><p class="quiet">Карта направления и рабочие миссии</p></div>
-      <div id="development-content" class="stack"></div>
+      <div class="stack">
+        <div id="development-content" class="stack"></div>
+        <p id="management-message" class="error" role="alert"></p>
+        <details class="module" id="management-comparison">
+          <summary>Сравнение точек</summary>
+          <div id="management-comparison-content" class="quality-details"></div>
+        </details>
+        <details class="module" id="management-actions">
+          <summary>План улучшений</summary>
+          <div id="management-actions-content" class="quality-details"></div>
+        </details>
+      </div>
     </section>
     <section data-page="instruction" hidden>
       <div class="page-heading"><h2>Инструкция</h2><p class="quiet">Шеф-бариста сети спешелти-кофеен</p></div>
@@ -622,27 +670,37 @@
   </main>
   <button id="add-event" type="button" class="add-event" aria-label="Создать событие"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-plus"/></svg></button>
   <div class="bottom">
-    <div class="wrap bottom-bar">
-      <button type="button" id="nav-previous" class="icon-button nav-scroll" aria-label="Прокрутить разделы влево" aria-controls="section-nav"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-left"/></svg></button>
-      <nav id="section-nav" class="nav" aria-label="Разделы панели — листай по горизонтали">
-        <a href="#overview" aria-current="page"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-grid"/></svg><span>Обзор</span></a>
-        <a href="#calendar"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-calendar"/></svg><span>Календарь</span></a>
-        <a href="#development"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-grid"/></svg><span>Развитие</span></a>
-        <a href="#operations"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Работа точек</span></a>
-        <a href="#launches"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Запуски</span></a>
-        <a href="#quality"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Качество</span></a>
-        <a href="#techcards"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-techcards"/></svg><span>Техкарты</span></a>
-        <a href="#economy"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-economy"/></svg><span>Экономика</span></a>
-        <a href="#sales"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Продажи и отчёт</span></a>
-        <a href="#stock"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-stock"/></svg><span>Списания и сверка</span></a>
-        <a href="#training"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-training"/></svg><span>Обучение</span></a>
-        <a href="#equipment"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-equipment"/></svg><span>Оборудование</span></a>
-        <a href="#suppliers"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-suppliers"/></svg><span>Сырьё и поставщики</span></a>
-        <a href="#instruction"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-book"/></svg><span>Инструкция</span></a>
-      </nav>
-      <button type="button" id="nav-next" class="icon-button nav-scroll" aria-label="Прокрутить разделы вправо" aria-controls="section-nav"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></button>
-    </div>
+    <nav id="section-nav" class="wrap nav" aria-label="Разделы панели">
+      <a href="#overview" aria-current="page"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-grid"/></svg><span>Обзор</span></a>
+      <a href="#calendar"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-calendar"/></svg><span>Календарь</span></a>
+      <a href="#operations"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-point"/></svg><span class="breakable-label">Работа точек</span></a>
+      <a href="#development"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Развитие</span></a>
+      <button type="button" id="sections-open" aria-haspopup="dialog" aria-controls="sections-dialog"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sections"/></svg><span>Разделы</span></button>
+    </nav>
   </div>
+  <dialog id="sections-dialog" class="sheet" aria-labelledby="sections-title">
+    <div class="stack">
+      <div class="sheet-heading">
+        <h2 id="sections-title">Разделы</h2>
+        <button type="button" id="sections-close" class="icon-button" aria-label="Закрыть разделы"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-close"/></svg></button>
+      </div>
+      <section class="sheet-group"><h3>На точках</h3><div class="sheet-links">
+        <a href="#quality" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Качество</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#training" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-training"/></svg><span>Обучение</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#equipment" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-equipment"/></svg><span>Оборудование</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+      </div></section>
+      <section class="sheet-group"><h3>Стандарты и запуски</h3><div class="sheet-links">
+        <a href="#launches" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Запуски</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#techcards" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-techcards"/></svg><span>Техкарты</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#suppliers" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-suppliers"/></svg><span>Сырьё и поставщики</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+      </div></section>
+      <section class="sheet-group"><h3>Учёт</h3><div class="sheet-links">
+        <a href="#economy" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-economy"/></svg><span>Экономика</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#sales" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Продажи и отчёт</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#stock" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-stock"/></svg><span>Списания и сверка</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+      </div></section>
+    </div>
+  </dialog>
   <dialog id="event-editor" aria-labelledby="editor-title">
     <form id="event-form">
       <h2 id="editor-title">Новое событие</h2>
@@ -653,7 +711,7 @@
         <label class="field"><span>Начало</span><input name="start" type="time" required></label>
         <label class="field"><span>Окончание</span><input name="end" type="time"></label>
       </div>
-      <div class="quality-actions"><button type="button" class="quality-help" aria-label="Пояснение: время в Google Календаре" data-google-help="Вводи начало и окончание по московскому времени. Google Календарь может показывать событие в часовом поясе своего интерфейса. Без времени окончания событие занимает один час. Событие на весь день и рабочее действие из журнала показываются на весь день."><span>?</span></button><span class="quiet">Время по Москве</span></div>
+      <div class="quality-actions"><button type="button" class="quality-help" aria-label="Пояснение: время в Google Календаре" data-help="Вводи начало и окончание по московскому времени. Google Календарь может показывать событие в часовом поясе своего интерфейса. Без времени окончания событие занимает один час. Событие на весь день и рабочее действие из журнала показываются на весь день."><span>?</span></button><span class="quiet">Время по Москве</span></div>
       <p id="form-error" class="error" role="alert" hidden></p>
       <div class="actions">
         <button type="button" id="delete-event" class="action danger" hidden>Удалить</button>
@@ -673,19 +731,26 @@
       </div>
     </form>
   </dialog>
-  <dialog id="quality-tooltip" aria-labelledby="quality-tooltip-title" aria-describedby="quality-tooltip-text">
-    <h2 id="quality-tooltip-title">Пояснение</h2>
-    <p id="quality-tooltip-text"></p>
-    <button id="quality-tooltip-close" type="button" class="action">Понятно</button>
-  </dialog>
-  <dialog id="app-menu-dialog" aria-labelledby="app-menu-title">
+  <dialog id="app-menu-dialog" class="sheet" aria-labelledby="app-menu-title">
     <div class="stack">
-      <h2 id="app-menu-title">Меню</h2>
-      <details><summary>Все разделы</summary><nav id="menu-sections" class="menu-sections" aria-label="Быстрый переход"></nav></details>
-      <button type="button" id="google-open" class="action">Google Диск и Календарь</button>
-      <button type="button" id="backup-open" class="action">Копии данных</button>
-      <p class="quiet">Панель 03 · Версия 1.1 · Сборка 35</p>
-      <button type="button" id="app-menu-close" class="action">Закрыть</button>
+      <div class="sheet-heading">
+        <h2 id="app-menu-title">Настройки</h2>
+        <button type="button" id="app-menu-close" class="icon-button" aria-label="Закрыть настройки"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-close"/></svg></button>
+      </div>
+      <section class="sheet-group"><h3>Данные</h3><div class="sheet-links">
+        <button type="button" id="google-open" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-equipment"/></svg><span>Настройки Google</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></button>
+        <button type="button" id="backup-open" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-stock"/></svg><span>Копии данных</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></button>
+      </div></section>
+      <section class="sheet-group"><h3>Панель</h3><div class="sheet-links">
+        <button type="button" id="install-app" class="sheet-link" hidden><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Установить панель</span></button>
+        <a href="./update.html" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Проверить обновление</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+        <a href="#instruction" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-book"/></svg><span>Инструкция</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
+      </div></section>
+      <section class="sheet-group"><h3>Помощь</h3><div class="sheet-links">
+        <label class="sheet-link preference" for="show-hints">Подсказки к полям<input type="checkbox" id="show-hints" aria-describedby="hint-setting-note"></label>
+        <p class="quiet settings-note" id="hint-setting-note">По кнопке «?» рядом с полем.</p>
+      </div></section>
+      <p class="quiet">Панель 03 · Версия 1.1 · Сборка 36</p>
     </div>
   </dialog>
   <dialog id="google-dialog" aria-labelledby="google-title">
@@ -693,21 +758,22 @@
       <h2 id="google-title">Google Диск и Календарь</h2>
       <p id="google-status" role="status"></p>
       <p id="google-folder-status" class="quiet"></p>
+      <p id="google-last-sync" class="quiet"></p>
       <details id="google-settings">
         <summary>Настройки подключения</summary>
         <form id="google-config" class="stack">
           <p class="quiet">Можно заполнить поля из «Личного», если обе панели открываются в одном Chrome.</p>
           <button type="button" id="google-use-personal" class="action">Заполнить из «Личного»</button>
           <div class="quality-field">
-            <div class="quality-actions"><label for="google-client-id">Client ID</label><button type="button" class="quality-help" aria-label="Пояснение: Client ID" data-google-help="Идентификатор веб-клиента OAuth из проекта Google Cloud. Используй тот же проект, что и для «Личного»."><span>?</span></button></div>
+            <div class="quality-actions"><label for="google-client-id">Client ID</label><button type="button" class="quality-help" aria-label="Пояснение: Client ID" data-help="Идентификатор веб-клиента OAuth из проекта Google Cloud. Используй тот же проект, что и для «Личного»."><span>?</span></button></div>
             <input id="google-client-id" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
           </div>
           <div class="quality-field">
-            <div class="quality-actions"><label for="google-project-number">Номер проекта</label><button type="button" class="quality-help" aria-label="Пояснение: Номер проекта" data-google-help="Числовой номер проекта Google Cloud. Он нужен для доступа к папке через Google Picker."><span>?</span></button></div>
+            <div class="quality-actions"><label for="google-project-number">Номер проекта</label><button type="button" class="quality-help" aria-label="Пояснение: Номер проекта" data-help="Числовой номер проекта Google Cloud. Он нужен для доступа к папке через Google Picker."><span>?</span></button></div>
             <input id="google-project-number" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" required>
           </div>
           <div class="quality-field">
-            <div class="quality-actions"><label for="google-api-key">API key для выбора папки</label><button type="button" class="quality-help" aria-label="Пояснение: API key для выбора папки" data-google-help="Ключ Google Picker из того же проекта. Ограничь ключ адресом https://htongrad.github.io/* и API Google Picker."><span>?</span></button></div>
+            <div class="quality-actions"><label for="google-api-key">API key для выбора папки</label><button type="button" class="quality-help" aria-label="Пояснение: API key для выбора папки" data-help="Ключ Google Picker из того же проекта. Ограничь ключ адресом https://htongrad.github.io/* и API Google Picker."><span>?</span></button></div>
             <input id="google-api-key" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
           </div>
           <button type="submit" class="action primary">Сохранить настройки</button>
@@ -720,6 +786,7 @@
       <section class="module stack" aria-label="Зеркало Google Календаря">
         <h3>Календарь «03 РАБОТА»</h3>
         <p id="google-calendar-status" role="status"></p>
+        <p id="google-calendar-last-sync" class="quiet"></p>
         <p class="quiet">События отправляются по московскому времени. Событие без окончания занимает один час.</p>
       </section>
       <button type="button" id="google-close" class="action">Закрыть</button>
@@ -730,13 +797,13 @@
       <h2 id="backup-title">Копии данных</h2>
       <div class="quality-actions">
         <button type="button" id="backup-export" class="action primary">Сохранить копию</button>
-        <button type="button" id="backup-export-help" class="quality-help" aria-label="Пояснение к сохранению"><span>?</span></button>
+        <button type="button" data-help="Скачивает рабочие данные панели одним файлом. Проверь папку загрузок." class="quality-help" aria-label="Пояснение к сохранению"><span>?</span></button>
       </div>
       <button type="button" id="backup-export-original" class="action" hidden>Скачать исходные данные</button>
       <div class="quality-field">
         <div class="quality-heading">
           <label for="backup-file">Выбрать копию для восстановления</label>
-          <button type="button" id="backup-file-help" class="quality-help" aria-label="Пояснение к выбору копии"><span>?</span></button>
+          <button type="button" data-help="Выбери сохранённую копию панели 03. Её состав появится до восстановления." class="quality-help" aria-label="Пояснение к выбору копии"><span>?</span></button>
         </div>
         <input id="backup-file" type="file" accept=".json,application/json">
       </div>
@@ -744,20 +811,13 @@
       <p id="backup-message" role="status"></p>
       <div class="quality-actions">
         <button type="button" id="backup-restore" class="action primary" hidden>Восстановить</button>
-        <button type="button" id="backup-restore-help" class="quality-help" aria-label="Пояснение к восстановлению"><span>?</span></button>
+        <button type="button" data-help="Добавляет отсутствующие записи. Совпадающие записи и их история сохраняются в текущей версии." class="quality-help" aria-label="Пояснение к восстановлению"><span>?</span></button>
       </div>
       <button type="button" id="backup-close" class="action">Закрыть</button>
     </div>
   </dialog>
-  <dialog id="backup-help" aria-labelledby="backup-help-title">
-    <div class="stack">
-      <h2 id="backup-help-title">Копии данных</h2>
-      <p id="backup-help-text"></p>
-      <button type="button" id="backup-help-close" class="action">Понятно</button>
-    </div>
-  </dialog>
-  <script src="./work-date.js?v=35"></script>
-  <script src="./backup.js?v=35"></script>
+  <script src="./work-date.js?v=36"></script>
+  <script src="./backup.js?v=36"></script>
   <script>
     'use strict';
 
@@ -862,7 +922,11 @@
       sunday.setUTCDate(today.getUTCDate() + (7 - today.getUTCDay()) % 7);
       $('#today-label').textContent = fullDateFormat.format(today);
       renderEventList($('#events-today'), events.filter(event => event.date === current), false, 'На сегодня событий нет.');
-      renderEventList($('#events-week'), events.filter(event => event.date > current && event.date <= dateKey(sunday)), true, 'До конца недели событий нет.');
+      const rest = events.filter(event => event.date > current && event.date <= dateKey(sunday));
+      const countLabel = new Intl.PluralRules('ru').select(rest.length);
+      const count = rest.length + ' ' + ({ one: 'событие', few: 'события' }[countLabel] || 'событий');
+      $('#overview-week-label').textContent = 'До конца недели · ' + count;
+      renderEventList($('#events-week'), rest, true, 'До конца недели событий нет.');
     }
 
     function renderCalendar(focusDay = false) {
@@ -915,47 +979,38 @@
       renderCalendar();
     }
 
-    const sectionNav = $('#section-nav');
-    const quickNav = $('#menu-sections');
-    for (const link of sectionNav.querySelectorAll('a')) {
-      const shortcut = link.cloneNode(true);
-      shortcut.addEventListener('click', () => $('#app-menu-dialog').close());
-      quickNav.append(shortcut);
-    }
-    function updateNavScroll() {
-      $('#nav-previous').disabled = sectionNav.scrollLeft <= 1;
-      $('#nav-next').disabled = sectionNav.scrollLeft + sectionNav.clientWidth >= sectionNav.scrollWidth - 1;
-    }
-    function moveNav(direction) {
-      sectionNav.scrollBy?.({ left: direction * sectionNav.clientWidth * .8, behavior: 'auto' });
-      updateNavScroll();
-    }
-    $('#nav-previous').addEventListener('click', () => moveNav(-1));
-    $('#nav-next').addEventListener('click', () => moveNav(1));
-    sectionNav.addEventListener('scroll', updateNavScroll, { passive: true });
-    window.addEventListener('resize', updateNavScroll);
+    const sectionDialog = $('#sections-dialog');
+    const sectionsButton = $('#sections-open');
+    const settingsDialog = $('#app-menu-dialog');
+    const primaryLinks = [...$('#section-nav').querySelectorAll('a')];
+    const sectionLinks = [...sectionDialog.querySelectorAll('a')];
+    sectionsButton.addEventListener('click', () => sectionDialog.showModal());
+    $('#sections-close').addEventListener('click', () => sectionDialog.close());
+    for (const link of sectionLinks) link.addEventListener('click', () => sectionDialog.close());
+    settingsDialog.querySelector('a[href="#instruction"]').addEventListener('click', () => settingsDialog.close());
+    for (const sheet of [sectionDialog, settingsDialog]) sheet.addEventListener('click', event => {
+      if (event.target === sheet && (event.clientY < sheet.getBoundingClientRect().top ||
+          event.clientX < sheet.getBoundingClientRect().left || event.clientX > sheet.getBoundingClientRect().right)) sheet.close();
+    });
+    $('.brand').addEventListener('click', () => {
+      if (!location.hash || location.hash === '#overview') window.scrollTo(0, 0);
+    });
 
     function route() {
-      const hash = location.hash.slice(1);
-      const current = ['overview', 'calendar', 'quality', 'techcards', 'economy', 'sales', 'stock', 'training', 'equipment', 'suppliers', 'operations', 'launches', 'development', 'instruction'].includes(hash) ? hash : 'overview';
-      for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== current;
-      const tab = current;
-      for (const link of document.querySelectorAll('.nav a')) {
-        if (link.hash === '#' + tab) {
-          link.setAttribute('aria-current', 'page');
-          link.scrollIntoView?.({ block: 'nearest', inline: 'center' });
-        }
+      const page = location.hash.slice(1);
+      const pages = [...document.querySelectorAll('[data-page]')];
+      const current = pages.some(section => section.dataset.page === page) ? page : 'overview';
+      for (const section of pages) section.hidden = section.dataset.page !== current;
+      for (const link of [...primaryLinks, ...sectionLinks]) {
+        if (link.hash === '#' + current) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
-      for (const link of quickNav.querySelectorAll('a')) {
-        if (link.getAttribute('href') === '#' + current) link.setAttribute('aria-current', 'page');
-        else link.removeAttribute('aria-current');
-      }
+      if (sectionLinks.some(link => link.hash === '#' + current)) sectionsButton.setAttribute('aria-current', 'true');
+      else sectionsButton.removeAttribute('aria-current');
       $('#add-event').hidden = !['overview', 'calendar'].includes(current);
       readEvents();
       render();
       window.scrollTo(0, 0);
-      updateNavScroll();
     }
 
     function changeMonth(amount) {
@@ -1090,6 +1145,7 @@
       const prompt = installPrompt;
       installPrompt = null;
       installApp.hidden = true;
+      settingsDialog.close();
       try {
         await prompt.prompt();
       } catch (error) {
@@ -1134,16 +1190,16 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./team-readiness.js?v=35"></script>
-  <script src="./financial-review.js?v=35"></script>
-  <script src="./point-operations.js?v=35"></script>
-  <script src="./product-launch.js?v=35"></script>
-  <script src="./management.js?v=35"></script>
-  <script src="./quality.js?v=35"></script>
-  <script src="./calendar-sync.js?v=35"></script>
-  <script src="./google-sync.js?v=35"></script>
-  <script src="./bar-menu.js?v=35"></script>
-  <script src="./bar-operations.js?v=35"></script>
-  <script src="./development.js?v=35"></script>
+  <script src="./team-readiness.js?v=36"></script>
+  <script src="./financial-review.js?v=36"></script>
+  <script src="./point-operations.js?v=36"></script>
+  <script src="./product-launch.js?v=36"></script>
+  <script src="./management.js?v=36"></script>
+  <script src="./quality.js?v=36"></script>
+  <script src="./calendar-sync.js?v=36"></script>
+  <script src="./google-sync.js?v=36"></script>
+  <script src="./bar-menu.js?v=36"></script>
+  <script src="./bar-operations.js?v=36"></script>
+  <script src="./development.js?v=36"></script>
 </body>
 </html>

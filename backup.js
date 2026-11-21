@@ -828,13 +828,6 @@
     }
     return '';
   }
-  function showTip(button, tip) {
-    button.addEventListener('click', () => {
-      document.querySelector('#backup-help-text').textContent = tip;
-      document.querySelector('#backup-help').showModal();
-    });
-  }
-
   document.querySelector('#app-menu').addEventListener('click', () => document.querySelector('#app-menu-dialog').showModal());
   document.querySelector('#app-menu-close').addEventListener('click', () => document.querySelector('#app-menu-dialog').close());
   document.querySelector('#start-import')?.addEventListener('click', () => document.querySelector('#backup-open').click());
@@ -851,10 +844,6 @@
     if (restoring) event.preventDefault();
     else generation++;
   });
-  document.querySelector('#backup-help-close').addEventListener('click', () => document.querySelector('#backup-help').close());
-  showTip(document.querySelector('#backup-export-help'), 'Скачивает все рабочие данные панели 03 одним файлом. Выбери место сохранения на телефоне.');
-  showTip(document.querySelector('#backup-file-help'), 'Выбери ранее сохранённый файл копии панели 03. Панель покажет его состав и проверит связи до восстановления.');
-  showTip(document.querySelector('#backup-restore-help'), 'Добавляет отсутствующие записи. Совпадающие записи сохраняют текущую версию, включая историю внутри них.');
 
   function downloadJSON(prefix, data) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
