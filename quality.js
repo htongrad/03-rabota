@@ -82,14 +82,10 @@
     return { wrapper, control };
   }
 
-  function dateKey(date = new Date()) {
-    const year = String(date.getFullYear()).padStart(4, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    return [year, month, String(date.getDate()).padStart(2, '0')].join('-');
-  }
+  const { today: dateKey, fromKey, key: civilKey, valid: dateIsValid } = window.panel03Date;
 
   function formatDate(key) {
-    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' }).format(new Date(key + 'T12:00:00'));
+    return new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', dateStyle: 'medium' }).format(fromKey(key));
   }
 
   function dateField(label, description) {
@@ -823,10 +819,6 @@
       throw Error('Данные экономики изменились в другой вкладке. Открой запись заново.');
     }
     localStorage.setItem(economyKey, JSON.stringify(data));
-  }
-
-  function dateIsValid(date) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(date) && dateKey(new Date(date + 'T12:00:00')) === date;
   }
 
   function economyError(problem) {
@@ -2994,9 +2986,9 @@
     management?.restrictionAndDeadlines($('#management-priorities'), rows, warnings);
     management?.render();
     const date = dateKey();
-    const week = new Date(date + 'T12:00:00');
-    week.setDate(week.getDate() + 7);
-    const end = dateKey(week);
+    const week = fromKey(date);
+    week.setUTCDate(week.getUTCDate() + 7);
+    const end = civilKey(week);
     container.append(heading('Рабочие сроки', 'Действия из журналов и плановые проверки. Нажми «Открыть запись», чтобы увидеть результат или правило графика.'));
     const filters = el('div', '', 'quality-fields');
     const points = new Map(rows.filter(row => row.point).map(row => [pointKey(row.point), pointName(row.point)]));

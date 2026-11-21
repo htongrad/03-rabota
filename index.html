@@ -2,14 +2,14 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="panel-build" content="33">
+  <meta name="panel-build" content="34">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
   <meta name="description" content="Рабочая панель шеф-бариста сети спешелти-кофеен">
   <meta name="theme-color" content="#ffbf56">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=33">
-  <link rel="stylesheet" href="./development.css?v=33">
+  <link rel="stylesheet" href="./quality.css?v=34">
+  <link rel="stylesheet" href="./development.css?v=34">
   <title>03 Работа</title>
   <style>
     :root {
@@ -684,7 +684,7 @@
       <details><summary>Все разделы</summary><nav id="menu-sections" class="menu-sections" aria-label="Быстрый переход"></nav></details>
       <button type="button" id="google-open" class="action">Google Диск и Календарь</button>
       <button type="button" id="backup-open" class="action">Копии данных</button>
-      <p class="quiet">Панель 03 · Версия 1.1 · Сборка 33</p>
+      <p class="quiet">Панель 03 · Версия 1.1 · Сборка 34</p>
       <button type="button" id="app-menu-close" class="action">Закрыть</button>
     </div>
   </dialog>
@@ -732,6 +732,7 @@
         <button type="button" id="backup-export" class="action primary">Сохранить копию</button>
         <button type="button" id="backup-export-help" class="quality-help" aria-label="Пояснение к сохранению"><span>?</span></button>
       </div>
+      <button type="button" id="backup-export-original" class="action" hidden>Скачать исходные данные</button>
       <div class="quality-field">
         <div class="quality-heading">
           <label for="backup-file">Выбрать копию для восстановления</label>
@@ -755,29 +756,27 @@
       <button type="button" id="backup-help-close" class="action">Понятно</button>
     </div>
   </dialog>
-  <script src="./backup.js?v=33"></script>
+  <script src="./work-date.js?v=34"></script>
+  <script src="./backup.js?v=34"></script>
   <script>
     'use strict';
 
     const $ = selector => document.querySelector(selector);
-    const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
-    const fullDateFormat = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
-    const monthFormat = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
+    const dateFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', day: 'numeric', month: 'long' });
+    const fullDateFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+    const monthFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', month: 'long', year: 'numeric' });
     const storagePrefix = 'panel-03:event:';
-    const dateKey = date => [String(date.getFullYear()).padStart(4, '0'), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
-    const fromKey = value => new Date(value + 'T12:00:00');
+    const { today: todayKey, key: dateKey, fromKey, valid: isValidDateKey } = window.panel03Date;
     const beginningOfMonth = date => fromKey(dateKey(date).slice(0, 7) + '-01');
     const monthShift = (date, amount) => {
       const result = beginningOfMonth(date);
-      result.setMonth(result.getMonth() + amount);
+      result.setUTCMonth(result.getUTCMonth() + amount);
       return result;
     };
     const keyCompare = (left, right) => left < right ? -1 : Number(left > right);
     const sortEvents = (left, right) => keyCompare(left.date, right.date) || keyCompare(left.start, right.start) || left.title.localeCompare(right.title, 'ru');
-    const isValidDateKey = value => /^\d{4}-\d\d-\d\d$/.test(value) && dateKey(fromKey(value)) === value;
-
-    let selectedDay = dateKey(new Date());
-    let visibleMonth = beginningOfMonth(new Date());
+    let selectedDay = todayKey();
+    let visibleMonth = beginningOfMonth(fromKey(selectedDay));
     let events = [];
     let eventOriginals = new Map();
     let editingId = null;
@@ -857,18 +856,18 @@
     }
 
     function renderOverview() {
-      const today = new Date();
-      const todayKey = dateKey(today);
+      const current = todayKey();
+      const today = fromKey(current);
       const sunday = new Date(today);
-      sunday.setDate(today.getDate() + (7 - today.getDay()) % 7);
+      sunday.setUTCDate(today.getUTCDate() + (7 - today.getUTCDay()) % 7);
       $('#today-label').textContent = fullDateFormat.format(today);
-      renderEventList($('#events-today'), events.filter(event => event.date === todayKey), false, 'На сегодня событий нет.');
-      renderEventList($('#events-week'), events.filter(event => event.date > todayKey && event.date <= dateKey(sunday)), true, 'До конца недели событий нет.');
+      renderEventList($('#events-today'), events.filter(event => event.date === current), false, 'На сегодня событий нет.');
+      renderEventList($('#events-week'), events.filter(event => event.date > current && event.date <= dateKey(sunday)), true, 'До конца недели событий нет.');
     }
 
     function renderCalendar(focusDay = false) {
       const grid = $('#date-grid');
-      const today = dateKey(new Date());
+      const today = todayKey();
       const prefix = dateKey(visibleMonth).slice(0, 7);
       const monthEvents = events.filter(event => event.date.startsWith(prefix + '-'));
       const markedDates = new Set(monthEvents.map(event => event.date));
@@ -883,13 +882,13 @@
       $('#month-previous').disabled = prefix === '0001-01';
       $('#month-next').disabled = prefix === '9999-12';
 
-      const leading = (visibleMonth.getDay() + 6) % 7;
+      const leading = (visibleMonth.getUTCDay() + 6) % 7;
       for (let i = 0; i < leading; i += 1) grid.append(document.createElement('span'));
 
       const lastDate = monthShift(visibleMonth, 1);
-      lastDate.setDate(0);
+      lastDate.setUTCDate(0);
       let selectedButton;
-      for (let day = 1; day <= lastDate.getDate(); day += 1) {
+      for (let day = 1; day <= lastDate.getUTCDate(); day += 1) {
         const key = prefix + '-' + String(day).padStart(2, '0');
         const button = document.createElement('button');
         button.type = 'button';
@@ -961,8 +960,9 @@
 
     function changeMonth(amount) {
       visibleMonth = monthShift(visibleMonth, amount);
-      const today = new Date();
-      selectedDay = dateKey(beginningOfMonth(today)) === dateKey(visibleMonth) ? dateKey(today) : dateKey(visibleMonth);
+      const current = todayKey();
+      const month = dateKey(visibleMonth);
+      selectedDay = current.slice(0, 7) === month.slice(0, 7) ? current : month;
       renderCalendar();
     }
 
@@ -982,7 +982,7 @@
       $('#editor-title').textContent = event ? 'Изменить событие' : 'Новое событие';
       $('#delete-event').hidden = !event;
       fields.title.value = event?.title ?? '';
-      fields.date.value = event?.date ?? (location.hash === '#calendar' ? selectedDay : dateKey(new Date()));
+      fields.date.value = event?.date ?? (location.hash === '#calendar' ? selectedDay : todayKey());
       fields.start.value = event?.start ?? '';
       fields.end.value = event?.end ?? '';
       fields.allDay.checked = !event?.start;
@@ -1108,14 +1108,14 @@
       });
     }
 
-    let renderedDay = dateKey(new Date());
+    let renderedDay = todayKey();
     function refreshDay() {
       if (document.hidden) return;
-      const current = dateKey(new Date());
+      const current = todayKey();
       if (renderedDay === current) return;
       if (selectedDay === renderedDay) {
         selectedDay = current;
-        visibleMonth = beginningOfMonth(new Date());
+        visibleMonth = beginningOfMonth(fromKey(current));
       }
       renderedDay = current;
       render();
@@ -1134,16 +1134,16 @@
     window.addEventListener('panel-03:work-changed', () => renderCalendar());
     route();
   </script>
-  <script src="./team-readiness.js?v=33"></script>
-  <script src="./financial-review.js?v=33"></script>
-  <script src="./point-operations.js?v=33"></script>
-  <script src="./product-launch.js?v=33"></script>
-  <script src="./management.js?v=33"></script>
-  <script src="./quality.js?v=33"></script>
-  <script src="./calendar-sync.js?v=33"></script>
-  <script src="./google-sync.js?v=33"></script>
-  <script src="./bar-menu.js?v=33"></script>
-  <script src="./bar-operations.js?v=33"></script>
-  <script src="./development.js?v=33"></script>
+  <script src="./team-readiness.js?v=34"></script>
+  <script src="./financial-review.js?v=34"></script>
+  <script src="./point-operations.js?v=34"></script>
+  <script src="./product-launch.js?v=34"></script>
+  <script src="./management.js?v=34"></script>
+  <script src="./quality.js?v=34"></script>
+  <script src="./calendar-sync.js?v=34"></script>
+  <script src="./google-sync.js?v=34"></script>
+  <script src="./bar-menu.js?v=34"></script>
+  <script src="./bar-operations.js?v=34"></script>
+  <script src="./development.js?v=34"></script>
 </body>
 </html>

@@ -11,10 +11,7 @@
 
   const fresh = () => ({ profiles: [], points: [] });
   const emptyPoint = () => ({ name: '', manager: '', menu: '', teamIds: [], deviceIds: [], equipmentNotes: '', reviewed: false });
-  const today = () => {
-    const date = new Date();
-    return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map((part, i) => String(part).padStart(i === 0 ? 4 : 2, '0')).join('-');
-  };
+  const { today } = window.panel03Date;
   const normalize = value => value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
   let selectedPoint = '';
   let showMap = false;

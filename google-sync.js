@@ -44,6 +44,7 @@
   const metaFields = 'id,etag,version,title,mimeType,parents(id),labels(trashed),properties';
   const encode = encodeURIComponent;
   const query = data => '?' + new URLSearchParams(data);
+  class UnusableBackup extends Error {}
   async function request(url, options = {}, allow404 = false, acceptedStatuses = []) {
     if (!ready()) throw Error('Доступ Google истёк. Нажми «Синхронизировать».');
     const response = await fetch(url, {
@@ -57,7 +58,10 @@
     if (response.status === 404 && allow404) return null;
     if (!response.ok) {
       const error = await response.json().catch(() => null);
-      throw Error('Google ' + response.status + (error?.error?.message ? ' · ' + error.error.message : ''));
+      const problem = Error('Google ' + response.status + (error?.error?.message ? ' · ' + error.error.message : ''));
+      problem.status = response.status;
+      problem.reason = error?.error?.errors?.[0]?.reason;
+      throw problem;
     }
     return response;
   }
@@ -72,17 +76,17 @@
   }
 
   function verifyFile(info, settings) {
-    if (!info) throw Error('Запомненная копия недоступна на Google Диске.');
-    if (info.labels?.trashed) throw Error('Запомненная копия находится в корзине Google Диска.');
+    if (!info) throw new UnusableBackup('Копия недоступна на Google Диске.');
+    if (info.labels?.trashed) throw new UnusableBackup('Копия находится в корзине Google Диска.');
     if (!info.parents?.some(parent => parent.id === settings.folder)) {
-      throw Error('Запомненная копия находится вне выбранной папки «03 РАБОТА».');
+      throw new UnusableBackup('Копия находится вне выбранной папки «03 РАБОТА».');
     }
     const type = info.mimeType?.split(';', 1)[0].trim().toLowerCase();
     if (type && !['application/json', 'application/octet-stream', 'text/plain', 'text/json'].includes(type)) {
-      throw Error('Файл с копией имеет тип «' + type + '». Для восстановления нужна сохранённая копия панели в формате JSON.');
+      throw new UnusableBackup('Для восстановления нужна сохранённая копия панели в формате JSON.');
     }
     if (!isTagged(info) && info.id !== settings.fileId && info.title?.trim() !== fileName) {
-      throw Error('В папке найден файл, принадлежность которого панели 03 не подтверждена.');
+      throw new UnusableBackup('Принадлежность копии панели 03 не подтверждена.');
     }
   }
 
@@ -91,22 +95,30 @@
     return Boolean(first.etag && first.etag === second.etag);
   }
 
-  async function findLatestBackup(settings) {
+  async function findUsableBackup(settings) {
     const label = "properties has { key='panelBackup' and value='" + tag + "' and visibility='PRIVATE' }";
     const params = {
       q: "trashed = false and '" + settings.folder + "' in parents and (" + label + " or title = '" + fileName + "')",
-      fields: 'nextPageToken,items(' + metaFields + ')', maxResults: '100', orderBy: 'createdDate desc'
+      fields: 'nextPageToken,items(id)', maxResults: '100', orderBy: 'createdDate desc'
     };
+    let skipped = false;
     do {
       const result = await (await request(api + query(params), { cache: 'no-store' })).json();
-      if (result.items?.length) {
-        const info = await metadata(result.items[0].id);
-        verifyFile(info, settings);
-        return info;
+      for (const candidate of result.items || []) {
+        try {
+          const info = await metadata(candidate.id);
+          verifyFile(info, settings);
+          return { backup: await download(info, settings), skipped };
+        } catch (error) {
+          if (!(error instanceof UnusableBackup) && error.status !== 404 && error.status !== 410 &&
+              !(error.status === 403 && error.reason === 'insufficientFilePermissions')) throw error;
+          skipped = true;
+        }
       }
       params.pageToken = result.nextPageToken;
     } while (params.pageToken);
-    return null;
+    throw Error(skipped ? 'В выбранной папке не нашлось доступной исправной копии. Можно выбрать скачанный файл вручную.' :
+      'В выбранной папке пока нет копии панели.');
   }
 
   async function download(info, settings) {
@@ -117,10 +129,13 @@
       const contents = await response.text();
       const after = await metadata(info.id);
       verifyFile(after, settings);
-      if (sameVersion(info, after)) return core.parseBackup(contents);
+      if (sameVersion(info, after)) {
+        try { return core.parseBackup(contents); }
+        catch (error) { throw new UnusableBackup(error.message); }
+      }
       info = after;
     }
-    throw Error('Копия меняется во время скачивания. Повтори восстановление.');
+    throw new UnusableBackup('Копия меняется во время скачивания.');
   }
 
   async function digest(text) {
@@ -170,7 +185,7 @@
               }
               update({ account: profile.sub });
             } catch (error) { token = ''; calendarGranted = false; throw error; }
-            await perform(action);
+            return perform(action);
           });
         },
         error_callback: () => {
@@ -282,12 +297,24 @@
     if (!settings.folder || !/^[\w-]+$/.test(settings.folder)) throw Error('Выбери рабочую папку «03 РАБОТА».');
     const backup = core.exportData(localStorage);
     const { records } = backup;
-    const hash = await digest(JSON.stringify(records));
+    const signature = JSON.stringify(records);
     if (!Object.keys(records).length && !settings.lastBackup && !settings.fileId) {
       update({ autoSync: true });
       message = 'В панели пока нет записей для отправки.';
       return;
     }
+    let work;
+    let workError;
+    if (sendCalendar && calendarGranted) {
+      try {
+        if (!window.panel03CalendarWork) throw Error('Рабочие журналы ещё не готовы. Обнови панель.');
+        work = window.panel03CalendarWork();
+        if (JSON.stringify(core.snapshot(localStorage)) !== signature) {
+          throw Error('Данные изменились при подготовке календаря. Повторю отправку.');
+        }
+      } catch (error) { workError = error; }
+    }
+    const hash = await digest(signature);
     update({ autoSync: true });
     let errorFound = false;
     if (drive) {
@@ -306,10 +333,10 @@
         try {
           calendarMessage = 'Обновляю календарь…';
           paint();
-          if (!window.panel03CalendarWork) throw Error('Рабочие журналы ещё не готовы. Обнови панель.');
+          if (workError) throw workError;
           const count = await calendar.mirror({ request, settings: read(), update, digest,
             events: Object.entries(records).filter(([key]) => key.startsWith('panel-03:event:')).map(([, value]) => value),
-            work: window.panel03CalendarWork() });
+            work });
           update({ calendarHash: hash });
           calendarPoll = Date.now();
           calendarMessage = 'Календарь обновлён. Событий и рабочих действий: ' + count + '.';
@@ -360,11 +387,10 @@
   async function restoreRemote() {
     const settings = read();
     if (!settings.folder || !/^[\w-]+$/.test(settings.folder)) throw Error('Выбери папку «03 РАБОТА».');
-    const info = await findLatestBackup(settings);
-    if (!info) throw Error('В выбранной папке пока нет копии панели.');
-    const backup = await download(info, settings);
+    const { backup, skipped } = await findUsableBackup(settings);
     $('#google-dialog').close();
-    window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: { backup } }));
+    const notice = skipped ? 'Показана предыдущая исправная копия.' : '';
+    window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: { backup, notice } }));
     message = 'Копия загружена. Проверь её состав и подтверди восстановление.';
   }
 

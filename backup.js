@@ -358,24 +358,26 @@
 
   function recordId(key, item) { return key === 'panel-03:economy' && Object.hasOwn(item, 'key') ? item.key : item.id; }
 
+  function validateEntry(key, value) {
+    const kind = keyKind(key);
+    if (!kind) throw Error('Копия содержит неизвестный раздел.');
+    const check = kind === 'event' ? identified({ title: text, date, start: text, end: text }) :
+      kind === 'quality' ? quality : schemas[key];
+    let valid = false;
+    try { valid = check(value); } catch { /* Invalid dates are rejected below. */ }
+    if (!valid) throw Error('Повреждён раздел «' + title(key) + '».');
+    if ((kind === 'event' || kind === 'quality') && key !== 'panel-03:' + kind + ':' + value.id) {
+      throw Error('Нарушен идентификатор записи.');
+    }
+    for (const list of collections(key, value)) {
+      const ids = list.map(item => recordId(key, item));
+      if (ids.some(id => !text(id) || !id) || new Set(ids).size !== ids.length) throw Error('Повторяются идентификаторы в разделе «' + title(key) + '».');
+    }
+  }
+
   function validate(records) {
     if (!object(records)) throw Error('В копии отсутствует список данных.');
-    for (const [key, value] of Object.entries(records)) {
-      const kind = keyKind(key);
-      if (!kind) throw Error('Копия содержит неизвестный раздел.');
-      const check = kind === 'event' ? identified({ title: text, date, start: text, end: text }) :
-        kind === 'quality' ? quality : schemas[key];
-      let valid = false;
-      try { valid = check(value); } catch { /* Invalid dates are rejected below. */ }
-      if (!valid) throw Error('Повреждён раздел «' + title(key) + '».');
-      if ((kind === 'event' || kind === 'quality') && key !== 'panel-03:' + kind + ':' + value.id) {
-        throw Error('Нарушен идентификатор записи.');
-      }
-      for (const list of collections(key, value)) {
-        const ids = list.map(item => recordId(key, item));
-        if (ids.some(id => !text(id) || !id) || new Set(ids).size !== ids.length) throw Error('Повторяются идентификаторы в разделе «' + title(key) + '».');
-      }
-    }
+    for (const [key, value] of Object.entries(records)) validateEntry(key, value);
     validateLinks(records);
     return records;
   }
@@ -596,13 +598,24 @@
     for (const [key, item] of Object.entries(records)) if (keyKind(key) === 'quality' && item.techCard) link(catalog, item.techCard.id, 'Проверка и техкарта');
   }
 
-  function snapshot(storage) {
-    const records = {};
+  function rawSnapshot(storage) {
+    const raw = {};
     for (const key of Object.keys(storage).sort()) if (keyKind(key)) {
-      try { records[key] = JSON.parse(storage.getItem(key)); }
-      catch { throw Error('Не удалось прочитать раздел «' + title(key) + '».'); }
+      const value = storage.getItem(key);
+      if (value !== null) raw[key] = value;
     }
-    return validate(records);
+    return raw;
+  }
+
+  function parseRecords(raw) {
+    return Object.fromEntries(Object.entries(raw).map(([key, value]) => {
+      try { return [key, JSON.parse(value)]; }
+      catch { throw Error('Не удалось прочитать раздел «' + title(key) + '».'); }
+    }));
+  }
+
+  function snapshot(storage) {
+    return validate(parseRecords(rawSnapshot(storage)));
   }
 
   function exportData(storage) {
@@ -647,9 +660,65 @@
     return { records, added, retained };
   }
 
-  function restoreOld(storage, old) {
-    for (const key of Object.keys(storage)) if (keyKind(key) && !Object.hasOwn(old, key)) storage.removeItem(key);
-    for (const [key, value] of Object.entries(old)) storage.setItem(key, JSON.stringify(value));
+  function salvageEntry(key, value, replacement) {
+    function readableRows(rows, sample, replacementRows = []) {
+      if (!Array.isArray(rows)) return [];
+      const kept = new Map();
+      const damagedIds = new Set();
+      for (const row of rows) {
+        const id = object(row) ? recordId(key, row) : null;
+        try {
+          validateEntry(key, sample(row));
+          if (!kept.has(id)) kept.set(id, row);
+        } catch {
+          if (text(id) && id) damagedIds.add(id);
+        }
+      }
+      const incomingIds = new Set(replacementRows.map(row => recordId(key, row)));
+      if ([...damagedIds].some(id => !kept.has(id) && !incomingIds.has(id))) {
+        throw Error('В копии нет повреждённой локальной записи из раздела «' + title(key) + '». Выбери другую копию.');
+      }
+      return [...kept.values()];
+    }
+    const kind = keyKind(key);
+    if (kind === 'event' || kind === 'quality') return undefined;
+    const names = groups[key][1];
+    if (!names) return readableRows(value, row => [row], replacement);
+    if (!object(value)) return undefined;
+    const empty = Object.fromEntries(names.map(name => [name, []]));
+    return { ...value, ...Object.fromEntries(names.map(name => [name,
+      readableRows(value[name], row => ({ ...empty, [name]: [row] }), replacement[name])])) };
+  }
+
+  function prepareRestore(raw, incoming) {
+    const current = {};
+    const repaired = [];
+    for (const [key, contents] of Object.entries(raw)) {
+      let value;
+      try {
+        value = JSON.parse(contents);
+        validateEntry(key, value);
+        current[key] = value;
+      } catch {
+        if (!Object.hasOwn(incoming, key)) {
+          throw Error('В копии нет данных для восстановления раздела «' + title(key) + '». Выбери другую копию.');
+        }
+        repaired.push(key);
+        const readable = salvageEntry(key, value, incoming[key]);
+        if (readable !== undefined) current[key] = readable;
+      }
+    }
+    let needsOriginal = repaired.length > 0;
+    try { validate(current); }
+    catch { needsOriginal = true; }
+    return { raw, current, result: merge(current, incoming), repaired, needsOriginal };
+  }
+
+  function restoreRaw(storage, before) {
+    for (const [key, value] of Object.entries(before)) if (value === null) storage.removeItem(key);
+    for (const [key, value] of Object.entries(before)) {
+      if (value !== null && storage.getItem(key) !== value) storage.setItem(key, value);
+    }
     storage.removeItem(transactionKey);
   }
 
@@ -657,26 +726,44 @@
     const raw = storage.getItem(transactionKey);
     if (raw === null) return;
     const journal = JSON.parse(raw);
+    if (Object.hasOwn(journal, 'before')) {
+      const before = journal.before;
+      if (!object(before) || !Object.entries(before).every(([key, value]) => keyKind(key) && (value === null || text(value)))) {
+        throw Error('Не удалось прочитать журнал восстановления.');
+      }
+      restoreRaw(storage, before);
+      return;
+    }
     validate(journal.old);
-    restoreOld(storage, journal.old);
+    const before = Object.fromEntries(Object.keys(rawSnapshot(storage)).map(key => [key, null]));
+    for (const [key, value] of Object.entries(journal.old)) before[key] = JSON.stringify(value);
+    restoreRaw(storage, before);
   }
 
-  function commit(storage, current, incoming) {
-    if (JSON.stringify(snapshot(storage)) !== JSON.stringify(current)) throw Error('Данные изменились после проверки. Выбери файл заново.');
-    const result = merge(current, incoming);
-    if (!result.added) return result;
-    storage.setItem(transactionKey, JSON.stringify({ old: current }));
+  function commitPrepared(storage, { raw, current, result, repaired }) {
+    if (JSON.stringify(rawSnapshot(storage)) !== JSON.stringify(raw)) throw Error('Данные изменились после проверки. Выбери файл заново.');
+    const edits = Object.entries(result.records).filter(([key, value]) =>
+      repaired.includes(key) || JSON.stringify(current[key]) !== JSON.stringify(value));
+    if (!edits.length) return result;
+    const before = Object.fromEntries(edits.map(([key]) => [key, raw[key] ?? null]));
     try {
-      for (const [key, value] of Object.entries(result.records)) {
-        if (JSON.stringify(current[key]) !== JSON.stringify(value)) storage.setItem(key, JSON.stringify(value));
-      }
+      storage.setItem(transactionKey, JSON.stringify({ before }));
+    } catch { throw Error('Не хватило места для восстановления. Исходные данные сохранены.'); }
+    try {
+      for (const [key, value] of edits) storage.setItem(key, JSON.stringify(value));
       storage.removeItem(transactionKey);
     } catch {
-      try { restoreOld(storage, current); }
+      try { restoreRaw(storage, before); }
       catch { throw Error('Восстановление прервано. Перезапусти панель для возврата к исходным данным.'); }
       throw Error('Не хватило места или хранилище недоступно. Исходные данные восстановлены.');
     }
     return result;
+  }
+
+  function commit(storage, current, incoming) {
+    const raw = rawSnapshot(storage);
+    if (JSON.stringify(validate(parseRecords(raw))) !== JSON.stringify(current)) throw Error('Данные изменились после проверки. Выбери файл заново.');
+    return commitPrepared(storage, { raw, current, result: merge(current, incoming), repaired: [] });
   }
 
   function approvedLot(attempt) {
@@ -700,13 +787,35 @@
   const preview = document.querySelector('#backup-preview');
   const restore = document.querySelector('#backup-restore');
   const input = document.querySelector('#backup-file');
-  let pending = null;
-  let current = null;
+  const rawExport = document.querySelector('#backup-export-original');
+  let plan = null;
   let generation = 0;
   let afterRestore = null;
+  let downloadedRaw;
+  let restoring = false;
 
   function status(messageText) { message.textContent = messageText; }
-  function reset() { afterRestore = null; pending = null; current = null; preview.replaceChildren(); restore.hidden = true; status(''); }
+  function updateConfirmation() {
+    restore.disabled = restoring || Boolean(plan?.needsOriginal && downloadedRaw !== JSON.stringify(plan.raw));
+  }
+  function reset() {
+    afterRestore = null;
+    plan = null;
+    preview.replaceChildren();
+    restore.hidden = true;
+    updateConfirmation();
+    status('');
+  }
+  function checkLocal() {
+    try {
+      snapshot(localStorage);
+      rawExport.hidden = true;
+    } catch (error) {
+      rawExport.hidden = false;
+      return error.message;
+    }
+    return '';
+  }
   function showTip(button, tip) {
     button.addEventListener('click', () => {
       document.querySelector('#backup-help-text').textContent = tip;
@@ -722,11 +831,12 @@
     generation++;
     reset();
     input.value = '';
+    status(checkLocal());
     dialog.showModal();
   });
   document.querySelector('#backup-close').addEventListener('click', () => { generation++; dialog.close(); });
   dialog.addEventListener('cancel', event => {
-    if (restore.disabled) event.preventDefault();
+    if (restoring) event.preventDefault();
     else generation++;
   });
   document.querySelector('#backup-help-close').addEventListener('click', () => document.querySelector('#backup-help').close());
@@ -734,45 +844,71 @@
   showTip(document.querySelector('#backup-file-help'), 'Выбери ранее сохранённый файл копии панели 03. Панель покажет его состав и проверит связи до восстановления.');
   showTip(document.querySelector('#backup-restore-help'), 'Добавляет отсутствующие записи. Совпадающие записи сохраняют текущую версию, включая историю внутри них.');
 
+  function downloadJSON(prefix, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = prefix + data.createdAt.replace(/[:.]/g, '-') + '.json';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   document.querySelector('#backup-export').addEventListener('click', () => {
     try {
-      const data = exportData(localStorage);
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = '03-rabota-' + data.createdAt.replace(/[:.]/g, '-') + '.json';
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      downloadJSON('03-rabota-', exportData(localStorage));
       status('Файл подготовлен для скачивания. Проверь его в загрузках.');
+    } catch (problem) { rawExport.hidden = false; status(problem.message); }
+  });
+
+  rawExport.addEventListener('click', () => {
+    try {
+      const raw = rawSnapshot(localStorage);
+      downloadJSON('03-rabota-original-', {
+        format: 'panel-03-original-storage', version: 1, createdAt: new Date().toISOString(), raw
+      });
+      downloadedRaw = JSON.stringify(raw);
+      updateConfirmation();
+      status('Исходный файл подготовлен. Проверь его в загрузках перед восстановлением.');
     } catch (problem) { status(problem.message); }
   });
 
-  function previewCandidate(data, restored = null) {
-      const before = snapshot(localStorage);
-      const result = merge(before, data.records);
-      const paragraph = document.createElement('p');
-      paragraph.textContent = 'Копия от ' + new Date(data.createdAt).toLocaleString('ru-RU') + '.';
-      const list = document.createElement('ul');
-      const counts = new Map();
-      for (const [key, value] of Object.entries(data.records)) {
-        counts.set(title(key), (counts.get(title(key)) || 0) + collections(key, value).reduce((sum, rows) => sum + rows.length, 0));
-      }
-      for (const [label, amount] of counts) {
-        const row = document.createElement('li');
-        row.textContent = label + ' — ' + amount;
-        list.append(row);
-      }
-      const summary = document.createElement('p');
-      summary.textContent = 'Будет добавлено: ' + result.added + '. Уже есть: ' + result.retained + '.';
-      preview.replaceChildren(paragraph, list, summary);
-      pending = data;
-      current = before;
-      restore.hidden = false;
-      status('Формат и связи проверены.');
-      afterRestore = restored;
+  function previewCandidate(data, restored = null, notice = '') {
+    checkLocal();
+    const prepared = prepareRestore(rawSnapshot(localStorage), data.records);
+    const { result, repaired, needsOriginal } = prepared;
+    const paragraph = document.createElement('p');
+    paragraph.textContent = (notice ? notice + ' ' : '') + 'Копия от ' +
+      new Date(data.createdAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' (МСК).';
+    const list = document.createElement('ul');
+    const counts = new Map();
+    for (const [key, value] of Object.entries(data.records)) {
+      counts.set(title(key), (counts.get(title(key)) || 0) + collections(key, value).reduce((sum, rows) => sum + rows.length, 0));
+    }
+    for (const [label, amount] of counts) {
+      const row = document.createElement('li');
+      row.textContent = label + ' — ' + amount;
+      list.append(row);
+    }
+    const summary = document.createElement('p');
+    summary.textContent = 'Будет добавлено записей: ' + result.added + '. Уже есть: ' + result.retained + '.';
+    const elements = [paragraph, list, summary];
+    if (needsOriginal) {
+      const warning = document.createElement('p');
+      const sections = [...new Set(repaired.map(title))].join(', ');
+      warning.textContent = (sections ? 'Восстанавливаемые разделы — ' + sections + '. ' : 'Копия восстанавливает связи между записями. ') +
+        'Читаемые записи сохранятся. Скачай исходные данные и проверь файл в загрузках.';
+      elements.push(warning);
+      rawExport.hidden = false;
+    }
+    preview.replaceChildren(...elements);
+    plan = prepared;
+    restore.hidden = false;
+    updateConfirmation();
+    status('Формат и связи проверены.');
+    afterRestore = restored;
   }
 
   window.addEventListener('panel-03:backup-candidate', event => {
@@ -781,7 +917,7 @@
       reset();
       if (!dialog.open) dialog.showModal();
       const data = parseBackup(JSON.stringify(event.detail.backup));
-      previewCandidate(data, event.detail.restored);
+      previewCandidate(data, event.detail.restored, event.detail.notice);
     } catch (problem) { status(problem.message); }
   });
 
@@ -798,14 +934,15 @@
   });
 
   restore.addEventListener('click', async () => {
-    if (!pending) return;
-    restore.disabled = true;
+    if (!plan || restore.disabled) return;
+    restoring = true;
+    updateConfirmation();
     input.disabled = true;
+    rawExport.disabled = true;
     document.querySelector('#backup-close').disabled = true;
-    const baseline = current;
-    const incoming = pending.records;
+    const prepared = plan;
     try {
-      const run = () => commit(localStorage, baseline, incoming);
+      const run = () => commitPrepared(localStorage, prepared);
       const result = navigator.locks ? await navigator.locks.request('panel-03-restore', run) : run();
       status('Готово. Добавлено: ' + result.added + '. Уже было: ' + result.retained + '.');
       if (afterRestore) {
@@ -813,13 +950,19 @@
         catch { status('Данные восстановлены. Настройки отправки не сохранены: проверь подключение Google перед отправкой.'); }
       }
       afterRestore = null;
-      pending = null;
-      current = null;
+      plan = null;
+      rawExport.hidden = true;
       restore.hidden = true;
       // Existing journal readers refresh through their standard storage handlers.
       window.dispatchEvent(new StorageEvent('storage', { key: null }));
       window.dispatchEvent(new Event('hashchange'));
     } catch (problem) { status(problem.message); }
-    finally { restore.disabled = false; input.disabled = false; document.querySelector('#backup-close').disabled = false; }
+    finally {
+      restoring = false;
+      updateConfirmation();
+      input.disabled = false;
+      rawExport.disabled = false;
+      document.querySelector('#backup-close').disabled = false;
+    }
   });
 })();
