@@ -27,40 +27,58 @@
     throw Error('Время события не существует в указанном часовом поясе. Уточни время в панели.');
   }
 
-  function build(events, work) {
-    const desired = new Map();
-    function add(key, title, day, start, end, description, location = '') {
-      if (!validDate(day) || !title) throw Error('Не удалось проверить дату или название события.');
-      let times;
-      if (!start) times = { start: { date: day }, end: { date: dayAfter(day) } };
-      else {
-        const startTime = instant(day, start, eventZone);
-        const endTime = end ? instant(day, end, eventZone) : new Date(Date.parse(startTime) + 3600000).toISOString();
-        if (Date.parse(endTime) <= Date.parse(startTime)) throw Error('Окончание события должно быть позже начала.');
-        times = { start: { dateTime: startTime, timeZone: eventZone }, end: { dateTime: endTime, timeZone: eventZone } };
-      }
-      if (desired.has(key)) throw Error('У рабочих действий совпали идентификаторы. Отправка календаря остановлена.');
-      desired.set(key, { summary: title, description, location, ...times });
-    }
-    for (const event of events) add(JSON.stringify(['event', event.id]), event.title, event.date, event.start, event.end,
-      'Создано в панели «03 Работа». Изменяй событие в панели.');
-    for (const row of work) {
-      if (!row.date) continue;
-      add(row.key, row.title, row.date, '', '', ['Рабочее действие из панели «03 Работа».', row.detail,
-        row.owner ? 'Ответственный: ' + row.owner : '', 'Изменяй срок и результат в исходном журнале панели.'].filter(Boolean).join('\n'), row.point || '');
-    }
-    return desired;
+  const plus = (date, days) => new Date(Date.parse(date + 'T00:00:00Z') + days*86400000).toISOString().slice(0,10);
+  const compact = date => date.replaceAll('-','');
+  const freq = {daily:'DAILY',weekdays:'WEEKLY;BYDAY=MO,TU,WE,TH,FR',weekly:'WEEKLY',monthly:'MONTHLY',yearly:'YEARLY'};
+  function payload(event, zone) {
+    return {summary:event.title,start:event.allDay ? {date:event.date} : {dateTime:instant(event.date,event.start,zone),timeZone:zone},
+      end:event.allDay ? {date:plus(event.date,1)} : {dateTime:instant(event.date,event.end,zone),timeZone:zone}};
   }
-
+  function calendarRows(events, zone) {
+    const rows = new Map();
+    for (const event of events) {
+      const recurring = event.repeat !== 'none';
+      let start = event.date;
+      if (event.repeat === 'weekdays') {
+        while ([0,6].includes(new Date(start+'T00:00:00Z').getUTCDay())) start = plus(start,1);
+      }
+      if (!window.panelRecords.occurs(event,start)) continue;
+      const item = payload({...event,date:start},zone);
+      if (recurring) {
+        let rule = 'RRULE:FREQ=' + freq[event.repeat];
+        const stop = event.stopBefore ? plus(event.stopBefore,-1) : '';
+        const until = event.ending === 'date' ? event.until : '';
+        const limit = [stop,until].filter(Boolean).sort()[0];
+        if (event.ending === 'count') {
+          const beforeLimit = limit ? window.panelRecords.countThrough(event,limit) : event.count;
+          rule += ';COUNT=' + Math.min(beforeLimit,event.count);
+        } else if (limit) {
+          rule += ';COUNT=' + window.panelRecords.countThrough(event,limit);
+        }
+        const slots = Object.keys(event.exceptions).filter(slot => window.panelRecords.occurs(event,slot));
+        item.recurrence = [rule];
+        if (slots.length) {
+          item.recurrence.push(event.allDay ? 'EXDATE;VALUE=DATE:'+slots.map(compact).join(',')
+            : 'EXDATE;TZID='+zone+':'+slots.map(slot => compact(slot)+'T'+event.start.replace(':','')+'00').join(','));
+        }
+        for (const slot of slots) {
+          const changed = event.exceptions[slot];
+          if (changed) rows.set(JSON.stringify(['event',event.id,slot]),payload(changed,zone));
+        }
+      }
+      rows.set(JSON.stringify(['event',event.id]),item);
+    }
+    return rows;
+  }
   function belongs(event, key) { return event.extendedProperties?.private?.panel === tag && event.extendedProperties.private.key === key; }
   function same(remote, body) {
     const stamp = value => value?.date || (value?.dateTime ? new Date(value.dateTime).toISOString() : '');
     return remote.status !== 'cancelled' && remote.summary === body.summary &&
-      (remote.description || '') === body.description && (remote.location || '') === body.location &&
-      stamp(remote.start) === stamp(body.start) && stamp(remote.end) === stamp(body.end) && !remote.recurrence?.length;
+      (remote.description || '') === (body.description || '') && (remote.location || '') === (body.location || '') &&
+      stamp(remote.start) === stamp(body.start) && stamp(remote.end) === stamp(body.end) && JSON.stringify(remote.recurrence || []) === JSON.stringify(body.recurrence || []);
   }
 
-  async function mirror({ request, settings, update, digest, events, work }) {
+  async function mirror({ request, settings, update, digest, events }) {
     async function list(url, params) {
       const rows = [];
       let pageToken;
@@ -80,7 +98,7 @@
       calendar = found[0];
     }
     if (calendar.primary || calendar.deleted || calendar.summary?.trim() !== name || calendar.accessRole !== 'owner' || !calendar.id) throw Error('Проверь доступ и название календаря «03 РАБОТА».');
-    const desired = build(events, work);
+    const desired = calendarRows(events,eventZone);
     update({ calendarId: calendar.id, calendarZone: eventZone });
     const url = base + '/calendars/' + encode(calendar.id) + '/events';
     const remote = await list(url, { privateExtendedProperty: 'panel=' + tag, maxResults: '2500', showDeleted: 'false', fields: 'nextPageToken,items(id,etag,status,summary,description,location,start,end,recurrence,extendedProperties)' });
@@ -116,7 +134,7 @@
       if (!same(current, body)) {
         if (!current.etag) throw Error('Google не вернул версию события. Повтори отправку.');
         const times = Object.fromEntries(['start', 'end'].map(side => [side, body[side].date ? { dateTime: null, timeZone: null, ...body[side] } : { date: null, ...body[side] }]));
-        await request(url + '/' + encode(current.id) + query({ sendUpdates: 'none' }), { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'If-Match': current.etag }, body: JSON.stringify({ ...entry, ...times, status: 'confirmed', recurrence: [] }) });
+        await request(url + '/' + encode(current.id) + query({ sendUpdates: 'none' }), { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'If-Match': current.etag }, body: JSON.stringify({ ...entry, ...times, status: 'confirmed', recurrence: body.recurrence || [] }) });
       }
       confirmed.push({ id: current.id, key });
     }
@@ -130,7 +148,7 @@
     return desired.size;
   }
 
-  const core = { scopes, build, instant, mirror };
+  const core = { scopes, mirror };
   if (typeof module !== 'undefined' && module.exports) module.exports = core;
   else window.panel03GoogleCalendar = core;
 })();

@@ -1,758 +1,360 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="panel-build" content="36">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-  <meta name="description" content="Рабочая панель шеф-бариста сети спешелти-кофеен">
-  <meta name="theme-color" content="#ffbf56">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <link rel="stylesheet" href="./quality.css?v=36">
-  <link rel="stylesheet" href="./development.css?v=36">
-  <title>03 Работа</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      --paper: light-dark(#f7f5f0,#1d1b17);
-      --surface: light-dark(#fffdfa,#28251f);
-      --ink: light-dark(#25231e,#fbf4e7);
-      --muted: light-dark(#635b4d,#c4bbaa);
-      --line: light-dark(#e0d9cd,#595041);
-      --soft: light-dark(#ffebc9,#553623);
-      --accent: #ffbf56;
-      --on-accent: #312015;
-      --focus: light-dark(#80530b,#ffd183);
-      --danger: light-dark(#9b2e22,#ffb4a5);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      font-family: system-ui, sans-serif;
-      background: var(--paper);
-      color: var(--ink);
-    }
-
-    * { box-sizing: border-box; }
-    [hidden] { display: none !important; }
-    body { margin: 0; }
-    button, input { font: inherit; }
-    button, a { -webkit-tap-highlight-color: transparent; }
-    button { cursor: pointer; }
-    a { color: inherit; }
-    h1, h2, h3, p { margin: 0; }
-    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-    .icon { width: 21px; height: 21px; flex: none; }
-    .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
-    .wrap { max-width: 540px; margin-inline: auto; }
-
-    .app-header { background: var(--accent); color: var(--on-accent); }
-    .header-inner {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: max(7px, env(safe-area-inset-top)) 14px 7px;
-    }
-    .mark {
-      display: grid;
-      place-items: center;
-      background: var(--on-accent);
-      color: #ffd697;
-      border-radius: 9px;
-      width: 34px;
-      height: 34px;
-      font-weight: 750;
-    }
-    .brand-title { display: flex; }
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      min-height: 44px;
-      font-size: 1.07rem;
-      font-weight: 750;
-      text-decoration: none;
-    }
-    .brand:focus-visible { outline-color: var(--on-accent); }
-    main { padding: 12px 14px calc(136px + var(--safe-bottom)); }
-    .page-heading {
-      margin-bottom: 12px;
-      padding: 12px 14px;
-      background: var(--accent);
-      color: var(--on-accent);
-      border-radius: 13px;
-      overflow-wrap: anywhere;
-    }
-    .page-heading .quiet { color: #543412; }
-    .page-heading h2 { font-size: 29px; line-height: 1.16; letter-spacing: -.035em; }
-    .page-heading p { margin-top: 5px; }
-    .quiet { color: var(--muted); font-size: .88rem; line-height: 1.4; }
-    .stack { display: grid; gap: 11px; }
-    .module {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 12px;
-    }
-    .module h3 { font-size: 1.03rem; margin-bottom: 9px; }
-
-    .bottom {
-      position: fixed;
-      z-index: 2;
-      inset: auto 0 0;
-      background: var(--surface);
-      border-top: 1px solid var(--line);
-      padding-bottom: var(--safe-bottom);
-    }
-    .nav {
-      display: grid;
-      grid-template-columns: minmax(0, .93fr) minmax(0, 1.14fr) minmax(0, 1.035fr) minmax(0, 1.035fr) minmax(0, .86fr);
-      gap: 4px;
-      padding: 5px 7px 7px;
-    }
-    .nav > :is(a, button) {
-      display: grid;
-      justify-items: center;
-      align-content: center;
-      gap: 3px;
-      min-height: 54px;
-      min-width: 0;
-      padding: 4px 2px;
-      text-align: center;
-      line-height: 1.14;
-      overflow-wrap: anywhere;
-      border: 0;
-      border-radius: 9px;
-      background: transparent;
-      color: var(--muted);
-      font-size: clamp(.63rem, 2.9vw, .75rem);
-      text-decoration: none;
-      font-weight: 650;
-    }
-    .nav span:not(.breakable-label) { white-space: nowrap; }
-    .nav .icon { width: 18px; height: 18px; }
-    .nav [aria-current] { background: var(--soft); color: var(--ink); }
-    .breakable-label { max-width: 7ch; }
-    .add-event {
-      display: grid;
-      place-items: center;
-      position: fixed;
-      z-index: 1;
-      right: max(16px, calc((100vw - 540px) / 2 + 16px));
-      bottom: calc(74px + var(--safe-bottom));
-      width: 48px;
-      height: 48px;
-      border: 1px solid #d68d30;
-      border-radius: 50%;
-      background: var(--accent);
-      color: var(--on-accent);
-      box-shadow: 0 4px 14px #37251438;
-    }
-    .add-event .icon { width: 25px; height: 25px; }
-
-    .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 7px; }
-    .month-nav h3 { margin: 0; text-align: center; text-transform: capitalize; }
-    .icon-button {
-      display: grid;
-      place-items: center;
-      width: 44px;
-      height: 44px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      color: var(--ink);
-      background: var(--paper);
-      flex: none;
-    }
-    .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; }
-    .calendar-grid .quiet { padding: 5px 0; }
-    .day {
-      display: grid;
-      justify-items: center;
-      align-content: center;
-      gap: 4px;
-      min-height: 44px;
-      background: transparent;
-      color: var(--ink);
-      border: 1px solid transparent;
-      border-radius: 10px;
-      padding: 2px;
-      font-variant-numeric: tabular-nums;
-    }
-    .day::after { content: ""; width: 5px; height: 5px; border-radius: 50%; }
-    .day.has-events::after { background: currentColor; }
-    .day[aria-current="date"] { border-color: var(--focus); font-weight: 700; }
-    .day[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 700; }
-    .event-list { list-style: none; padding: 0; margin: 0; }
-    .event-list li + li { border-top: 1px solid var(--line); }
-    .event {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 21px;
-      width: 100%;
-      align-items: center;
-      text-align: left;
-      gap: 8px;
-      background: none;
-      color: var(--ink);
-      border: 0;
-      padding: 9px 0;
-      min-height: 48px;
-      overflow-wrap: anywhere;
-    }
-    .event small { display: block; }
-    .event-title { display: block; font-weight: 620; }
-
-    .guide-copy { line-height: 1.54; }
-    .guide-copy li + li { margin-top: 7px; }
-    details.module { padding-top: 0; padding-bottom: 0; }
-    details[open] > summary { border-bottom: 1px solid var(--line); }
-    summary { min-height: 48px; padding-block: 13px; cursor: pointer; font-weight: 680; }
-    .guide-copy { padding: 13px 0; }
-    .guide-copy ol, .guide-copy ul { margin: 9px 0 0; padding-left: 23px; }
-    .guide-copy p + p { margin-top: 9px; }
-
-    dialog {
-      background: var(--surface);
-      color: var(--ink);
-      width: min(100% - 24px, 478px);
-      max-height: calc(100dvh - 24px);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 17px;
-      overflow: auto;
-    }
-    html:has(dialog[open]) { overflow: hidden; }
-    dialog::backdrop { background: #21160c88; }
-    dialog h2 { font-size: 1.27rem; }
-    form { display: grid; gap: 12px; }
-    label.field, .time-fields { display: grid; gap: 5px; min-width: 0; }
-    label.field span { font-size: .88rem; }
-    input:not([type="checkbox"]) {
-      min-width: 0;
-      width: 100%;
-      min-height: 44px;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      background: var(--paper);
-      color: var(--ink);
-      padding: 7px 10px;
-      font-size: 16px;
-    }
-    .check { display: flex; align-items: center; gap: 7px; min-height: 44px; }
-    .check input { width: 19px; height: 19px; accent-color: var(--accent); }
-    .time-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-    .action {
-      min-height: 44px;
-      padding: 7px 12px;
-      background: var(--paper);
-      color: var(--ink);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      font-weight: 650;
-    }
-    .action.primary { background: var(--accent); color: var(--on-accent); border-color: #d68d30; }
-    .action.danger { color: var(--danger); margin-right: auto; }
-    .error { color: var(--danger); line-height: 1.4; }
-    #app-error { margin-bottom: 12px; }
-
-    .module { min-width: 0; overflow-wrap: anywhere; box-shadow: 0 2px 5px #39250b0a; }
-    .stack > *, .quality-heading > :first-child, form > * { min-width: 0; }
-    .stack > .error:empty, .stack > .quiet:empty, .stack > .error[hidden] { display: none; }
-    .stack > h3, .module .quality-title, .dev-copy, .module h4 { margin: 0; }
-    .dev-field { display: grid; gap: 3px; }
-    .dev-field label { font-size: .89rem; }
-    .dev-feature { border-inline-start: 4px solid #cf841b; }
-    .bottom { box-shadow: 0 -3px 16px #39250b0d; }
-    .sheet {
-      inset: auto 0 0;
-      width: min(100%, 540px);
-      max-width: 100%;
-      margin: 0 auto;
-      max-height: min(90dvh, calc(100dvh - 16px));
-      padding: 12px 14px calc(12px + var(--safe-bottom));
-      border-radius: 18px 18px 0 0;
-    }
-    .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .sheet-heading h2 { font-size: 1.43rem; }
-    .sheet-group h3 { margin: 0 0 4px 3px; font-size: .82rem; color: var(--muted); }
-    .sheet-links { display: grid; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
-    .sheet-links > * + * { border-top: 1px solid var(--line); }
-    .sheet-link {
-      display: flex; align-items: center; gap: 8px; min-height: 44px;
-      padding: 7px 10px; border: none; color: var(--ink); background: var(--surface);
-      text-align: left; text-decoration: none; overflow-wrap: anywhere;
-    }
-    .sheet-links .sheet-link + .sheet-link { border-top: 1px solid var(--line); }
-    .sheet-link .icon { width: 17px; height: 17px; color: var(--focus); }
-    .sheet-link .chevron { margin-left: auto; width: 14px; }
-    .sheet-link[aria-current] { background: var(--soft); font-weight: 700; }
-    .sheet-link:focus-visible, .sheet-link:focus-within { outline-offset: -3px; }
-    .preference { justify-content: space-between; cursor: pointer; }
-    .preference input { width: 18px; height: 18px; flex: none; accent-color: var(--focus); }
-    .settings-note { padding: 0 10px 8px; border: 0; }
-    .module .overview-row h3 { margin: 0; }
-    .agenda-week { border-top: 1px solid var(--line); }
-    .agenda-week summary { min-height: 44px; padding: 10px 1px; }
-    .agenda-week[open] #events-week { padding-top: 6px; }
-    .overview-google { margin-inline-end: 58px; }
-    .google-overview-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .google-overview-row h3 { margin-bottom: 2px; }
-    .google-overview-row p { max-width: 38ch; }
-    .google-overview-row .action { font-size: .82rem; }
-    .overview-readiness { display: flex; align-items: center; gap: 9px; text-decoration: none; }
-    .overview-readiness .icon { color: var(--focus); }
-    .overview-readiness .chevron { margin-inline-start: auto; width: 14px; }
-    .quality-details { min-width: 0; }
-    dialog { overscroll-behavior: contain; scroll-padding-block: 12px; }
-    button.action, a.action { max-width: 100%; overflow-wrap: anywhere; }
-    .mark { flex-shrink: 0; }
-    @media (max-width: 400px) {
-      .quality-pair { grid-template-columns: minmax(0,1fr); }
-
-    }
-    @media (max-width: 350px) {
-      main { padding-inline: 12px; }
-      .module { padding-inline: 10px; }
-      dialog:not(.sheet) { padding: 13px; }
-    }
-    @media (pointer: coarse) {
-      html:has(main :is(input:not([type=checkbox]):not([type=radio]), textarea):focus) :is(.bottom, .add-event) { visibility: hidden; }
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="panel-build" content="2.0.0">
+<title>Работа</title>
+<meta name="theme-color" content="#65400e">
+<meta name="description" content="Работа · Календарь и заметки.">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png?v=2">
+<link rel="apple-touch-icon" href="./icon-192.png?v=2">
+<style id="personal-styles">
+body {
+  margin: 0;
+  color-scheme: light dark;
+  background: #e4dace;
+}
+#personal, #personal * { box-sizing: border-box; }
+#personal {
+  --gutter: clamp(.75rem, 4vw, 1.1rem);
+  --background: #fbf6ee;
+  --paper: #fff;
+  --text: #302515;
+  --secondary: #695641;
+  --line: #ded4c4;
+  --green: #70430b;
+  --tint: #ffebca;
+  --pressed: #70430b;
+  --header: #65400e;
+  --header-accent: #855316;
+  --header-secondary: #ffebc8;
+  --shadow: 0 2px 0 #3025150b;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 32rem);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin-inline: auto;
+  background: var(--background);
+  color: var(--text);
+  font: 1rem/1.4 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+@media (prefers-color-scheme: dark) {
+  body { background: #101913; }
+  #personal {
+    --background: #251f19;
+    --paper: #332a21;
+    --text: #fff7e8;
+    --secondary: #dfd1be;
+    --line: #7c6d59;
+    --green: #ffd294;
+    --tint: #483929;
+    --pressed: #73501b;
+    --shadow: 0 2px 0 #0003;
+  }
+}
+#personal [hidden] { display: none !important; }
+#personal button {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+#personal button:disabled { opacity: .58; cursor: default; }
+#personal :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+#personal small { color: var(--secondary); font-size: .875em; }
+#personal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: max(.5rem, env(safe-area-inset-top)) var(--gutter) .25rem;
+  background: var(--header);
+  color: white;
+}
+#personal .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
+  padding: 0;
+  font-weight: 750;
+}
+#personal .panel-mark {
+  display: grid;
+  place-items: center;
+  min-width: 2.15rem;
+  min-height: 2.15rem;
+  border-radius: .65rem;
+  background: var(--header-accent);
+  color: white;
+  font-size: .9rem;
+  font-weight: 800;
+}
+#personal .brand:focus-visible, #personal .menu summary:focus-visible { outline-color: white; }
+#personal .menu { position: relative; z-index: 2; }
+#personal .menu summary {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: .65rem;
+  background: var(--header-accent);
+  color: white;
+  font-size: 1.35rem;
+  cursor: pointer;
+  list-style: none;
+}
+#personal .menu summary::-webkit-details-marker { display: none; }
+#personal .menu-items {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + .4rem);
+  width: min(15rem, 75vw);
+  padding: .3rem;
+  border: 1px solid var(--line);
+  border-radius: .75rem;
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: 0 4px 16px #14271c36;
+}
+#personal .menu-items button { width: 100%; text-align: start; padding: .4rem .6rem; border-radius: .45rem; }
+#personal .menu-items button:focus-visible { background: var(--tint); }
+#personal .menu-items small { display: block; padding: .35rem .6rem; }
+#personal main { flex: 1; min-width: 0; padding: 0 var(--gutter) 1.2rem; }
+#personal h1, #personal h2, #personal h3, #personal p { margin: 0; }
+#personal h1 { font-size: clamp(1.65rem, 7vw, 1.9rem); line-height: 1.15; letter-spacing: -.025em; }
+#personal h2 { font-size: 1.075rem; line-height: 1.25; }
+#personal .hero {
+  margin: .75rem 0;
+  padding: .85rem;
+  border-radius: .85rem;
+  background: var(--header);
+  color: white;
+}
+#personal .hero p { margin-top: .3rem; color: var(--header-secondary); font-size: .9rem; }
+#personal .page-title {
+  margin: 0 calc(-1 * var(--gutter)) .8rem;
+  padding: .65rem var(--gutter) 1rem;
+  border-radius: 0;
+}
+#personal .section, #personal .note-card, #personal .record {
+  min-width: 0;
+  padding: .8rem;
+  border: 1px solid var(--line);
+  border-radius: .9rem;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+#personal .section h2 { margin-bottom: .25rem; }
+#personal .overview-modules { display: grid; gap: .7rem; }
+#personal .agenda-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .2rem .75rem; }
+#personal .agenda-range { font-size: .8rem; }
+#personal .agenda-day + .agenda-day { border-top: 1px solid var(--line); padding-top: .5rem; }
+#personal .agenda-day h3 { margin: .55rem 0 .1rem; color: var(--green); font-size: .9rem; }
+#personal .event, #personal .note { width: 100%; text-align: start; }
+#personal .event {
+  display: grid;
+  grid-template-columns: 4.15rem minmax(0, 1fr);
+  align-items: start;
+  gap: .5rem;
+  padding: .6rem 0;
+}
+#personal .event + .event, #personal .notes-preview .note + .note, #personal .agenda-compact .events + .events { border-top: 1px solid var(--line); }
+#personal .event-time, #personal .event-date { color: var(--green); font-weight: 700; font-variant-numeric: tabular-nums; }
+#personal .event-date { font-size: .85rem; }
+#personal .event-compact { grid-template-columns: 3.05rem minmax(0, 1fr) 3rem; align-items: baseline; gap: .45rem; }
+#personal .event-compact .event-time { text-align: end; font-size: .8rem; color: var(--secondary); font-weight: 500; }
+#personal .event small, #personal .note small { display: block; }
+#personal .notes { display: grid; gap: .55rem; }
+#personal .notes-preview { gap: 0; }
+#personal .notes-preview .note { padding: .55rem 0; }
+#personal .note-card { padding: .8rem; }
+#personal .note small {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: .15rem;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+#personal .empty { padding: .4rem 0; color: var(--secondary); }
+#personal .month-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 44px 44px;
+  align-items: center;
+  gap: .25rem;
+  margin-bottom: .55rem;
+}
+#personal .month-controls h2 { margin: 0; }
+#personal .month-controls button, #personal .action, #personal .back, #personal .controls button {
+  padding: .4rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--paper);
+  color: var(--green);
+  font-weight: 650;
+}
+#personal .month-controls button { padding-inline: .4rem; font-size: .875rem; background: var(--tint); }
+#personal .month-controls [data-month] { padding: 0; font-size: 1.4rem; line-height: 1; }
+#personal .days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  text-align: center;
+}
+#personal .days > span { padding-block: .3rem; color: var(--secondary); font-size: .75rem; font-weight: 700; }
+#personal .days button { display: grid; place-items: center; padding: 0; font-size: .9rem; font-variant-numeric: tabular-nums; }
+#personal .day-number {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100% - 2px, 2.1rem);
+  height: 2.15rem;
+  padding-bottom: .16rem;
+  border: 1px solid transparent;
+  border-radius: .55rem;
+}
+#personal .days [aria-current="date"] .day-number { border-color: var(--green); font-weight: 750; }
+#personal .days [aria-pressed="true"] .day-number { background: var(--pressed); color: white; font-weight: 750; }
+#personal .day-number[data-events]::after {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--green);
+  content: "";
+}
+#personal .days [aria-pressed="true"] .day-number::after { background: white; }
+#personal .periods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .2rem;
+  margin-block: .65rem;
+  padding: .2rem;
+  border: 1px solid var(--line);
+  border-radius: .7rem;
+  background: var(--paper);
+}
+#personal .periods button { padding: .35rem .2rem; border-radius: .5rem; font-size: .9rem; }
+#personal .periods [aria-pressed="true"], #personal .primary { background: var(--pressed); color: white; font-weight: 700; }
+#personal .controls .primary { background: var(--pressed); color: white; }
+#personal .bottom { position: sticky; z-index: 1; bottom: 0; }
+#personal nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .3rem;
+  padding: .35rem .55rem max(.35rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+#personal nav button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: .25rem;
+  min-height: 47px;
+  padding: .25rem .1rem;
+  color: var(--secondary);
+  font-size: .8rem;
+}
+#personal nav button[aria-current="page"] { background: var(--tint); color: var(--green); border-radius: .65rem; font-weight: 750; }
+#personal .nav-icon { position: relative; display: block; width: 16px; height: 16px; border: 1.5px solid; border-radius: 3px; }
+#personal .nav-overview { background: linear-gradient(currentColor,currentColor) center / 1.5px 100% no-repeat, linear-gradient(currentColor,currentColor) center / 100% 1.5px no-repeat; }
+#personal .nav-calendar::before, #personal .nav-note::before {
+  position: absolute;
+  inset: 4px 0 auto;
+  border-top: 1.5px solid;
+  content: "";
+}
+#personal .nav-calendar::after {
+  position: absolute;
+  top: -3px;
+  left: 2px;
+  width: 1.5px;
+  height: 5px;
+  color: inherit;
+  background: currentColor;
+  box-shadow: 7px 0 currentColor;
+  content: "";
+}
+#personal .nav-note::before { inset: 3px 3px auto; box-shadow: 0 3px, 0 6px; }
+#personal:has(.create:not([hidden])) main { padding-bottom: 4.75rem; }
+#personal .create {
+  position: absolute;
+  inset-inline-end: max(var(--gutter), env(safe-area-inset-right));
+  bottom: calc(100% + .6rem);
+  display: grid;
+  place-items: center;
+  width: 3.15rem;
+  height: 3.15rem;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--pressed);
+  color: white;
+  font-size: 1.85rem;
+  line-height: 1;
+  box-shadow: 0 3px 6px #14271c45;
+}
+#personal #google-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+#personal #google-summary p { flex: 1 1 8rem; color: var(--secondary); font-size: .855rem; }
+#personal #google-summary button { font-size: .875rem; }
+#personal form { display: grid; gap: .7rem; margin-top: .7rem; }
+#personal form label { display: grid; gap: .25rem; min-width: 0; }
+#personal form .check { display: flex; align-items: center; gap: .4rem; min-height: 44px; }
+#personal input:not([type=checkbox]), #personal select, #personal textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: .45rem;
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+}
+#personal textarea { min-height: 9rem; resize: vertical; }
+#personal .times { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .55rem; }
+#personal .controls { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .65rem; }
+#personal .record { margin-top: .7rem; white-space: pre-wrap; }
+#personal .back { margin-top: .7rem; }
+#personal .notice { margin: .65rem var(--gutter) 0; color: var(--secondary); font-size: .875rem; }
+#personal main > p + .controls { margin-bottom: .6rem; }
+#personal:has(form[data-form="edit"] :is(input,textarea,select):focus) .bottom { position: static; }
+@media (max-width: 359px) {
+  #personal .section { padding: .65rem; }
+  #personal .month-controls { gap: .15rem; }
+  #personal .month-controls h2 { font-size: .95rem; }
+}
+@media (forced-colors: active) {
+  #personal .panel-mark, #personal nav [aria-current="page"], #personal .days [aria-pressed="true"] .day-number,
+  #personal .periods [aria-pressed="true"], #personal .create { border: 2px solid ButtonText; }
+  #personal .day-number[data-events]::after { forced-color-adjust: none; background: CanvasText; }
+}
+#personal #google-dialog { width:min(92vw,28rem); max-height:85dvh; overflow:auto; border:1px solid var(--line); border-radius:1rem; padding:1rem; color:var(--text); background:var(--paper); }
+#google-dialog::backdrop { background:#0008; }
+#google-dialog .stack { display:grid; gap:.65rem; }
+</style>
 </head>
 <body>
-  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-    <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
-    <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18m-12 5h2m3 0h2"/></symbol>
-    <symbol id="icon-quality" viewBox="0 0 24 24"><path d="M6 3h12a2 2 0 0 1 2 2v16H4V5a2 2 0 0 1 2-2Z"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
-    <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 6c-2-2-5-3-9-2v14c4-1 7 0 9 2 2-2 5-3 9-2V4c-4-1-7 0-9 2v14"/></symbol>
-    <symbol id="icon-techcards" viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/></symbol>
-    <symbol id="icon-economy" viewBox="0 0 24 24"><path d="M4 20V10h4v10M10 20V4h4v16M16 20V7h4v13M2 20h20"/></symbol>
-    <symbol id="icon-sales" viewBox="0 0 24 24"><path d="m3 17 6-6 4 3 8-10M15 4h6v6"/></symbol>
-    <symbol id="icon-stock" viewBox="0 0 24 24"><path d="M4 6h16v15H4zM3 3h18v3H3M9 11h6M9 15h6"/></symbol>
-    <symbol id="icon-training" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5-10 5L2 8M6 10v7c4 3 8 3 12 0v-7M22 8v9"/></symbol>
-    <symbol id="icon-equipment" viewBox="0 0 24 24"><path d="m14 4-3 3 6 6 3-3M11 7 4 18a2 2 0 0 0 3 3l9-8M14 4c3-2 8 0 7 5l-1 1"/></symbol>
-    <symbol id="icon-suppliers" viewBox="0 0 24 24"><path d="M3 7h11v12H3zM14 11h4l3 4v4h-7M5 7V4h7v3M7 19v2M18 19v2"/></symbol>
-    <symbol id="icon-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
-    <symbol id="icon-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
-    <symbol id="icon-point" viewBox="0 0 24 24"><path d="m3 10 2-6h14l2 6m-17 0v10h16V10M3 10h18m-12 9v-6h6v6"/></symbol>
-    <symbol id="icon-sections" viewBox="0 0 24 24"><path stroke-linecap="round" d="M8 5h12M8 12h12M8 19h12M4 5h.01M4 12h.01M4 19h.01"/></symbol>
-    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
-    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-  </svg>
-  <header class="app-header">
-    <div class="wrap header-inner">
-      <h1 class="brand-title"><a href="#overview" class="brand" aria-label="Работа. Открыть обзор"><span class="mark" aria-hidden="true">03</span>Работа</a></h1>
-      <button type="button" id="app-menu" class="menu-button" aria-label="Настройки" aria-haspopup="dialog" aria-controls="app-menu-dialog">⋯</button>
+<div id="personal">
+  <header><button type="button" class="brand" data-page="overview" aria-label="Работа. Открыть обзор"><span class="panel-mark" aria-hidden="true">03</span>Работа</button><details class="menu">
+    <summary aria-label="Меню">⋯</summary>
+    <div class="menu-items">
+      <button type="button" id="google-open">Синхронизация Google</button>
+      <button type="button" data-action="backups">Копии данных</button>
+      <button type="button" data-action="install" hidden>Установить приложение</button>
+      <small>Сборка 2.0.0</small>
     </div>
-  </header>
-  <main class="wrap">
-    <p id="app-error" class="error" role="alert" hidden></p>
-    <section data-page="overview">
-      <div class="page-heading"><h2>Обзор</h2><p class="quiet" id="today-label"></p></div>
-      <div class="stack">
-        <section class="module stack" id="management-priorities" aria-label="Требует внимания"></section>
-        <section id="overview-start" class="module stack dev-feature" aria-label="Начало работы" hidden>
-          <h3>Начало работы</h3>
-          <p id="overview-start-copy"></p>
-          <div class="quality-actions">
-            <a class="action primary" href="#development">Открыть следующий шаг</a>
-            <button type="button" id="start-import" class="action">Загрузить настройки</button>
-          </div>
-        </section>
-        <section class="module stack" id="working-deadlines" aria-label="Рабочие сроки"></section>
-        <section class="module stack" aria-label="События">
-          <div><h3>Сегодня</h3><div id="events-today"></div></div>
-          <details class="agenda-week"><summary id="overview-week-label">До конца недели</summary><div id="events-week"></div></details>
-        </section>
-        <a class="module overview-readiness" id="bar-overview" href="#development" hidden><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-point"/></svg><div class="readiness-copy"></div><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <section class="module overview-google" aria-label="Резервная копия Google и календарь">
-          <div class="google-overview-row">
-            <div><h3>Google</h3><p id="google-overview-text" class="quiet" role="status">Проверяю состояние подключения…</p></div>
-            <button type="button" id="google-overview-sync" class="action">Настроить синхронизацию</button>
-          </div>
-        </section>
-      </div>
-    </section>
-    <section data-page="calendar" hidden>
-      <div class="page-heading"><h2>Календарь</h2></div>
-      <div class="stack">
-        <section class="module">
-          <div class="month-nav">
-            <button id="month-previous" type="button" class="icon-button" aria-label="Предыдущий месяц"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-left"/></svg></button>
-            <h3 id="month-label" aria-live="polite"></h3>
-            <button id="month-next" type="button" class="icon-button" aria-label="Следующий месяц"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></button>
-          </div>
-          <div id="date-grid" class="calendar-grid" aria-label="Дни месяца"></div>
-        </section>
-        <section class="module"><h3 id="day-label" aria-live="polite"></h3><div id="events-day"></div><div id="calendar-work-day" class="quality-fields calendar-work"></div></section>
-        <section class="module"><h3>События месяца</h3><div id="events-month"></div><div id="calendar-work-month" class="quality-fields calendar-work"></div></section>
-      </div>
-    </section>
-    <section data-page="quality" hidden>
-      <div class="page-heading"><h2>Качество</h2><p class="quiet">Проверки напитков по точкам</p></div>
-      <div class="stack">
-        <div class="quality-actions" id="quality-start"></div>
-        <section class="module" aria-label="Сводка качества напитков"><h3>Сводка проверок</h3><p class="quiet" id="quality-count">Журнал проверок</p></section>
-        <div class="quality-actions"><a class="action" id="quality-techcards-link" href="#techcards">Техкарты</a></div>
-        <section class="stack" aria-label="Журнал проверок">
-          <div id="quality-journal-title"></div>
-          <p id="quality-storage-message" class="quiet" role="status"></p>
-          <div id="quality-checks" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="techcards" hidden>
-      <div class="page-heading"><h2>Техкарты</h2></div>
-      <div class="stack">
-        <div id="techcards-start"></div>
-        <p id="techcards-message" class="quiet" role="status"></p>
-        <div id="techcards-list" class="stack"></div>
-      </div>
-    </section>
-    <section data-page="economy" hidden>
-      <div class="page-heading"><h2>Экономика</h2></div>
-      <div class="stack">
-        <p id="economy-message" class="error" role="alert"></p>
-        <section id="economy-review" class="module stack" aria-label="План-факт и разбор периода"></section>
-        <div class="quality-actions"><a class="action" id="economy-sales-link" href="#sales">Продажи и отчёт</a></div>
-        <div class="quality-actions"><a class="action" id="economy-stock-link" href="#stock">Списания и сверка</a></div>
-        <div class="quality-actions"><a class="action" id="economy-suppliers-link" href="#suppliers">Сырьё и поставщики</a></div>
-        <details class="module">
-          <summary>Закупочные цены</summary>
-          <div class="quality-details stack">
-            <div id="economy-price-start"></div>
-            <div id="economy-prices-list" class="stack"></div>
-          </div>
-        </details>
-        <section class="stack" aria-label="Себестоимость порции">
-          <div id="economy-calculation-title"></div>
-          <div id="economy-calculation" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="sales" hidden>
-      <div class="page-heading"><h2>Продажи и отчёт</h2></div>
-      <div class="stack">
-        <div id="sales-start"></div>
-        <div id="sales-filters" class="module quality-fields"></div>
-        <p id="sales-message" class="error" role="alert"></p>
-        <div id="sales-report" class="stack"></div>
-        <section class="stack" aria-label="Дневные записи">
-          <h3>Дневные записи</h3>
-          <div id="sales-rows" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="stock" hidden>
-      <div class="page-heading"><h2>Списания и сверка</h2></div>
-      <div class="stack">
-        <p id="stock-message" class="error" role="alert"></p>
-        <section class="stack" aria-label="Списания">
-          <h3>Списания</h3>
-          <div id="stock-writeoff-start"></div>
-          <div id="stock-writeoffs" class="stack"></div>
-        </section>
-        <section class="stack" aria-label="Сверка расхода">
-          <h3>Сверка расхода</h3>
-          <div id="stock-check-start"></div>
-          <div id="stock-checks" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="training" hidden>
-      <div class="page-heading"><h2>Обучение</h2></div>
-      <div class="stack">
-        <p id="training-message" class="error" role="alert"></p>
-        <section id="training-programs" class="module stack" aria-label="Программы ролей"></section>
-        <section class="stack" aria-label="Команда">
-          <h3>Команда</h3>
-          <div id="training-team-start"></div>
-          <div id="training-team" class="stack"></div>
-        </section>
-        <section class="stack" aria-label="Навыки">
-          <h3>Навыки</h3>
-          <div id="training-skill-start"></div>
-          <div id="training-skills" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="equipment" hidden>
-      <div class="page-heading"><h2>Оборудование</h2></div>
-      <div class="stack">
-        <div id="equipment-filter" class="module"></div>
-        <p id="equipment-message" class="error" role="alert"></p>
-        <section class="stack" aria-label="Паспорта">
-          <h3>Паспорта</h3>
-          <div id="equipment-passports-start"></div>
-          <div id="equipment-passports" class="stack"></div>
-        </section>
-        <section class="stack" aria-label="Обслуживание">
-          <h3>Обслуживание</h3>
-          <div id="equipment-jobs-start"></div>
-          <div id="equipment-jobs" class="stack"></div>
-        </section>
-        <section class="stack" aria-label="Вода">
-          <h3>Вода</h3>
-          <div id="equipment-water-start"></div>
-          <div id="equipment-water" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="suppliers" hidden>
-      <div class="page-heading"><h2>Сырьё и поставщики</h2></div>
-      <div class="stack">
-        <p id="suppliers-message" class="error" role="alert"></p>
-        <section class="stack" aria-label="Поставщики">
-          <h3>Поставщики</h3>
-          <div id="suppliers-start"></div>
-          <div id="suppliers-list" class="stack"></div>
-        </section>
-        <section class="stack" aria-label="Требования к сырью">
-          <h3>Требования к сырью</h3>
-          <div id="suppliers-specs" class="stack"></div>
-        </section>
-        <section class="stack" aria-label="Партии и образцы">
-          <h3>Партии и образцы</h3>
-          <div id="suppliers-sample-start"></div>
-          <div id="suppliers-samples" class="stack"></div>
-        </section>
-      </div>
-    </section>
-    <section data-page="operations" hidden>
-      <div class="page-heading"><h2>Работа точек</h2></div>
-      <div id="operations-content" class="stack"></div>
-    </section>
-    <section data-page="launches" hidden>
-      <div class="page-heading"><h2>Запуски</h2></div>
-      <p id="launch-message" class="error" role="alert"></p>
-      <div id="launch-content" class="stack"></div>
-    </section>
-    <section data-page="development" hidden>
-      <div class="page-heading"><h2>Развитие</h2><p class="quiet">Карта направления и рабочие миссии</p></div>
-      <div class="stack">
-        <div id="development-content" class="stack"></div>
-        <p id="management-message" class="error" role="alert"></p>
-        <details class="module" id="management-comparison">
-          <summary>Сравнение точек</summary>
-          <div id="management-comparison-content" class="quality-details"></div>
-        </details>
-        <details class="module" id="management-actions">
-          <summary>План улучшений</summary>
-          <div id="management-actions-content" class="quality-details"></div>
-        </details>
-      </div>
-    </section>
-    <section data-page="instruction" hidden>
-      <div class="page-heading"><h2>Инструкция</h2><p class="quiet">Шеф-бариста сети спешелти-кофеен</p></div>
-      <div class="stack">
-        <div id="instruction-role" class="stack"></div>
-        <details class="module" open>
-          <summary>Назначение должности</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста обеспечивает стабильное качество всего меню напитков, включая софт-позиции, во всех кофейнях сети, развивает кофейное направление и управляет его экономикой в пределах своих полномочий.</p>
-            <p><strong>Основные результаты работы шеф-бариста</strong></p>
-            <ul>
-              <li>Кофейни готовят и подают напитки по единым стандартам сети.</li>
-              <li>Бариста умеют применять эти стандарты в смене, а их навыки подтверждены на практике.</li>
-              <li>Отклонения в качестве выявляются, устраняются и проходят повторную проверку.</li>
-              <li>Изменения в ассортименте и способах приготовления оцениваются по качеству, воспроизводимости и себестоимости до запуска. После запуска шеф-бариста проверяет результат на точках.</li>
-              <li>Шеф-бариста отслеживает продажи, себестоимость напитков, расход сырья и списания. По этим данным он выявляет причины отклонений и предлагает меры, которые улучшают экономику при сохранении стандартов качества.</li>
-            </ul>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Зоны ответственности</summary>
-          <div class="guide-copy">
-            <ol>
-              <li><strong>Качество напитков.</strong> Проверяет вкус, приготовление и подачу в кофейнях сети. Фиксирует отклонения, определяет необходимые действия и проверяет результат.</li>
-              <li><strong>Ассортимент и стандарты.</strong> Разрабатывает и актуализирует рецептуры, техкарты и критерии выдачи. Организует тестирование новых напитков и сопровождает их внедрение на точках.</li>
-              <li><strong>Обучение бариста.</strong> Определяет требования к навыкам, организует обучение и оценивает, как сотрудники применяют стандарты в смене. Назначает повторную отработку по итогам проверки.</li>
-              <li><strong>Оборудование и вода.</strong> Проверяет, как состояние техники и параметры воды влияют на приготовление. Фиксирует отклонения, координирует работу с ответственными за обслуживание и проверяет качество напитков после устранения проблемы.</li>
-              <li><strong>Сырьё и поставки.</strong> Формулирует требования к зерну и другим ингредиентам, оценивает образцы и согласованные замены, отслеживает их влияние на вкус, стабильность приготовления и себестоимость.</li>
-              <li><strong>Экономика кофейного направления.</strong> Анализирует продажи и себестоимость по позициям, отслеживает расход сырья и списания. Оценивает экономику изменений до запуска и после внедрения. Предлагает меры по ассортименту, рецептурам и расходу сырья в пределах своих полномочий.</li>
-            </ol>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Контроль качества напитков на точке</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста проверяет, как кофейня готовит и подаёт напитки в обычной смене. Для проверки использует действующую техкарту и критерии качества сети.</p>
-            <ol>
-              <li><strong>Подготовка.</strong> Выбирает точку, напиток и цель проверки. Сверяет актуальную техкарту и открытые замечания по точке.</li>
-              <li><strong>Проверка.</strong> Наблюдает приготовление, оценивает вкус и подачу. Для каждого критерия задаёт допустимый диапазон и единицу измерения либо конкретный наблюдаемый признак. Результаты — «Соответствует», «Отклонение» или «Не проверено» с причиной пропуска и планом повторной проверки.</li>
-              <li><strong>Действие.</strong> При отклонении фиксирует стандарт и наблюдение. Определяет исправление, ответственного, срок и способ повторной проверки. Если проблему можно исправить сразу, проверяет результат в той же смене.</li>
-              <li><strong>Повторная проверка.</strong> Использует исходный критерий, фиксирует дату и результат. Закрывает замечание после подтверждения соответствия. При повторном отклонении уточняет причину и назначает следующее действие.</li>
-            </ol>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Техкарты и стандарты напитков</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста разрабатывает и актуализирует техкарты напитков. Для каждого размера порции в техкарте указываются ингредиенты и их количество, порядок приготовления, требования к подаче и критерии проверки качества.</p>
-            <p>Каждый критерий описывает, что именно проверять и как определить соответствие. Для замера указываются единица измерения, допустимые границы и способ замера. Для вкуса, текстуры и подачи указывается конкретный наблюдаемый признак и способ его оценить.</p>
-            <p>При изменении рецептуры или критериев шеф-бариста готовит новую версию техкарты, проверяет её на практике и вводит в работу после согласования. В записи о проверке сохраняются версия техкарты и критерии, которые применялись в момент проверки.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Расчёт себестоимости порции</summary>
-          <div class="guide-copy">
-            <p>Цены и расходы утверждает руководитель. При смене поставщика решение согласуют руководитель и менеджер по закупкам. При вводе цены укажи основание в истории закупочной позиции. Одобрение пробы фиксирует качество сырья.</p>
-            <p>Шеф-бариста рассчитывает прямую себестоимость порции по составу действующей техкарты и закупочным ценам. Для каждого ингредиента фиксирует цену, количество в закупочной упаковке, единицу измерения и дату, с которой действует цена.</p>
-            <p>Стоимость ингредиента на порцию определяется по количеству, указанному в техкарте. Расчёт считается полным, когда для каждого ингредиента есть цена и совместимая единица измерения. Шеф-бариста использует расчёт, чтобы оценить влияние изменений рецептуры и закупочных цен на себестоимость напитка.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Продажи, фудкост и маржинальность напитков</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста анализирует продажи напитков по точкам, размерам порций и периодам. Берёт количество порций и выручку после скидок и возвратов из отчёта кассы. Отдельно учитывает приготовленные порции, по которым был оформлен возврат, если эти данные доступны.</p>
-            <p>Панель рассчитывает прямую себестоимость по техкарте и закупочным ценам на дату продажи. Маржинальный доход равен выручке за вычетом прямой себестоимости. Фудкост — доля стоимости сырья в выручке. Упаковка входит в прямую себестоимость и влияет на маржинальность. Маржинальность — доля маржинального дохода в выручке. Оба процента рассчитываются при положительной выручке.</p>
-            <p>Строки с неизвестными приготовленными возвратами остаются в отчёте. Панель показывает нижнюю оценку затрат по известным порциям. Нормативный фудкост требует классификации закупочных позиций как сырья или упаковки. В отчёте видно покрытие расчёта. Подтверждённый факт за неделю или месяц открывается в «Экономике» после сверки периода.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Списания и сверка расхода сырья</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста фиксирует списания и расход сырья вне продаж, например при настройке, дегустации, обучении или порче. Для каждой записи указывает дату, точку, ингредиент, количество, единицу измерения и причину.</p>
-            <p>Для сверки определяет фактический расход по начальному и конечному остаткам с учётом поставок, перемещений и возвратов поставщику. Расчётный расход по продажам определяет по количеству приготовленных порций и техкартам, действовавшим на даты продаж. К нему добавляет зарегистрированный расход вне продаж.</p>
-            <p>Приготовленные возвращённые порции, уже учтённые в продажах, включаются в расчёт один раз. Если данных для сверки недостаточно, шеф-бариста отмечает, чего не хватает. По необъяснённому расхождению проверяет остатки, движения и записи о расходе, затем фиксирует причину или следующее действие.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Обучение и проверка навыков бариста</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста определяет, какие навыки нужны для работы по стандартам сети. Для каждого навыка описывает практическое задание, условия его выполнения и критерии, по которым можно подтвердить результат.</p>
-            <p>Во время обучения шеф-бариста показывает действие, даёт бариста выполнить его самостоятельно и разбирает результат. При проверке фиксирует дату, точку, проверяющего, фактические результаты по критериям и итог. Навык подтверждается, когда выполнены все обязательные критерии без подсказок.</p>
-            <p>Если критерий не выполнен, шеф-бариста назначает конкретную отработку и дату повторной проверки. В истории сохраняются исходный результат, обратная связь и последующие попытки. Период повторной проверки можно назначить и для подтверждённого навыка, например после изменения стандарта.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Оборудование и вода</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста ведёт перечень кофейного оборудования и систем водоподготовки по точкам. Для каждой единицы фиксирует модель, историю обслуживания, ответственного и дату следующей работы. Сроки и перечень работ сверяет с документацией производителя и регламентом сети.</p>
-            <p>При неисправности записывает, что наблюдалось, когда это произошло и как это повлияло на работу точки. Передаёт задачу ответственному и фиксирует результат обслуживания. Приёмка ремонта включает измеримый критерий и подтверждённую проверку напитка на связанной технике. Рабочий режим фиксируется по согласованному порядку точки.</p>
-            <p>При контроле воды записывает место отбора, показатель, единицу измерения, метод и результат. Сравнивает замер с диапазоном, установленным для этой точки и оборудования. При отклонении фиксирует действие, ответственного и дату повторного замера.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Сырьё и поставщики</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста формулирует требования к зерну и другим ингредиентам, которые используются в техкартах. Для каждой закупочной позиции фиксирует, что нужно проверить при получении новой партии или выборе замены.</p>
-            <p>При проверке партии или образца записывает поставщика, дату, номер партии при наличии, условия проверки и фактические результаты. Оценивает продукт по заданным критериям и фиксирует решение с обоснованием. Для предлагаемой замены также указывает, какие напитки затронуты и как изменится себестоимость порции.</p>
-            <p>После согласования замены шеф-бариста фиксирует дату перехода, обновляет закупочные данные и при необходимости выпускает новую версию техкарты. Результаты предыдущих проверок сохраняются в истории.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Контроль рабочих сроков</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста регулярно просматривает открытые работы и проверки по точкам. Сначала разбирает открытые остановки и ограничения в блоке «Требует внимания». Просрочки, сроки на сегодня и ближайшие задачи открываются в блоке «Рабочие сроки».</p>
-            <p>После выполнения действия фиксирует результат в исходной записи. Если требуется ещё одна проверка, указывает, что проверить и к какой дате. Для открытого действия без даты определяет следующий шаг и назначает срок.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Планирование работы в календаре</summary>
-          <div class="guide-copy">
-            <p>После подключения Google Календаря панель отправляет события и рабочие действия со сроками в календарь «03 РАБОТА». Изменения и удаление выполняются в панели. Прямые записи в Google Календаре остаются самостоятельными и в панель не загружаются. Закрытые рабочие действия убираются из зеркала.</p>
-            <p>Время начала и окончания вводится по Москве (Europe/Moscow). Если окончание не указано, в зеркале событие занимает один час. Рабочие действия из журналов показываются на весь день.</p>
-            <p>Шеф-бариста использует календарь для планирования визитов, обучения, обслуживания и повторных проверок. Рабочие действия с назначенной датой отображаются в календаре автоматически.</p>
-            <p>При переносе срока изменяет дату в исходной записи или через календарь. После выполнения фиксирует результат в соответствующем журнале. Закрытое действие исчезает из списка предстоящих работ, а история его выполнения сохраняется в журнале.</p>
-          </div>
-        </details>
-        <details class="module">
-          <summary>Резервное копирование рабочих данных</summary>
-          <div class="guide-copy">
-            <p>Шеф-бариста подключает Google через меню панели и выбирает папку «03 РАБОТА». Панель отправляет изменения автоматически, пока открыта, есть интернет и действует доступ Google. В обзоре проверяет состояние отправки и время последней успешной копии.</p>
-            <p>Если доступ истёк, нажимает «Подключить Google». Если копию обновил другой браузер, сначала восстанавливает её и проверяет объединённые записи. На новом устройстве восстановление запускает вручную. Закрытая панель не отправляет данные по расписанию.</p>
-            <p>Шеф-бариста сохраняет резервную копию данных панели перед сменой устройства, очисткой браузера и существенными изменениями рабочих записей.</p>
-            <p>Для восстановления выбирает файл копии и проверяет показанный панелью состав данных. Панель добавляет отсутствующие записи вместе с необходимыми связями. Совпадающие записи сохраняют текущую версию.</p>
-            <p>После восстановления шеф-бариста проверяет основные рабочие записи и дату последней копии.</p>
-          </div>
-        </details>
-      </div>
-    </section>
-  </main>
-  <button id="add-event" type="button" class="add-event" aria-label="Создать событие"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-plus"/></svg></button>
-  <div class="bottom">
-    <nav id="section-nav" class="wrap nav" aria-label="Разделы панели">
-      <a href="#overview" aria-current="page"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-grid"/></svg><span>Обзор</span></a>
-      <a href="#calendar"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-calendar"/></svg><span>Календарь</span></a>
-      <a href="#operations"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-point"/></svg><span class="breakable-label">Работа точек</span></a>
-      <a href="#development"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Развитие</span></a>
-      <button type="button" id="sections-open" aria-haspopup="dialog" aria-controls="sections-dialog"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sections"/></svg><span>Разделы</span></button>
-    </nav>
-  </div>
-  <dialog id="sections-dialog" class="sheet" aria-labelledby="sections-title">
-    <div class="stack">
-      <div class="sheet-heading">
-        <h2 id="sections-title">Разделы</h2>
-        <button type="button" id="sections-close" class="icon-button" aria-label="Закрыть разделы"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-close"/></svg></button>
-      </div>
-      <section class="sheet-group"><h3>На точках</h3><div class="sheet-links">
-        <a href="#quality" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Качество</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#training" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-training"/></svg><span>Обучение</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#equipment" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-equipment"/></svg><span>Оборудование</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-      </div></section>
-      <section class="sheet-group"><h3>Стандарты и запуски</h3><div class="sheet-links">
-        <a href="#launches" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Запуски</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#techcards" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-techcards"/></svg><span>Техкарты</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#suppliers" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-suppliers"/></svg><span>Сырьё и поставщики</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-      </div></section>
-      <section class="sheet-group"><h3>Учёт</h3><div class="sheet-links">
-        <a href="#economy" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-economy"/></svg><span>Экономика</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#sales" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-sales"/></svg><span>Продажи и отчёт</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#stock" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-stock"/></svg><span>Списания и сверка</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-      </div></section>
-    </div>
-  </dialog>
-  <dialog id="event-editor" aria-labelledby="editor-title">
-    <form id="event-form">
-      <h2 id="editor-title">Новое событие</h2>
-      <label class="field"><span>Название</span><input name="title" type="text" required maxlength="160"></label>
-      <label class="field"><span>Дата</span><input name="date" type="date" required min="0001-01-01" max="9999-12-31"></label>
-      <label class="check"><input name="allDay" type="checkbox">Весь день</label>
-      <div class="time-fields" id="time-fields">
-        <label class="field"><span>Начало</span><input name="start" type="time" required></label>
-        <label class="field"><span>Окончание</span><input name="end" type="time"></label>
-      </div>
-      <div class="quality-actions"><button type="button" class="quality-help" aria-label="Пояснение: время в Google Календаре" data-help="Вводи начало и окончание по московскому времени. Google Календарь может показывать событие в часовом поясе своего интерфейса. Без времени окончания событие занимает один час. Событие на весь день и рабочее действие из журнала показываются на весь день."><span>?</span></button><span class="quiet">Время по Москве</span></div>
-      <p id="form-error" class="error" role="alert" hidden></p>
-      <div class="actions">
-        <button type="button" id="delete-event" class="action danger" hidden>Удалить</button>
-        <button type="button" id="cancel-event" class="action">Отмена</button>
-        <button type="submit" class="action primary">Сохранить</button>
-      </div>
-    </form>
-  </dialog>
-  <dialog id="quality-editor" aria-labelledby="quality-editor-title">
-    <form id="quality-form">
-      <h2 id="quality-editor-title" tabindex="-1">Проверка напитка</h2>
-      <div id="quality-editor-body" class="quality-fields"></div>
-      <p id="quality-error" class="error" role="alert" hidden></p>
-      <div class="actions">
-        <div id="quality-cancel"></div>
-        <div class="quality-actions"><button type="submit" id="quality-save" class="action primary">Сохранить</button></div>
-      </div>
-    </form>
-  </dialog>
-  <dialog id="app-menu-dialog" class="sheet" aria-labelledby="app-menu-title">
-    <div class="stack">
-      <div class="sheet-heading">
-        <h2 id="app-menu-title">Настройки</h2>
-        <button type="button" id="app-menu-close" class="icon-button" aria-label="Закрыть настройки"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-close"/></svg></button>
-      </div>
-      <section class="sheet-group"><h3>Данные</h3><div class="sheet-links">
-        <button type="button" id="google-open" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-equipment"/></svg><span>Настройки Google</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></button>
-        <button type="button" id="backup-open" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-stock"/></svg><span>Копии данных</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></button>
-      </div></section>
-      <section class="sheet-group"><h3>Панель</h3><div class="sheet-links">
-        <button type="button" id="install-app" class="sheet-link" hidden><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Установить панель</span></button>
-        <a href="./update.html" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-quality"/></svg><span>Проверить обновление</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-        <a href="#instruction" class="sheet-link"><svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-book"/></svg><span>Инструкция</span><svg class="icon chevron" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#icon-right"/></svg></a>
-      </div></section>
-      <section class="sheet-group"><h3>Помощь</h3><div class="sheet-links">
-        <label class="sheet-link preference" for="show-hints">Подсказки к полям<input type="checkbox" id="show-hints" aria-describedby="hint-setting-note"></label>
-        <p class="quiet settings-note" id="hint-setting-note">По кнопке «?» рядом с полем.</p>
-      </div></section>
-      <p class="quiet">Панель 03 · Версия 1.1 · Сборка 36</p>
-    </div>
-  </dialog>
+  </details></header>
+  <p class="notice" role="status" hidden></p>
+  <main></main>
   <dialog id="google-dialog" aria-labelledby="google-title">
     <div class="stack">
       <h2 id="google-title">Google Диск и Календарь</h2>
@@ -765,15 +367,15 @@
           <p class="quiet">Можно заполнить поля из «Личного», если обе панели открываются в одном Chrome.</p>
           <button type="button" id="google-use-personal" class="action">Заполнить из «Личного»</button>
           <div class="quality-field">
-            <div class="quality-actions"><label for="google-client-id">Client ID</label><button type="button" class="quality-help" aria-label="Пояснение: Client ID" data-help="Идентификатор веб-клиента OAuth из проекта Google Cloud. Используй тот же проект, что и для «Личного»."><span>?</span></button></div>
+            <div class="quality-actions"><label for="google-client-id">Client ID</label></div>
             <input id="google-client-id" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
           </div>
           <div class="quality-field">
-            <div class="quality-actions"><label for="google-project-number">Номер проекта</label><button type="button" class="quality-help" aria-label="Пояснение: Номер проекта" data-help="Числовой номер проекта Google Cloud. Он нужен для доступа к папке через Google Picker."><span>?</span></button></div>
+            <div class="quality-actions"><label for="google-project-number">Номер проекта</label></div>
             <input id="google-project-number" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" required>
           </div>
           <div class="quality-field">
-            <div class="quality-actions"><label for="google-api-key">API key для выбора папки</label><button type="button" class="quality-help" aria-label="Пояснение: API key для выбора папки" data-help="Ключ Google Picker из того же проекта. Ограничь ключ адресом https://htongrad.github.io/* и API Google Picker."><span>?</span></button></div>
+            <div class="quality-actions"><label for="google-api-key">API key для выбора папки</label></div>
             <input id="google-api-key" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
           </div>
           <button type="submit" class="action primary">Сохранить настройки</button>
@@ -787,419 +389,607 @@
         <h3>Календарь «03 РАБОТА»</h3>
         <p id="google-calendar-status" role="status"></p>
         <p id="google-calendar-last-sync" class="quiet"></p>
-        <p class="quiet">События отправляются по московскому времени. Событие без окончания занимает один час.</p>
+        <p class="quiet">События отправляются по московскому времени.</p>
       </section>
       <button type="button" id="google-close" class="action">Закрыть</button>
     </div>
   </dialog>
-  <dialog id="backup-dialog" aria-labelledby="backup-title">
-    <div class="stack">
-      <h2 id="backup-title">Копии данных</h2>
-      <div class="quality-actions">
-        <button type="button" id="backup-export" class="action primary">Сохранить копию</button>
-        <button type="button" data-help="Скачивает рабочие данные панели одним файлом. Проверь папку загрузок." class="quality-help" aria-label="Пояснение к сохранению"><span>?</span></button>
-      </div>
-      <button type="button" id="backup-export-original" class="action" hidden>Скачать исходные данные</button>
-      <div class="quality-field">
-        <div class="quality-heading">
-          <label for="backup-file">Выбрать копию для восстановления</label>
-          <button type="button" data-help="Выбери сохранённую копию панели 03. Её состав появится до восстановления." class="quality-help" aria-label="Пояснение к выбору копии"><span>?</span></button>
-        </div>
-        <input id="backup-file" type="file" accept=".json,application/json">
-      </div>
-      <div id="backup-preview" class="stack"></div>
-      <p id="backup-message" role="status"></p>
-      <div class="quality-actions">
-        <button type="button" id="backup-restore" class="action primary" hidden>Восстановить</button>
-        <button type="button" data-help="Добавляет отсутствующие записи. Совпадающие записи и их история сохраняются в текущей версии." class="quality-help" aria-label="Пояснение к восстановлению"><span>?</span></button>
-      </div>
-      <button type="button" id="backup-close" class="action">Закрыть</button>
-    </div>
-  </dialog>
-  <script src="./work-date.js?v=36"></script>
-  <script src="./backup.js?v=36"></script>
-  <script>
-    'use strict';
-
-    const $ = selector => document.querySelector(selector);
-    const dateFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', day: 'numeric', month: 'long' });
-    const fullDateFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
-    const monthFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', month: 'long', year: 'numeric' });
-    const storagePrefix = 'panel-03:event:';
-    const { today: todayKey, key: dateKey, fromKey, valid: isValidDateKey } = window.panel03Date;
-    const beginningOfMonth = date => fromKey(dateKey(date).slice(0, 7) + '-01');
-    const monthShift = (date, amount) => {
-      const result = beginningOfMonth(date);
-      result.setUTCMonth(result.getUTCMonth() + amount);
-      return result;
-    };
-    const keyCompare = (left, right) => left < right ? -1 : Number(left > right);
-    const sortEvents = (left, right) => keyCompare(left.date, right.date) || keyCompare(left.start, right.start) || left.title.localeCompare(right.title, 'ru');
-    let selectedDay = todayKey();
-    let visibleMonth = beginningOfMonth(fromKey(selectedDay));
-    let events = [];
-    let eventOriginals = new Map();
-    let editingId = null;
-    let editingOriginal = null;
-
-    const editor = $('#event-editor');
-    const form = $('#event-form');
-    const fields = form.elements;
-
-    function showError(element, message = '') {
-      element.textContent = message;
-      element.hidden = !message;
+  <input type="file" id="backup-file" accept=".json,application/json" hidden>
+  <div class="bottom">
+    <button type="button" class="create" aria-label="Создать запись" hidden>+</button>
+    <nav aria-label="Разделы">
+      <button type="button" data-page="overview"><span class="nav-icon nav-overview" aria-hidden="true"></span>Обзор</button>
+      <button type="button" data-page="calendar"><span class="nav-icon nav-calendar" aria-hidden="true"></span>Календарь</button>
+      <button type="button" data-page="notes"><span class="nav-icon nav-note" aria-hidden="true"></span>Заметки</button>
+    </nav>
+  </div>
+</div>
+<script src="./calendar-sync.js?v=2.0.0" defer></script>
+<script src="./google-sync.js?v=2.0.0" defer></script>
+<script id="personal-script">
+(() => {
+  const root = document.getElementById('personal');
+  const main = root.querySelector('main');
+  const nav = root.querySelector('nav');
+  const create = root.querySelector('.create');
+  const notice = root.querySelector('.notice');
+  function refreshSyncSummary() { window.refreshGoogleStatus?.(); }
+  const storageKey = 'panel-03:base:v1';
+  const menu = root.querySelector('.menu');
+  const installButton = menu.querySelector('[data-action=install]');
+  let installPrompt = null;
+  const backupFile = root.querySelector('#backup-file');
+  let candidate = null;
+  let storageReadable = true;
+  const labels = {overview:'Обзор', calendar:'Календарь', notes:'Заметки'};
+  const periods = {day:'День', week:'Неделя', month:'Месяц'};
+  const repeats = {none:'Не повторяется', daily:'Каждый день', weekdays:'По будням', weekly:'Каждую неделю', monthly:'Каждый месяц', yearly:'Каждый год'};
+  const fullDate = new Intl.DateTimeFormat('ru', {weekday:'long', day:'numeric', month:'long', timeZone:'UTC'});
+  const shortDate = new Intl.DateTimeFormat('ru', {day:'numeric', month:'long', timeZone:'UTC'});
+  const dayOfWeek = new Intl.DateTimeFormat('ru', {weekday:'short', timeZone:'UTC'});
+  const monthName = new Intl.DateTimeFormat('ru', {month:'long', year:'numeric', timeZone:'UTC'});
+  const dayMs = 86400000;
+  let today = localDay(new Date());
+  let dayTimer;
+  let selected = today;
+  let month = today.slice(0, 7);
+  let period = 'day';
+  let page = 'overview';
+  let view = null;
+  let data = {events:[], notes:[]};
+  // An explicit prior reset permits synchronising an empty panel on this device.
+  function wasResetHere() {
+    try {
+      const raw = localStorage.getItem('panel-03:network');
+      const network = raw && JSON.parse(raw);
+      return network && ['profiles','points'].every(key => Array.isArray(network[key]) && network[key].length === 0)
+        && !Object.keys(localStorage).some(key => key.startsWith('panel-03:event:'));
+    } catch { return false; }
+  }
+  let loadedRecords = null;
+  try {
+    loadedRecords = localStorage.getItem(storageKey);
+    if (loadedRecords) data = validate(JSON.parse(loadedRecords));
+    else if (wasResetHere()) {
+      loadedRecords = JSON.stringify(data);
+      localStorage.setItem(storageKey, loadedRecords);
     }
+  } catch {
+    storageReadable = false;
+    showNotice('Не удалось прочитать записи браузера. Сохранение отключено, чтобы не перезаписать данные.');
+  }
 
-    function readEvents() {
-      try {
-        const stored = [];
-        const originals = new Map();
-        for (const key of Object.keys(localStorage)) {
-          if (!key.startsWith(storagePrefix)) continue;
-          try {
-            const original = localStorage.getItem(key);
-            const item = JSON.parse(original);
-            if (item?.id === key.slice(storagePrefix.length) &&
-                typeof item.title === 'string' && isValidDateKey(item.date) &&
-                typeof item.start === 'string' && typeof item.end === 'string') {
-              stored.push(item);
-              originals.set(item.id, original);
-            }
-          } catch (error) {
-            if (!(error instanceof SyntaxError)) throw error;
-          }
-        }
-        events = stored.sort(sortEvents);
-        eventOriginals = originals;
-        showError($('#app-error'));
-      } catch {
-        showError($('#app-error'), 'Хранилище браузера недоступно. Проверь разрешения сайта.');
-      }
-    }
-
-    function renderEventList(target, items, showDate, emptyMessage) {
-      target.replaceChildren();
-      if (!items.length) {
-        const empty = document.createElement('p');
-        empty.className = 'quiet';
-        empty.textContent = emptyMessage;
-        target.append(empty);
-        return;
-      }
-
-      const list = document.createElement('ul');
-      list.className = 'event-list';
-      for (const event of items) {
-        const row = document.createElement('li');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'event';
-        button.dataset.eventId = event.id;
-        const content = document.createElement('span');
-        const title = document.createElement('span');
-        title.className = 'event-title';
-        title.textContent = event.title;
-        const context = document.createElement('small');
-        context.className = 'quiet';
-        const hours = event.start ? [event.start, event.end].filter(Boolean).join('–') : 'Весь день';
-        context.textContent = showDate ? dateFormat.format(fromKey(event.date)) + ' · ' + hours : hours;
-        const chevron = document.createElement('span');
-        chevron.setAttribute('aria-hidden', 'true');
-        chevron.textContent = '›';
-        content.append(title, context);
-        button.append(content, chevron);
-        row.append(button);
-        list.append(row);
-      }
-      target.append(list);
-    }
-
-    function renderOverview() {
-      const current = todayKey();
-      const today = fromKey(current);
-      const sunday = new Date(today);
-      sunday.setUTCDate(today.getUTCDate() + (7 - today.getUTCDay()) % 7);
-      $('#today-label').textContent = fullDateFormat.format(today);
-      renderEventList($('#events-today'), events.filter(event => event.date === current), false, 'На сегодня событий нет.');
-      const rest = events.filter(event => event.date > current && event.date <= dateKey(sunday));
-      const countLabel = new Intl.PluralRules('ru').select(rest.length);
-      const count = rest.length + ' ' + ({ one: 'событие', few: 'события' }[countLabel] || 'событий');
-      $('#overview-week-label').textContent = 'До конца недели · ' + count;
-      renderEventList($('#events-week'), rest, true, 'До конца недели событий нет.');
-    }
-
-    function renderCalendar(focusDay = false) {
-      const grid = $('#date-grid');
-      const today = todayKey();
-      const prefix = dateKey(visibleMonth).slice(0, 7);
-      const monthEvents = events.filter(event => event.date.startsWith(prefix + '-'));
-      const markedDates = new Set(monthEvents.map(event => event.date));
-      const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(label => {
-        const cell = document.createElement('span');
-        cell.textContent = label;
-        cell.className = 'quiet';
-        return cell;
+  function readLegacyCopy(value) {
+    if (value?.format === 'panel-03-backup' && value.version === 1 && value.records && typeof value.records === 'object' && !Array.isArray(value.records)) {
+      const events = Object.entries(value.records).filter(([key]) => key.startsWith('panel-03:event:')).map(([,event]) => {
+        const {id,title,date,start} = event;
+        const end = event.end || (start ? new Date(date+'T'+start+':00Z').getTime()+3600000 : '');
+        return {id,title,date,start,allDay:!start,end:typeof end === 'number' ? new Date(end).toISOString().slice(11,16) : end,repeat:'none',ending:'never',exceptions:{}};
       });
-      grid.replaceChildren(...weekdays);
-      $('#month-label').textContent = monthFormat.format(visibleMonth);
-      $('#month-previous').disabled = prefix === '0001-01';
-      $('#month-next').disabled = prefix === '9999-12';
+      return {events,notes:[]};
+    }
+    return value;
+  }
+  function validate(value) {
+    value = readLegacyCopy(value);
+    const records = value?.format === '03-rabota-backup' && value.version === 2 ? value.data
+      : Number.isSafeInteger(value?.revision) ? value.data : value;
+    const str = value => typeof value === 'string';
+    const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+      Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
+    const time = value => str(value) && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+    const record = item => item && str(item.id) && item.id.length > 0 && str(item.title) && item.title.trim();
+    const entry = item => item && str(item.title) && item.title.trim() && date(item.date) &&
+      (item.allDay === true || (time(item.start) && time(item.end) && item.start < item.end));
+    const unique = rows => new Set(rows.map(row => row.id)).size === rows.length;
+    if (!Array.isArray(records?.events) || !Array.isArray(records?.notes) ||
+        !records.notes.every(note => record(note) && str(note.text)) ||
+        !records.events.every(event => record(event) && entry(event) && Object.hasOwn(repeats,event.repeat) &&
+          ['never','date','count'].includes(event.ending) &&
+          (event.ending !== 'date' || date(event.until)) &&
+          (event.ending !== 'count' || (Number.isSafeInteger(event.count) && event.count > 0)) &&
+          (!event.stopBefore || date(event.stopBefore)) &&
+          event.exceptions && typeof event.exceptions === 'object' && !Array.isArray(event.exceptions) &&
+          Object.entries(event.exceptions).every(([slot,item]) => date(slot) && (item === null || entry(item)))) ||
+        !unique(records.events) || !unique(records.notes)) throw new Error('Invalid backup');
+    return {events:records.events, notes:records.notes};
+  }
+  function downloadBackup() {
+    const backup = {format:'03-rabota-backup',version:2,exportedAt:new Date().toISOString(),data};
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], {type:'application/json'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '03-rabota-' + localDay(new Date()) + '.json';
+    root.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  backupFile.addEventListener('change', async () => {
 
-      const leading = (visibleMonth.getUTCDay() + 6) % 7;
-      for (let i = 0; i < leading; i += 1) grid.append(document.createElement('span'));
+    const file = backupFile.files[0];
+    backupFile.value = '';
+    if (!file) return;
+    candidate = null;
+    let contents;
+    let error = '';
+    try { contents = await file.text(); }
+    catch { error = 'Браузер не смог прочитать файл копии.'; }
+    if (!error) {
+      try { contents = JSON.parse(contents); }
+      catch { error = 'Файл копии должен содержать корректный JSON.'; }
+    }
+    if (!error) {
+      try { candidate = validate(contents); }
+      catch { error = 'Формат копии не поддерживается или в записях есть ошибки.'; }
+    }
+    showNotice(error);
+    view = {type:'backups'};
+    render();
+  });
 
-      const lastDate = monthShift(visibleMonth, 1);
-      lastDate.setUTCDate(0);
-      let selectedButton;
-      for (let day = 1; day <= lastDate.getUTCDate(); day += 1) {
-        const key = prefix + '-' + String(day).padStart(2, '0');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'day';
-        button.dataset.day = key;
-        button.textContent = day;
-        button.setAttribute('aria-pressed', String(key === selectedDay));
-        button.setAttribute('aria-label', dateFormat.format(fromKey(key)) + (markedDates.has(key) ? ', есть события' : ''));
-        if (key === today) button.setAttribute('aria-current', 'date');
-        if (markedDates.has(key)) button.classList.add('has-events');
-        if (key === selectedDay) selectedButton = button;
-        grid.append(button);
+  function key(date) { return date.toISOString().slice(0, 10); }
+  function localDay(date) {
+    return new Intl.DateTimeFormat('sv-SE', {timeZone:'Europe/Moscow', year:'numeric', month:'2-digit', day:'2-digit'}).format(date);
+  }
+  function updateToday() {
+    const now = new Date();
+    const currentDay = localDay(now);
+    if (currentDay !== today) {
+      const followToday = selected === today && !view;
+      today = currentDay;
+      if (followToday) {
+        selected = today;
+        month = today.slice(0, 7);
       }
-
-      $('#day-label').textContent = dateFormat.format(fromKey(selectedDay));
-      renderEventList($('#events-day'), monthEvents.filter(event => event.date === selectedDay), false, 'На этот день событий нет.');
-      renderEventList($('#events-month'), monthEvents, true, 'В этом месяце событий нет.');
-      window.dispatchEvent(new window.CustomEvent('panel-03:calendar-render', { detail: { day: selectedDay, month: prefix } }));
-      if (focusDay && selectedButton) selectedButton.focus({ preventScroll: true });
+      if (!view && (page === 'overview' || page === 'calendar')) render();
     }
-
-    function render() {
-      renderOverview();
-      renderCalendar();
-    }
-
-    const sectionDialog = $('#sections-dialog');
-    const sectionsButton = $('#sections-open');
-    const settingsDialog = $('#app-menu-dialog');
-    const primaryLinks = [...$('#section-nav').querySelectorAll('a')];
-    const sectionLinks = [...sectionDialog.querySelectorAll('a')];
-    sectionsButton.addEventListener('click', () => sectionDialog.showModal());
-    $('#sections-close').addEventListener('click', () => sectionDialog.close());
-    for (const link of sectionLinks) link.addEventListener('click', () => sectionDialog.close());
-    settingsDialog.querySelector('a[href="#instruction"]').addEventListener('click', () => settingsDialog.close());
-    for (const sheet of [sectionDialog, settingsDialog]) sheet.addEventListener('click', event => {
-      if (event.target === sheet && (event.clientY < sheet.getBoundingClientRect().top ||
-          event.clientX < sheet.getBoundingClientRect().left || event.clientX > sheet.getBoundingClientRect().right)) sheet.close();
-    });
-    $('.brand').addEventListener('click', () => {
-      if (!location.hash || location.hash === '#overview') window.scrollTo(0, 0);
-    });
-
-    function route() {
-      const page = location.hash.slice(1);
-      const pages = [...document.querySelectorAll('[data-page]')];
-      const current = pages.some(section => section.dataset.page === page) ? page : 'overview';
-      for (const section of pages) section.hidden = section.dataset.page !== current;
-      for (const link of [...primaryLinks, ...sectionLinks]) {
-        if (link.hash === '#' + current) link.setAttribute('aria-current', 'page');
-        else link.removeAttribute('aria-current');
+    const midnight = new Date(+now);
+    midnight.setTime(+asDate(currentDay) + 21 * 3600000);
+    clearTimeout(dayTimer);
+    dayTimer = setTimeout(updateToday, Math.min(midnight - now, 3600000));
+  }
+  function asDate(value) { return new Date(value + 'T00:00:00Z'); }
+  function capital(text) { return text.charAt(0).toUpperCase() + text.slice(1); }
+  function escape(text) {
+    return String(text ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+  }
+  function showNotice(text) { notice.textContent = text; notice.hidden = !text; }
+  function save(records = data, storageError = '') {
+    if (!storageReadable) return false;
+    try {
+      if (localStorage.getItem(storageKey) !== loadedRecords) {
+        showNotice('Записи изменились в другом окне. Скачайте копию несохранённых изменений и откройте панель заново.');
+        return false;
       }
-      if (sectionLinks.some(link => link.hash === '#' + current)) sectionsButton.setAttribute('aria-current', 'true');
-      else sectionsButton.removeAttribute('aria-current');
-      $('#add-event').hidden = !['overview', 'calendar'].includes(current);
-      readEvents();
-      render();
-      window.scrollTo(0, 0);
+      const serialized = JSON.stringify(records);
+      localStorage.setItem(storageKey, serialized);
+      loadedRecords = serialized;
+    } catch (error) {
+      showNotice(error.name === 'QuotaExceededError' && storageError
+        ? storageError
+        : 'Браузер не сохранил изменения. Скачайте копию до закрытия панели.');
+      return false;
     }
-
-    function changeMonth(amount) {
-      visibleMonth = monthShift(visibleMonth, amount);
-      const current = todayKey();
-      const month = dateKey(visibleMonth);
-      selectedDay = current.slice(0, 7) === month.slice(0, 7) ? current : month;
-      renderCalendar();
+    showNotice('');
+    window.dispatchEvent(new Event('panel-03:records-changed'));
+    return true;
+  }
+  function weekday(date) { return date.getUTCDay() >= 1 && date.getUTCDay() <= 5; }
+  function ordinal(event, date) {
+    if (date < event.date) return 0;
+    const start = asDate(event.date);
+    const day = asDate(date);
+    const distance = (day - start) / dayMs;
+    if (event.repeat === 'none') return distance === 0 ? 1 : 0;
+    if (event.repeat === 'daily') return distance + 1;
+    if (event.repeat === 'weekly') return distance % 7 === 0 ? distance / 7 + 1 : 0;
+    if (event.repeat === 'weekdays') {
+      if (!weekday(day)) return 0;
+      const length = distance + 1;
+      let count = Math.floor(length / 7) * 5;
+      for (let i = 0; i < length % 7; i++) {
+        if (weekday(new Date(+start + i * dayMs))) count++;
+      }
+      return count;
     }
-
-    function toggleTimes() {
-      const allDay = fields.allDay.checked;
-      $('#time-fields').hidden = allDay;
-      fields.start.disabled = allDay;
-      fields.end.disabled = allDay;
-      fields.start.required = !allDay;
+    if (start.getUTCDate() !== day.getUTCDate()) return 0;
+    if (event.repeat === 'yearly' && start.getUTCMonth() !== day.getUTCMonth()) return 0;
+    const months = (day.getUTCFullYear() - start.getUTCFullYear()) * 12 + day.getUTCMonth() - start.getUTCMonth();
+    const step = event.repeat === 'yearly' ? 12 : 1;
+    let count = 0;
+    for (let i = 0; i <= months; i += step) {
+      if (new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, start.getUTCDate())).getUTCDate() === start.getUTCDate()) count++;
     }
-
-    function openEditor(event) {
-      editingId = event?.id ?? null;
-      editingOriginal = event ? eventOriginals.get(event.id) : null;
-      form.reset();
-      showError($('#form-error'));
-      $('#editor-title').textContent = event ? 'Изменить событие' : 'Новое событие';
-      $('#delete-event').hidden = !event;
-      fields.title.value = event?.title ?? '';
-      fields.date.value = event?.date ?? (location.hash === '#calendar' ? selectedDay : todayKey());
-      fields.start.value = event?.start ?? '';
-      fields.end.value = event?.end ?? '';
-      fields.allDay.checked = !event?.start;
-      toggleTimes();
-      editor.showModal();
+    return count;
+  }
+  function occurs(event, date) {
+    if (event.stopBefore && date >= event.stopBefore) return false;
+    if (event.ending === 'date' && date > event.until) return false;
+    const position = ordinal(event, date);
+    return position > 0 && (event.ending !== 'count' || position <= event.count);
+  }
+  function occurrences(date) {
+    const rows = [];
+    for (const event of data.events) {
+      if (occurs(event, date) && !Object.hasOwn(event.exceptions, date)) rows.push({id:event.id, slot:date, entry:event});
+      for (const [slot, entry] of Object.entries(event.exceptions)) {
+        if (entry?.date === date && occurs(event, slot)) rows.push({id:event.id, slot, entry});
+      }
     }
-
-    form.addEventListener('submit', event => {
-      event.preventDefault();
-      const title = fields.title.value.trim();
-      const date = fields.date.value;
-      const start = fields.allDay.checked ? '' : fields.start.value;
-      const end = fields.allDay.checked ? '' : fields.end.value;
-      if (!title || !isValidDateKey(date) || (!fields.allDay.checked && !start)) {
-        showError($('#form-error'), 'Укажи название, дату и время начала или выбери «Весь день».');
+    return rows.sort((a, b) => (a.entry.allDay ? '' : a.entry.start).localeCompare(b.entry.allDay ? '' : b.entry.start));
+  }
+  function hero(title, subtitle = '', pageTitle = false) {
+    return `<div class="hero${pageTitle ? ' page-title' : ''}"><h1>${escape(title)}</h1>${subtitle ? `<p>${escape(subtitle)}</p>` : ''}</div>`;
+  }
+  function eventList(date, rows = occurrences(date), compact = false) {
+    if (!rows.length) return '<p class="empty">Нет событий</p>';
+    const day = asDate(date);
+    const dateLabel = day.getUTCDate() + ' ' + dayOfWeek.format(day);
+    return `<div class="events">${rows.map(({id, slot, entry}) => {
+      const series = data.events.find(item => item.id === id);
+      const time = entry.allDay ? '<span class="event-time">Весь день</span>'
+        : `<time class="event-time" datetime="${escape(entry.start)}">${escape(entry.start)}</time>`;
+      const label = `<span>${escape(entry.title)}${compact || series.repeat === 'none' ? '' : `<small>${repeats[series.repeat]}</small>`}</span>`;
+      return `<button type="button" class="event${compact ? ' event-compact' : ''}" data-event="${escape(id)}"
+        data-slot="${slot}" data-occurrence-date="${date}">${compact
+          ? `<span class="event-date">${escape(dateLabel)}</span>${label}${time}`
+          : time + label}</button>`;
+    }).join('')}</div>`;
+  }
+  function offsetDay(date, offset) { return key(new Date(+asDate(date) + offset * dayMs)); }
+  function agenda(title, first, last, range, {compact = false, eventsFor = occurrences} = {}) {
+    const groups = [];
+    for (let date = first; date <= last; date = offsetDay(date, 1)) {
+      const rows = eventsFor(date);
+      if (!rows.length) continue;
+      const events = eventList(date, rows, compact);
+      groups.push(compact ? events : `<div class="agenda-day"><h3>${capital(fullDate.format(asDate(date)))}</h3>${events}</div>`);
+    }
+    return `<section class="section"><div class="agenda-header"><h2>${title}</h2><small class="agenda-range">${range}</small></div>
+      <div${compact ? ' class="agenda-compact"' : ''}>${groups.join('') || '<p class="empty">Нет событий</p>'}</div></section>`;
+  }
+  function weekAgenda(eventsFor) {
+    const first = offsetDay(selected, -((asDate(selected).getUTCDay() + 6) % 7));
+    const last = offsetDay(first, 6);
+    return agenda('События недели', first, last, shortDate.formatRange(asDate(first), asDate(last)), {eventsFor});
+  }
+  function nextWeekAgenda() {
+    const first = offsetDay(today, 1);
+    const last = offsetDay(today, 7);
+    return agenda('Следующие 7 дней', first, last, shortDate.formatRange(asDate(first), asDate(last)), {compact:true});
+  }
+  function noteList(preview) {
+    const notes = preview ? data.notes.slice(0, 3) : data.notes;
+    if (!notes.length) return '<p class="empty">Нет заметок</p>';
+    return `<div class="notes${preview ? ' notes-preview' : ''}">${notes.map(note => {
+      const clipped = Array.from(note.text.slice(0, 320)).slice(0, 160).join('');
+      const excerpt = clipped.length < note.text.length ? clipped.trimEnd() + '…' : clipped;
+      return `<button type="button" class="note${preview ? '' : ' note-card'}" data-note="${escape(note.id)}">
+        <strong>${escape(note.title)}</strong>${excerpt ? `<small>${escape(excerpt)}</small>` : ''}</button>`;
+    }).join('')}</div>`;
+  }
+  function calendar() {
+    const first = asDate(month + '-01');
+    const offset = (first.getUTCDay() + 6) % 7;
+    const count = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+    const namedMonth = capital(monthName.format(first)).replace(/\s*г\.$/u, '');
+    const rowsByDate = new Map();
+    const dates = Array.from({length:count}, (_, index) => {
+      const date = month + '-' + String(index + 1).padStart(2, '0');
+      const rows = occurrences(date);
+      rowsByDate.set(date, rows);
+      const label = capital(fullDate.format(asDate(date))) + (rows.length ? `, событий: ${rows.length}` : '');
+      return `<button type="button" data-day="${date}" aria-label="${escape(label)}" aria-pressed="${selected === date}"${date === today ? ' aria-current="date"' : ''}>
+        <span class="day-number"${rows.length ? ' data-events' : ''}>${index + 1}</span></button>`;
+    }).join('');
+    const eventsFor = date => rowsByDate.get(date) ?? occurrences(date);
+    let schedule;
+    if (period === 'week') schedule = weekAgenda(eventsFor);
+    else if (period === 'month') schedule = agenda('События месяца', month + '-01', month + '-' + count, namedMonth, {eventsFor});
+    else schedule = `<section class="section"><h2>${capital(fullDate.format(asDate(selected)))}</h2>${eventList(selected, eventsFor(selected))}</section>`;
+    return `${hero('Календарь', '', true)}<section class="section"><div class="month-controls">
+      <h2>${namedMonth}</h2><button type="button" data-action="today">Сегодня</button>
+      <button type="button" data-month="-1" aria-label="Предыдущий месяц">‹</button>
+      <button type="button" data-month="1" aria-label="Следующий месяц">›</button></div>
+      <div class="days">${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(day => `<span>${day}</span>`).join('')}
+      ${'<span aria-hidden="true"></span>'.repeat(offset)}${dates}</div></section>
+      <div class="periods" role="group" aria-label="Период событий">${Object.entries(periods).map(([id, label]) =>
+        `<button type="button" data-period="${id}" aria-pressed="${period === id}">${label}</button>`).join('')}</div>
+      ${schedule}`;
+  }
+  function optionList(values, value) {
+    return Object.entries(values).map(([id,label]) => `<option value="${id}"${id === value ? ' selected' : ''}>${label}</option>`).join('');
+  }
+  function scopeOptions() {
+    return {single:'Только это событие', following:'Это и следующие', series:'Вся серия'};
+  }
+  function editForm() {
+    const note = page === 'notes';
+    const original = view.record;
+    const value = note ? original ?? {} : view.entry ?? {date:selected, start:'09:00', end:'10:00', repeat:'none', ending:'never'};
+    const recurring = !note && original && original.repeat !== 'none';
+    return `${hero((original ? 'Редактировать ' : note ? 'Новая ' : 'Новое ') + (note ? original ? 'заметку' : 'заметка' : 'событие'))}
+      <form data-form="edit">
+        ${recurring ? `<label>Применить к<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>` : ''}
+        <label>Название<input name="title" required maxlength="200" value="${escape(value.title)}"></label>
+        ${note ? `<label>Текст<textarea name="text" rows="6">${escape(value.text)}</textarea></label>` : `
+          <label>Дата<input type="date" name="date" required value="${escape(value.date)}"></label>
+          <label class="check"><input type="checkbox" name="allDay"${value.allDay ? ' checked' : ''}> Весь день</label>
+          <div class="times"><label>Начало<input name="start" type="time" value="${escape(value.start || '09:00')}"></label>
+          <label>Окончание<input name="end" type="time" value="${escape(value.end || '10:00')}"></label></div>
+          <label data-repeat>Повтор<select name="repeat">${optionList(repeats, original?.repeat ?? value.repeat)}</select></label>
+          <label data-ending>Окончание серии<select name="ending">${optionList({never:'Бессрочно',date:'До даты',count:'После заданного числа повторений'}, original?.ending ?? value.ending)}</select></label>
+          <label data-until>Последняя дата включительно<input name="until" type="date" value="${escape(original?.until ?? value.until)}"></label>
+          <label data-count>Число событий в серии<input name="count" type="number" min="1" max="9999" value="${escape(original?.count ?? value.count ?? 10)}"></label>`}
+        <div class="controls"><button type="submit" class="action primary">Сохранить</button><button type="button" data-action="cancel">Отмена</button></div>
+      </form>`;
+  }
+  function fields(form) {
+    if (page === 'notes') return;
+    const get = name => form.elements.namedItem(name);
+    const single = get('scope')?.value === 'single';
+    const allDay = get('allDay').checked;
+    const repeatsEnabled = !single && get('repeat').value !== 'none';
+    const ending = get('ending').value;
+    form.querySelector('.times').hidden = allDay;
+    get('start').required = get('end').required = !allDay;
+    form.querySelector('[data-repeat]').hidden = single;
+    form.querySelector('[data-ending]').hidden = !repeatsEnabled;
+    form.querySelector('[data-until]').hidden = !repeatsEnabled || ending !== 'date';
+    form.querySelector('[data-count]').hidden = !repeatsEnabled || ending !== 'count';
+    get('until').required = repeatsEnabled && ending === 'date';
+    get('count').required = repeatsEnabled && ending === 'count';
+    get('count').disabled = !get('count').required;
+    get('until').disabled = !get('until').required;
+  }
+  function render() {
+    if (view?.type === 'backups') {
+      main.innerHTML = `${hero('Копии данных')}
+        <p>События и заметки сохраняются в этом браузере.</p>
+        <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
+        <button type="button" class="action" data-action="import">Выбрать файл</button></div>
+        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'edit') {
+      main.innerHTML = editForm();
+      fields(main.querySelector('form'));
+    } else if (view?.type === 'delete') {
+      const series = page === 'calendar' && view.record.repeat !== 'none';
+      main.innerHTML = `${hero('Удалить ' + (page === 'notes' ? 'заметку' : 'событие') + '?')}
+        <p class="record">${escape(view.entry?.title ?? view.record.title)}</p><form data-form="delete">
+        ${series ? `<label>Удалить<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>` : ''}
+        <div class="controls"><button type="submit" class="action primary">Удалить</button><button type="button" data-action="cancel">Отмена</button></div></form>`;
+    } else if (view?.type === 'record') {
+      const item = view.entry ?? view.record;
+      const detail = page === 'notes' ? item.text : (item.allDay ? 'Весь день' : item.start + '–' + item.end)
+        + (view.record.repeat === 'none' ? '' : ' · ' + repeats[view.record.repeat]);
+      main.innerHTML = `<button type="button" class="back" data-action="back">← ${labels[page]}</button>
+        ${hero(item.title, page === 'calendar' ? capital(fullDate.format(asDate(item.date))) : '')}
+        <p class="record">${escape(detail)}</p><div class="controls"><button type="button" class="action" data-action="edit">Изменить</button>
+        <button type="button" data-action="delete">Удалить</button></div>`;
+    } else if (page === 'overview') {
+      main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
+        <div class="overview-modules">
+          <section class="section"><h2>Сегодня</h2>${eventList(today)}</section>
+          ${nextWeekAgenda()}
+          <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
+          <section class="section"><h2>Google</h2><div id="google-summary"><p id="google-overview-text" role="status"></p><button type="button" class="action" id="google-overview-sync">Синхронизировать</button></div></section>
+        </div>`;
+    } else {
+      main.innerHTML = page === 'calendar' ? calendar() : `${hero('Заметки', '', true)}${noteList(false)}`;
+    }
+    refreshSyncSummary();
+    create.hidden = !storageReadable || Boolean(view) || page === 'overview';
+    create.dataset.action = page === 'calendar' ? 'new-event' : 'new-note';
+    create.setAttribute('aria-label', page === 'calendar' ? 'Создать событие' : 'Создать заметку');
+    nav.querySelectorAll('button').forEach(button => {
+      if (button.dataset.page === page) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+  }
+  function finish(date) {
+    if (!save()) {
+      data = loadedRecords ? validate(JSON.parse(loadedRecords)) : {events:[],notes:[]};
+      if (view?.record) view.record = [...data.events,...data.notes].find(item => item.id === view.record.id);
+      return;
+    }
+    if (date) { selected = date; month = date.slice(0, 7); }
+    view = null;
+    render();
+  }
+  main.addEventListener('input', event => {
+    if (event.target instanceof HTMLInputElement) event.target.setCustomValidity('');
+  });
+  main.addEventListener('change', event => {
+    const form = event.target.form;
+    if (form?.dataset.form !== 'edit' || page !== 'calendar') return;
+    if (event.target.name === 'scope') {
+      const scope = event.target.value;
+      form.elements.date.value = scope === 'series' ? view.record.date : scope === 'following' ? view.slot : view.entry.date;
+      if (view.record.ending === 'count') {
+        form.elements.count.value = scope === 'following'
+          ? view.record.count - ordinal(view.record, view.slot) + 1
+          : view.record.count;
+      }
+    }
+    for (const name of ['end','until']) form.elements.namedItem(name).setCustomValidity('');
+    fields(form);
+  });
+  main.addEventListener('submit', event => {
+    event.preventDefault();
+    const form = event.target;
+    if (!storageReadable) return;
+    const values = new FormData(form);
+    const get = name => String(values.get(name) ?? '');
+    const original = view.record;
+    const scope = get('scope');
+    if (form.dataset.form === 'delete') {
+      if (page === 'notes') data.notes = data.notes.filter(item => item.id !== original.id);
+      else if (scope === 'single') original.exceptions[view.slot] = null;
+      else if (scope === 'following') original.stopBefore = view.slot;
+      else data.events = data.events.filter(item => item.id !== original.id);
+      finish();
+      return;
+    }
+    const title = get('title').trim();
+    if (!title) {
+      form.elements.title.setCustomValidity('Введите название.');
+      form.elements.title.reportValidity();
+      return;
+    }
+    if (page === 'notes') {
+      data.notes = [{id:original?.id ?? crypto.randomUUID(), title, text:get('text')}, ...data.notes.filter(item => item.id !== original?.id)];
+      finish();
+      return;
+    }
+    const allDay = values.has('allDay');
+    const entry = {title, date:get('date'), allDay, start:allDay ? '' : get('start'), end:allDay ? '' : get('end')};
+    if (!allDay && entry.end <= entry.start) {
+      form.elements.end.setCustomValidity('Окончание должно быть позже начала.');
+      form.elements.end.reportValidity();
+      return;
+    }
+    if (scope === 'single') {
+      original.exceptions[view.slot] = entry;
+    } else {
+      const repeat = get('repeat');
+      const ending = repeat === 'none' ? 'never' : get('ending');
+      if (ending === 'date' && get('until') < entry.date) {
+        form.elements.until.setCustomValidity('Дата окончания серии должна быть не раньше начала.');
+        form.elements.until.reportValidity();
         return;
       }
-      if (end && end <= start) {
-        showError($('#form-error'), 'Время окончания должно быть позже начала в тот же день.');
-        return;
-      }
-      try {
-        const id = editingId ?? crypto.randomUUID();
-        if (editingId && localStorage.getItem(storagePrefix + id) === null) {
-          showError($('#form-error'), 'Событие уже удалено в другой вкладке.');
-          return;
+      const updated = {...entry, id:original?.id ?? crypto.randomUUID(), repeat, ending, until:get('until'), count:Number(get('count')), exceptions:{}};
+      if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
+      if (scope === 'following') {
+        updated.id = crypto.randomUUID();
+        for (const [slot, exception] of Object.entries(original.exceptions)) {
+          if (slot >= view.slot && occurs(updated, slot)) updated.exceptions[slot] = exception;
         }
-        if (editingId && localStorage.getItem(storagePrefix + id) !== editingOriginal) {
-          showError($('#form-error'), 'Событие изменилось в другой вкладке. Закрой форму и открой запись заново.');
-          return;
+        original.stopBefore = view.slot;
+        data.events.push(updated);
+      } else if (original) {
+        for (const [slot, exception] of Object.entries(original.exceptions)) {
+          if (repeat !== 'none' && occurs(updated, slot)) updated.exceptions[slot] = exception;
         }
-        localStorage.setItem(storagePrefix + id, JSON.stringify({ id, title, date, start, end }));
-      } catch {
-        showError($('#form-error'), 'Событие не удалось сохранить в браузере.');
-        return;
+        data.events[data.events.indexOf(original)] = updated;
+      } else {
+        data.events.push(updated);
       }
-      selectedDay = date;
-      visibleMonth = beginningOfMonth(fromKey(date));
-      editor.close();
-      readEvents();
-      render();
-    });
-
-    $('#delete-event').addEventListener('click', () => {
-      if (!editingId || !window.confirm('Удалить это событие?')) return;
-      try {
-        if (localStorage.getItem(storagePrefix + editingId) !== editingOriginal) {
-          showError($('#form-error'), 'Событие изменилось или удалено в другой вкладке. Закрой форму и открой запись заново.');
-          return;
-        }
-        localStorage.removeItem(storagePrefix + editingId);
-      } catch {
-        showError($('#form-error'), 'Событие не удалось удалить.');
-        return;
-      }
-      editor.close();
-      readEvents();
-      render();
-    });
-
-    $('main').addEventListener('click', event => {
-      const button = event.target.closest('[data-event-id]');
-      if (!button) return;
-      const record = events.find(item => item.id === button.dataset.eventId);
-      if (record) openEditor(record);
-    });
-
-    $('#date-grid').addEventListener('click', event => {
-      const button = event.target.closest('[data-day]');
-      if (!button) return;
-      selectedDay = button.dataset.day;
-      renderCalendar(true);
-    });
-
-    $('#month-previous').addEventListener('click', () => changeMonth(-1));
-    $('#month-next').addEventListener('click', () => changeMonth(1));
-    $('#add-event').addEventListener('click', () => openEditor());
-    $('#cancel-event').addEventListener('click', () => editor.close());
-    fields.allDay.addEventListener('change', toggleTimes);
-    window.addEventListener('hashchange', route);
-    window.addEventListener('storage', event => {
-      if (event.key === null || event.key.startsWith(storagePrefix)) {
-        readEvents();
-        render();
-      }
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        readEvents();
-        render();
-      }
-    });
-
-    const installApp = $('#install-app');
-    let installPrompt;
-
-    window.addEventListener('beforeinstallprompt', event => {
-      event.preventDefault();
-      installPrompt = event;
-      installApp.hidden = false;
-    });
-
-    installApp.addEventListener('click', async () => {
-      if (!installPrompt) return;
+    }
+    finish(entry.date);
+  });
+  root.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button || !root.contains(button) || button.type === 'submit') return;
+    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, action} = button.dataset;
+    if (!menu.contains(button) || ['backups', 'google', 'install'].includes(action)) menu.open = false;
+    if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
       installPrompt = null;
-      installApp.hidden = true;
-      settingsDialog.close();
-      try {
-        await prompt.prompt();
-      } catch (error) {
-        console.warn('Не удалось открыть окно установки.', error);
-      }
-    });
-
-    window.addEventListener('appinstalled', () => {
-      installPrompt = null;
-      installApp.hidden = true;
-    });
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(error => {
-        console.warn('Не удалось включить офлайн-доступ.', error);
-      });
+      installButton.hidden = true;
+      prompt.prompt().catch(() => showNotice('Откройте меню Chrome, чтобы установить приложение.'));
+      return;
     }
+    if (action === 'export') { downloadBackup(); return; }
+    if (action === 'import') { backupFile.click(); return; }
+    if (action === 'restore' && candidate) {
+      const addMissing = (current, incoming) => {
+        const ids = new Set(current.map(item => item.id));
+        return [...current, ...incoming.filter(item => !ids.has(item.id))];
+      };
+      const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes)};
+      if (save(merged, 'В браузере не хватает места для записей из копии.')) {
+        data = merged;
 
-    let renderedDay = todayKey();
-    function refreshDay() {
-      if (document.hidden) return;
-      const current = todayKey();
-      if (renderedDay === current) return;
-      if (selectedDay === renderedDay) {
-        selectedDay = current;
-        visibleMonth = beginningOfMonth(fromKey(current));
+        candidate = null;
+        showNotice('Копия добавлена в браузер.');
       }
-      renderedDay = current;
+    } else if (action === 'backups') { candidate = null; view = {type:'backups'}; }
+    else if (!storageReadable && ['edit','delete','new-event','new-note'].includes(action)) return;
+    else if (destination) { page = destination; view = null; }
+    else if (direction) {
+      const first = asDate(month + '-01');
+      selected = key(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + Number(direction), 1)));
+      month = selected.slice(0, 7);
+    } else if (day || action === 'today') {
+      selected = day || today;
+      month = selected.slice(0, 7);
+      period = 'day';
+    } else if (Object.hasOwn(periods, nextPeriod)) period = nextPeriod;
+    else if (id) {
+      const record = data.events.find(item => item.id === id);
+      const entry = record.exceptions[slot] ?? {...record, date:button.dataset.occurrenceDate};
+      page = 'calendar'; selected = entry.date; month = selected.slice(0, 7);
+      view = {type:'record', record, entry, slot};
+    } else if (note) {
+      page = 'notes'; view = {type:'record', record:data.notes.find(item => item.id === note)};
+    } else if (action === 'new-event' || action === 'new-note') view = {type:'edit'};
+    else if (action === 'edit' || action === 'delete') view.type = action;
+    else if (action === 'cancel') view = view.record ? {...view, type:'record'} : null;
+    else if (action === 'back') view = null;
+    else return;
+    render();
+    if (destination) window.scrollTo(0, 0);
+    if (action === 'new-event' || action === 'new-note') main.querySelector('h1').scrollIntoView({block:'start'});
+    if (day) main.querySelector('[data-day="' + day + '"]')?.focus({preventScroll:true});
+    if (direction) main.querySelector('[data-month="' + direction + '"]')?.focus({preventScroll:true});
+    if (nextPeriod) main.querySelector('[data-period="' + nextPeriod + '"]')?.focus({preventScroll:true});
+    if (action === 'today') main.querySelector('[data-action="today"]')?.focus({preventScroll:true});
+  });
+  document.addEventListener('click', event => {
+    if (menu.open && !menu.contains(event.target)) menu.open = false;
+  });
+  menu.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { menu.open = false; menu.querySelector('summary').focus(); }
+  });
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    installPrompt = event;
+    installButton.hidden = false;
+  });
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    installButton.hidden = true;
+  });
+  window.addEventListener('focus', updateToday);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) updateToday(); });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker:', error));
+  }
+  window.panelRecords = {
+    snapshot() {
+      if (!storageReadable) throw Error('Не удалось прочитать локальные записи.');
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return null;
+      return validate(JSON.parse(raw));
+    },
+    parseCopy(value) {
+      if (!['03-rabota-backup','panel-03-backup'].includes(value?.format)) throw Error('Неизвестный формат копии.');
+      return validate(value);
+    },
+    offerCopy(records, message) {
+      candidate = records;
+      view = {type:'backups'};
+      showNotice(message);
       render();
-      window.dispatchEvent(new Event('panel-03:work-changed'));
-    }
-    let dayTimer;
-    function watchDay() {
-      clearInterval(dayTimer);
-      if (document.visibilityState !== 'visible') return;
-      refreshDay();
-      dayTimer = setInterval(refreshDay, 60000);
-    }
-    document.addEventListener('visibilitychange', watchDay);
-    window.addEventListener('pageshow', watchDay);
-    watchDay();
-    window.addEventListener('panel-03:work-changed', () => renderCalendar());
-    route();
-  </script>
-  <script src="./team-readiness.js?v=36"></script>
-  <script src="./financial-review.js?v=36"></script>
-  <script src="./point-operations.js?v=36"></script>
-  <script src="./product-launch.js?v=36"></script>
-  <script src="./management.js?v=36"></script>
-  <script src="./quality.js?v=36"></script>
-  <script src="./calendar-sync.js?v=36"></script>
-  <script src="./google-sync.js?v=36"></script>
-  <script src="./bar-menu.js?v=36"></script>
-  <script src="./bar-operations.js?v=36"></script>
-  <script src="./development.js?v=36"></script>
+    },
+    occurs,
+    countThrough(event,date) {
+      if (date < event.date) return 0;
+      let slot = date;
+      while (slot >= event.date) {
+        const count = ordinal(event, slot);
+        if (count) return count;
+        slot = offsetDay(slot, -1);
+      }
+      return 0;
+    },
+  };
+  updateToday();
+  render();
+})();
+</script>
 </body>
 </html>

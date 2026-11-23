@@ -2,16 +2,26 @@
   "id": "./",
   "name": "03 Работа",
   "short_name": "Работа",
-  "description": "Рабочая панель шеф-бариста сети спешелти-кофеен",
+  "description": "Работа · Календарь и заметки.",
   "lang": "ru",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "theme_color": "#ffbf56",
+  "theme_color": "#65400e",
   "background_color": "#f7f5f0",
   "prefer_related_applications": false,
   "icons": [
-    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

@@ -1,52 +1,36 @@
 'use strict';
-
-const cachePrefix = 'panel-03-shell-';
-const release = '36';
-const cacheName = cachePrefix + 'v' + release;
-const scope = new URL(self.registration.scope);
-const home = scope.href;
-const index = new URL('index.html', scope).href;
-const staticAssets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quality.css?v=36', 'team-readiness.js?v=36', 'financial-review.js?v=36', 'point-operations.js?v=36', 'product-launch.js?v=36', 'management.js?v=36', 'quality.js?v=36', 'work-date.js?v=36', 'backup.js?v=36', 'google-sync.js?v=36', 'calendar-sync.js?v=36', 'development.css?v=36', 'bar-menu.js?v=36', 'bar-operations.js?v=36', 'development.js?v=36']
-  .map(path => new URL(path, scope).href);
-
+const prefix = 'panel-03-shell-';
+const version = '2.0.0';
+const cacheName = prefix + version;
+const scope = self.registration.scope;
+const shell = new URL('index.html', scope).href;
+const assets = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'google-sync.js', 'calendar-sync.js'];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
-    const cache = await caches.open(cacheName);
-    const response = await fetch(new URL('index.html?release=' + release, scope).href, { cache: 'reload' });
-    if (!response.ok || !(await response.clone().text()).includes('<meta name="panel-build" content="' + release + '">')) {
-      throw Error('Файлы новой сборки ещё не опубликованы полностью.');
+    const page = await fetch(shell, {cache: 'reload'});
+    if (!page.ok || !(await page.clone().text()).includes('<meta name="panel-build" content="' + version + '">')) {
+      throw new Error('Сборка ещё не опубликована полностью.');
     }
-    await cache.addAll(staticAssets.map(url => new Request(url, { cache: 'reload' })));
-    await cache.put(home, response);
+    const cache = await caches.open(cacheName);
+    await cache.addAll(assets.map(path => new Request(new URL(path.endsWith('.js') ? path + '?v=' + version : path, scope), {cache: 'reload'})));
+    await cache.put(shell, page);
     await self.skipWaiting();
   })());
 });
-
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    const names = await caches.keys();
-    await Promise.all(names
-      .filter(name => name.startsWith(cachePrefix) && name !== cacheName)
-      .map(name => caches.delete(name)));
+    for (const name of await caches.keys()) {
+      if (name.startsWith(prefix) && name !== cacheName) await caches.delete(name);
+    }
     await self.clients.claim();
   })());
 });
-
-// The HTML and its asset versions are activated together after a successful install.
-async function fromRelease(request, key) {
-  const cache = await caches.open(cacheName);
-  return await cache.match(key) || fetch(request);
-}
-
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  const canonical = url.origin + url.pathname;
-
-  if (request.mode === 'navigate' && (canonical === home || canonical === index)) {
-    event.respondWith(fromRelease(request, home));
-  } else if (staticAssets.includes(url.href)) {
-    event.respondWith(fromRelease(request, url.href));
-  }
+  if (request.method !== 'GET' || !url.href.startsWith(scope)) return;
+  const path = url.pathname.slice(new URL(scope).pathname.length);
+  if (!['', 'index.html', ...assets].includes(path)) return;
+  const key = path.endsWith('.js') ? request.url : path && path !== 'index.html' ? new URL(path, scope).href : shell;
+  event.respondWith(caches.open(cacheName).then(async cache => (await cache.match(key)) || fetch(request)));
 });

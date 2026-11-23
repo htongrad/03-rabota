@@ -8,7 +8,7 @@
   const folderName = '03 РАБОТА';
   const fileName = 'Работа — резервная копия.json';
   const tag = 'rabota03';
-  const core = window.panel03Backup;
+  const core = window.panelRecords;
   const calendar = window.panel03GoogleCalendar;
   const $ = selector => document.querySelector(selector);
   let token = '';
@@ -131,7 +131,7 @@
       const after = await metadata(info.id);
       verifyFile(after, settings);
       if (sameVersion(info, after)) {
-        try { return core.parseBackup(contents); }
+        try { return core.parseCopy(JSON.parse(contents)); }
         catch (error) { throw new UnusableBackup(error.message); }
       }
       info = after;
@@ -296,25 +296,14 @@
   async function syncUnlocked({ drive = true, sendCalendar = true } = {}) {
     const settings = read();
     if (!settings.folder || !/^[\w-]+$/.test(settings.folder)) throw Error('Выбери рабочую папку «03 РАБОТА».');
-    const backup = core.exportData(localStorage);
-    const { records } = backup;
-    const signature = JSON.stringify(records);
-    if (!Object.keys(records).length && !settings.lastBackup && !settings.fileId) {
-      update({ autoSync: true });
+    const records = core.snapshot();
+    if (!records) {
+      update({autoSync:true});
       message = 'В панели пока нет записей для отправки.';
       return;
     }
-    let work;
-    let workError;
-    if (sendCalendar && calendarGranted) {
-      try {
-        if (!window.panel03CalendarWork) throw Error('Рабочие журналы ещё не готовы. Обнови панель.');
-        work = window.panel03CalendarWork();
-        if (JSON.stringify(core.snapshot(localStorage)) !== signature) {
-          throw Error('Данные изменились при подготовке календаря. Повторю отправку.');
-        }
-      } catch (error) { workError = error; }
-    }
+    const backup = {format:'03-rabota-backup',version:2,createdAt:new Date().toISOString(),data:records};
+    const signature = JSON.stringify(records);
     const hash = await digest(signature);
     update({ autoSync: true });
     let errorFound = false;
@@ -335,14 +324,11 @@
         try {
           calendarMessage = 'Обновляю календарь…';
           paint();
-          if (workError) throw workError;
-          const count = await calendar.mirror({ request, settings: read(), update, digest,
-            events: Object.entries(records).filter(([key]) => key.startsWith('panel-03:event:')).map(([, value]) => value),
-            work });
+          const count = await calendar.mirror({request,settings:read(),update,digest,events:records.events});
           update({ calendarHash: hash });
           calendarPoll = Date.now();
           calendarIssue = false;
-          calendarMessage = 'Календарь обновлён. Событий и рабочих действий: ' + count + '.';
+          calendarMessage = 'Календарь обновлён. Событий: ' + count + '.';
         } catch (error) {
           errorFound = true;
           calendarIssue = true;
@@ -394,7 +380,7 @@
     const { backup, skipped } = await findUsableBackup(settings);
     $('#google-dialog').close();
     const notice = skipped ? 'Показана предыдущая исправная копия.' : '';
-    window.dispatchEvent(new CustomEvent('panel-03:backup-candidate', { detail: { backup, notice } }));
+    core.offerCopy(backup, notice || 'Копия загружена. Подтверди добавление записей.');
     message = 'Копия загружена. Проверь её состав и подтверди восстановление.';
   }
 
@@ -416,7 +402,7 @@
       settings.lastSync ? 'Копия на Диске актуальна.' : 'Ожидает первой копии.';
     const calendarSummary = calendarMessage || (settings.calendarLastSync
       ? 'Календарь «03 РАБОТА» обновлён.' : 'Календарь ожидает первой отправки.');
-    $('#google-overview-text').textContent = !configured ? 'Подключение не настроено.' :
+    if ($('#google-overview-text')) $('#google-overview-text').textContent = !configured ? 'Подключение не настроено.' :
       busy || connecting || navigator.onLine === false || syncError || driveError || !enabled || !ready() || localPending ? summary :
       calendarIssue ? 'Календарь требует внимания.' :
       settings.lastSync ? 'Копия: ' + new Date(settings.lastSync).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Moscow' }) :
@@ -425,8 +411,8 @@
     $('#google-calendar-status').textContent = calendarSummary;
     $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
     $('#google-status').textContent = busy || connecting ? summary : message || summary;
-    $('#google-overview-sync').textContent = configured ? 'Синхронизировать' : 'Настроить синхронизацию';
-    $('#google-overview-sync').disabled = waiting;
+    if ($('#google-overview-sync')) $('#google-overview-sync').textContent = configured ? 'Синхронизировать' : 'Настроить синхронизацию';
+    if ($('#google-overview-sync')) $('#google-overview-sync').disabled = waiting;
     $('#google-sync-now').hidden = !configured;
     $('#google-sync-now').disabled = waiting;
     $('#google-folder').hidden = !enabled;
@@ -438,6 +424,8 @@
     $('#google-folder-status').textContent = enabled ? 'Папка «03 РАБОТА» запомнена.' : 'При первом подключении выбери папку «03 РАБОТА».';
     for (const item of $('#google-config').querySelectorAll('input,button')) item.disabled = waiting;
   }
+
+  window.refreshGoogleStatus = paint;
 
   function configValues() {
     const settings = read();
@@ -513,7 +501,7 @@
   });
 
   function openGoogle() {
-    $('#app-menu-dialog').close();
+    document.querySelector('.menu').open = false;
     configValues();
     if (!read().clientId) $('#google-settings').open = true;
     if (!$('#google-dialog').open) $('#google-dialog').showModal();
@@ -522,7 +510,7 @@
 
   $('#google-open').addEventListener('click', openGoogle);
   $('#google-close').addEventListener('click', () => $('#google-dialog').close());
-  $('#google-overview-sync').addEventListener('click', () => start('sync'));
+  document.addEventListener('click', event => { if (event.target.closest('#google-overview-sync')) start('sync'); });
   $('#google-folder').addEventListener('click', () => start('folder'));
   $('#google-sync-now').addEventListener('click', () => start('sync'));
   $('#google-restore').addEventListener('click', () => start('restore'));
@@ -537,7 +525,7 @@
     if (monitoring || busy || connecting || document.hidden) return;
     monitoring = true;
     try {
-      const records = core.snapshot(localStorage);
+      const records = core.snapshot();
       const signature = JSON.stringify(records);
       if (signature !== cachedLocal) {
         localHash = await digest(signature);
@@ -548,7 +536,7 @@
       paint();
       const automatic = settings.autoSync ?? Boolean(settings.fileId);
       if (navigator.onLine === false || !ready() || !settings.folder || !automatic || Date.now() < retryAfter) return;
-      if (!Object.keys(records).length && !settings.lastBackup && !settings.fileId) return;
+      if (!records) return;
       if (Date.now() - dirtySince < 3000) return;
       const drive = localHash !== settings.lastBackup?.hash || Boolean(settings.upload);
       const sendCalendar = calendarGranted && (localHash !== settings.calendarHash || Date.now() - calendarPoll > 60000);
@@ -561,7 +549,7 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) monitor(); });
   window.addEventListener('offline', paint);
   window.addEventListener('storage', () => monitor());
-  window.addEventListener('panel-03:work-changed', () => monitor());
+  window.addEventListener('panel-03:records-changed', () => monitor());
   setInterval(monitor, 5000);
   try {
     configValues();
