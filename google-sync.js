@@ -411,8 +411,12 @@
     $('#google-calendar-status').textContent = calendarSummary;
     $('#google-calendar-last-sync').textContent = settings.calendarLastSync ? 'Последняя отправка событий: ' + new Date(settings.calendarLastSync).toLocaleString('ru-RU') : '';
     $('#google-status').textContent = busy || connecting ? summary : message || summary;
-    if ($('#google-overview-sync')) $('#google-overview-sync').textContent = configured ? 'Синхронизировать' : 'Настроить синхронизацию';
-    if ($('#google-overview-sync')) $('#google-overview-sync').disabled = waiting;
+    const headerSync = $('#header-sync');
+    const label = configured ? 'Синхронизировать' : 'Настроить синхронизацию';
+    headerSync.setAttribute('aria-label', label);
+    headerSync.title = label;
+    headerSync.disabled = waiting;
+    headerSync.setAttribute('aria-busy', String(waiting));
     $('#google-sync-now').hidden = !configured;
     $('#google-sync-now').disabled = waiting;
     $('#google-folder').hidden = !enabled;
@@ -510,7 +514,7 @@
 
   $('#google-open').addEventListener('click', openGoogle);
   $('#google-close').addEventListener('click', () => $('#google-dialog').close());
-  document.addEventListener('click', event => { if (event.target.closest('#google-overview-sync')) start('sync'); });
+  $('#header-sync').addEventListener('click', () => start('sync'));
   $('#google-folder').addEventListener('click', () => start('folder'));
   $('#google-sync-now').addEventListener('click', () => start('sync'));
   $('#google-restore').addEventListener('click', () => start('restore'));
