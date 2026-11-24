@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.1.1">
+<meta name="panel-build" content="2.2.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
-<meta name="description" content="Работа · Календарь и заметки.">
+<meta name="description" content="Работа · Календарь, заметки и инструменты шеф-бариста.">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.1.1">
+<link rel="stylesheet" href="./relief.css?v=2.2.0">
 </head>
 <body>
 <div id="personal">
@@ -23,9 +23,11 @@
       <button type="button" id="google-open">Синхронизация Google</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.1.1</small>
+      <a id="test-mode-link" href="./?test=1">Тестовый режим</a>
+      <small>Сборка 2.2.0</small>
     </div>
   </details></header>
+  <p class="notice" id="test-banner" hidden>Тестовый режим. Записи хранятся отдельно. Google отключён.</p>
   <p class="notice" role="status" hidden></p>
   <main></main>
   <dialog id="google-dialog" aria-labelledby="google-title">
@@ -74,11 +76,13 @@
       <button type="button" data-page="overview"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h7v8H3z M14 3.5h7v4h-7z M3 15.5h7v5H3z M14 11.5h7v9h-7z"/></svg>Обзор</button>
       <button type="button" data-page="calendar"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5 M8 14h3"/></svg>Календарь</button>
       <button type="button" data-page="notes"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3.5h14v17H5z M8 3.5v17 M11 8h5 M11 12h4"/></svg>Заметки</button>
+      <button type="button" data-page="chef"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v7a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z M17 6h2a2 2 0 0 1 0 4h-2 M3 21h16"/></svg>Шеф-бариста</button>
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.1.1" defer></script>
-<script src="./google-sync.js?v=2.1.1" defer></script>
+<script src="./calendar-sync.js?v=2.2.0" defer></script>
+<script src="./google-sync.js?v=2.2.0" defer></script>
+<script src="./chef-barista.js?v=2.2.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -126,14 +130,29 @@
   document.addEventListener('scroll', positionHint, true);
   document.addEventListener('close', closeHint, true);
   window.addEventListener('resize', positionHint);
-  window.visualViewport?.addEventListener('resize', positionHint);
+  window.visualViewport?.addEventListener('resize', () => {
+    positionHint();
+    const viewport = window.visualViewport;
+    root.toggleAttribute('data-keyboard', viewport.scale === 1 && innerHeight - viewport.height > 100);
+  });
 
   const main = root.querySelector('main');
   const nav = root.querySelector('nav');
   const create = root.querySelector('.create');
-  const notice = root.querySelector('.notice');
+  const notice = root.querySelector('.notice[role=status]');
   function refreshSyncSummary() { window.refreshGoogleStatus?.(); }
-  const storageKey = 'panel-03:base:v1';
+  const testMode = new URLSearchParams(location.search).get('test') === '1';
+  const storageKey = testMode ? 'panel-03:test:base:v1' : 'panel-03:base:v1';
+  const backupFormat = testMode ? '03-rabota-test-backup' : '03-rabota-backup';
+  const chefModel = window.panel03Chef;
+  const testLink = root.querySelector('#test-mode-link');
+  if (testMode) {
+    root.querySelector('#test-banner').hidden = false;
+    root.querySelector('#header-sync').hidden = true;
+    root.querySelector('#google-open').hidden = true;
+    testLink.href = './';
+    testLink.textContent = 'Рабочая панель';
+  }
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   let installPrompt = null;
@@ -153,9 +172,10 @@
   let selected = today;
   let month = today.slice(0, 7);
   let period = 'day';
-  let page = 'overview';
+  let page = testMode ? 'chef' : 'overview';
   let view = null;
-  let data = {events:[], notes:[]};
+  const blank = () => ({events:[], notes:[], chef:chefModel.empty()});
+  let data = blank();
   // An explicit prior reset permits synchronising an empty panel on this device.
   function wasResetHere() {
     try {
@@ -169,7 +189,7 @@
   try {
     loadedRecords = localStorage.getItem(storageKey);
     if (loadedRecords) data = validate(JSON.parse(loadedRecords));
-    else if (wasResetHere()) {
+    else if (!testMode && wasResetHere()) {
       loadedRecords = JSON.stringify(data);
       localStorage.setItem(storageKey, loadedRecords);
     }
@@ -190,8 +210,11 @@
     return value;
   }
   function validate(value) {
+    if (value?.format && value.format !== backupFormat && (testMode || value.format !== 'panel-03-backup')) {
+      throw Error('Копия создана для другого режима.');
+    }
     value = readLegacyCopy(value);
-    const records = value?.format === '03-rabota-backup' && value.version === 2 ? value.data
+    const records = value?.format === backupFormat && [2, 3].includes(value.version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -211,14 +234,15 @@
           event.exceptions && typeof event.exceptions === 'object' && !Array.isArray(event.exceptions) &&
           Object.entries(event.exceptions).every(([slot,item]) => date(slot) && (item === null || entry(item)))) ||
         !unique(records.events) || !unique(records.notes)) throw new Error('Invalid backup');
-    return {events:records.events, notes:records.notes};
+    if (value?.version === 3 && !records.chef) throw Error('В копии нет раздела шеф-бариста.');
+    return {events:records.events, notes:records.notes, chef:records.chef === undefined ? chefModel.empty() : chefModel.validate(records.chef)};
   }
   function downloadBackup() {
-    const backup = {format:'03-rabota-backup',version:2,exportedAt:new Date().toISOString(),data};
+    const backup = makeCopy(data);
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], {type:'application/json'}));
     const link = document.createElement('a');
     link.href = url;
-    link.download = '03-rabota-' + localDay(new Date()) + '.json';
+    link.download = backupFormat + '-' + localDay(new Date()) + '.json';
     root.append(link);
     link.click();
     link.remove();
@@ -239,7 +263,7 @@
       catch { error = 'Файл копии должен содержать корректный JSON.'; }
     }
     if (!error) {
-      try { candidate = validate(contents); }
+      try { candidate = testMode ? parseCopy(contents) : validate(contents); }
       catch { error = 'Формат копии не поддерживается или в записях есть ошибки.'; }
     }
     showNotice(error);
@@ -247,6 +271,15 @@
     render();
   });
 
+  function makeCopy(records) {
+    return {format:backupFormat, version:3, createdAt:new Date().toISOString(), data:records};
+  }
+  function parseCopy(value) {
+    if (value?.format !== backupFormat && (testMode || value?.format !== 'panel-03-backup')) {
+      throw Error('Формат копии не поддерживается в этом режиме.');
+    }
+    return validate(value);
+  }
   function key(date) { return date.toISOString().slice(0, 10); }
   function localDay(date) {
     return new Intl.DateTimeFormat('sv-SE', {timeZone:'Europe/Moscow', year:'numeric', month:'2-digit', day:'2-digit'}).format(date);
@@ -261,7 +294,7 @@
         selected = today;
         month = today.slice(0, 7);
       }
-      if (!view && (page === 'overview' || page === 'calendar')) render();
+      if (!view && (page === 'overview' || page === 'calendar' || (page === 'chef' && !main.querySelector('form')))) render();
     }
     const midnight = new Date(+now);
     midnight.setTime(+asDate(currentDay) + 21 * 3600000);
@@ -328,9 +361,10 @@
     const position = ordinal(event, date);
     return position > 0 && (event.ending !== 'count' || position <= event.count);
   }
+  function calendarEvents(records = data) { return [...records.events, ...chefModel.calendarEvents(records.chef)]; }
   function occurrences(date) {
     const rows = [];
-    for (const event of data.events) {
+    for (const event of calendarEvents()) {
       if (occurs(event, date) && !Object.hasOwn(event.exceptions, date)) rows.push({id:event.id, slot:date, entry:event});
       for (const [slot, entry] of Object.entries(event.exceptions)) {
         if (entry?.date === date && occurs(event, slot)) rows.push({id:event.id, slot, entry});
@@ -346,7 +380,7 @@
     const day = asDate(date);
     const dateLabel = `<b>${day.getUTCDate()}</b><small>${escape(dayOfWeek.format(day))}</small>`;
     return `<div class="events">${rows.map(({id, slot, entry}) => {
-      const series = data.events.find(item => item.id === id);
+      const series = calendarEvents().find(item => item.id === id);
       const time = entry.allDay ? '<span class="event-time">Весь день</span>'
         : `<time class="event-time" datetime="${escape(entry.start)}">${escape(entry.start)}</time>`;
       const label = `<span class="title"><b>${escape(entry.title)}</b>${compact ? '' : `<small>${[entry.allDay ? '' : 'До '+escape(entry.end),series.repeat === 'none' ? '' : repeats[series.repeat]].filter(Boolean).join(' · ')}</small>`}</span>`;
@@ -461,6 +495,15 @@
     get('count').disabled = !get('count').required;
     get('until').disabled = !get('until').required;
   }
+  const chef = chefModel.attach({main, escape, hero, showNotice, render,
+    getState: () => data.chef, today: () => today, formatDate: date => shortDate.format(asDate(date)),
+    commit(state) {
+      const next = {...data, chef:state};
+      if (!save(next)) return false;
+      data = next;
+      return true;
+    },
+  });
   function render() {
     closeHint();
     if (view?.type === 'backups') {
@@ -468,7 +511,7 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.chef.points.length}, проверок — ${candidate.chef.audits.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
     } else if (view?.type === 'edit') {
       main.innerHTML = editForm();
@@ -479,6 +522,12 @@
         <p class="record">${escape(view.entry?.title ?? view.record.title)}</p><form data-form="delete">
         ${series ? `<label>Удалить<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>` : ''}
         <div class="controls"><button type="submit" class="action primary">Удалить</button><button type="button" data-action="cancel">Отмена</button></div></form>`;
+    } else if (view?.type === 'chef-event') {
+      const event = calendarEvents().find(item => item.id === view.eventId);
+      main.innerHTML = event ? `${hero(event.title, capital(fullDate.format(asDate(event.date))))}
+        <p class="record">Срок связан с действием шеф-бариста.</p>
+        <div class="controls"><button type="button" class="action primary" data-action="chef-event">Открыть действие</button>
+        <button type="button" class="action" data-action="back">Назад</button></div>` : calendar();
     } else if (view?.type === 'record') {
       const item = view.entry ?? view.record;
       const detail = page === 'notes' ? item.text : (item.allDay ? 'Весь день' : item.start + '–' + item.end)
@@ -494,15 +543,17 @@
           ${nextWeekAgenda()}
           <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
         </div>
-        <footer class="sync-footer" aria-label="Синхронизация Google">
+        ${testMode ? '' : `<footer class="sync-footer" aria-label="Синхронизация Google">
           <div class="help-title"><h2>Google</h2><button type="button" class="help" data-hint="Две стрелки в шапке сохраняют копию на Диске и обновляют календарь." aria-label="Подсказка: синхронизация" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
           <p id="google-overview-text" role="status"></p>
-        </footer>`;
+        </footer>`}`;
+    } else if (page === 'chef') {
+      main.innerHTML = chef.draw();
     } else {
       main.innerHTML = page === 'calendar' ? calendar() : `${hero('Заметки', 'Записей: ' + data.notes.length, true)}${noteList(false)}`;
     }
     refreshSyncSummary();
-    create.hidden = !storageReadable || Boolean(view) || page === 'overview';
+    create.hidden = !storageReadable || Boolean(view) || !['calendar','notes'].includes(page);
     create.dataset.action = page === 'calendar' ? 'new-event' : 'new-note';
     create.setAttribute('aria-label', page === 'calendar' ? 'Создать событие' : 'Создать заметку');
     nav.querySelectorAll('button').forEach(button => {
@@ -512,7 +563,7 @@
   }
   function finish(date) {
     if (!save()) {
-      data = loadedRecords ? validate(JSON.parse(loadedRecords)) : {events:[],notes:[]};
+      data = loadedRecords ? validate(JSON.parse(loadedRecords)) : blank();
       if (view?.record) view.record = [...data.events,...data.notes].find(item => item.id === view.record.id);
       return;
     }
@@ -521,7 +572,9 @@
     render();
   }
   main.addEventListener('input', event => {
-    if (event.target instanceof HTMLInputElement) event.target.setCustomValidity('');
+    if (event.target.form?.dataset.chefForm) {
+      if (storageReadable) chef.draft(event.target.form, event.target);
+    } else if (event.target instanceof HTMLInputElement) event.target.setCustomValidity('');
   });
   main.addEventListener('change', event => {
     const form = event.target.form;
@@ -542,6 +595,7 @@
     event.preventDefault();
     const form = event.target;
     if (!storageReadable) return;
+    if (form.dataset.chefForm) return chef.submit(form);
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     const original = view.record;
@@ -607,6 +661,17 @@
     if (!button || !root.contains(button) || button.type === 'submit') return;
     const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, action} = button.dataset;
     if (!menu.contains(button) || ['backups', 'google', 'install'].includes(action)) menu.open = false;
+    if (Object.hasOwn(button.dataset, 'chef')) {
+      if (!storageReadable) return showNotice('Записи недоступны. Проверь данные браузера.');
+      return chef.click(button);
+    }
+    if (action === 'chef-event') {
+      const item = calendarEvents().find(item => item.id === view?.eventId);
+      if (!item) return;
+      page = 'chef';
+      view = null;
+      return chef.enterAudit(item.auditId, item.itemKey);
+    }
     if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
       installPrompt = null;
@@ -621,7 +686,7 @@
         const ids = new Set(current.map(item => item.id));
         return [...current, ...incoming.filter(item => !ids.has(item.id))];
       };
-      const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes)};
+      const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes), chef:chefModel.merge(data.chef,candidate.chef)};
       if (save(merged, 'В браузере не хватает места для записей из копии.')) {
         data = merged;
 
@@ -630,7 +695,7 @@
       }
     } else if (action === 'backups') { candidate = null; view = {type:'backups'}; }
     else if (!storageReadable && ['edit','delete','new-event','new-note'].includes(action)) return;
-    else if (destination) { page = destination; view = null; }
+    else if (destination) { page = destination; view = null; if (page === 'chef') chef.reset(); }
     else if (direction) {
       const first = asDate(month + '-01');
       selected = key(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + Number(direction), 1)));
@@ -641,10 +706,11 @@
       period = 'day';
     } else if (Object.hasOwn(periods, nextPeriod)) period = nextPeriod;
     else if (id) {
-      const record = data.events.find(item => item.id === id);
+      const record = calendarEvents().find(item => item.id === id);
+      if (!record) return;
       const entry = record.exceptions[slot] ?? {...record, date:button.dataset.occurrenceDate};
       page = 'calendar'; selected = entry.date; month = selected.slice(0, 7);
-      view = {type:'record', record, entry, slot};
+      view = record.auditId ? {type:'chef-event', eventId:record.id} : {type:'record', record, entry, slot};
     } else if (note) {
       page = 'notes'; view = {type:'record', record:data.notes.find(item => item.id === note)};
     } else if (action === 'new-event' || action === 'new-note') view = {type:'edit'};
@@ -668,6 +734,7 @@
   });
   window.addEventListener('beforeinstallprompt', event => {
     event.preventDefault();
+    if (testMode) return;
     installPrompt = event;
     installButton.hidden = false;
   });
@@ -681,15 +748,12 @@
     navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker:', error));
   }
   window.panelRecords = {
+    testMode, makeCopy, parseCopy, calendarEvents,
     snapshot() {
       if (!storageReadable) throw Error('Не удалось прочитать локальные записи.');
       const raw = localStorage.getItem(storageKey);
       if (!raw) return null;
       return validate(JSON.parse(raw));
-    },
-    parseCopy(value) {
-      if (!['03-rabota-backup','panel-03-backup'].includes(value?.format)) throw Error('Неизвестный формат копии.');
-      return validate(value);
     },
     offerCopy(records, message) {
       candidate = records;
