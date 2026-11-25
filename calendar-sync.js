@@ -140,7 +140,8 @@
     }
     for (const current of remote) {
       const key = known.get(current.id);
-      if (!key || desired.has(key) || !belongs(current, key) || current.status === 'cancelled') continue;
+      // Retire prototype deadlines from sync without deleting them in Google Calendar.
+      if (!key || key.startsWith('["event","chef:') || desired.has(key) || !belongs(current, key) || current.status === 'cancelled') continue;
       if (!current.etag) throw Error('Google не вернул версию удаляемого события. Повтори отправку.');
       await request(url + '/' + encode(current.id) + query({ sendUpdates: 'none' }), { method: 'DELETE', headers: { 'If-Match': current.etag } }, false, [404, 410]);
     }

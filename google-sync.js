@@ -9,7 +9,6 @@
   const fileName = 'Работа — резервная копия.json';
   const tag = 'rabota03';
   const core = window.panelRecords;
-  if (core.testMode) return;
   const calendar = window.panel03GoogleCalendar;
   const $ = selector => document.querySelector(selector);
   let token = '';
@@ -303,7 +302,7 @@
       message = 'В панели пока нет записей для отправки.';
       return;
     }
-    const backup = core.makeCopy(records);
+    const backup = {format:'03-rabota-backup',version:core.backupVersion(records),createdAt:new Date().toISOString(),data:records};
     const signature = JSON.stringify(records);
     const hash = await digest(signature);
     update({ autoSync: true });
@@ -325,7 +324,7 @@
         try {
           calendarMessage = 'Обновляю календарь…';
           paint();
-          const count = await calendar.mirror({request,settings:read(),update,digest,events:core.calendarEvents(records)});
+          const count = await calendar.mirror({request,settings:read(),update,digest,events:records.events});
           update({ calendarHash: hash });
           calendarPoll = Date.now();
           calendarIssue = false;
