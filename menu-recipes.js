@@ -1,5 +1,6 @@
 'use strict';
 window.panel03Recipes = (() => {
+  const pointPicker = window.panel03Points;
   const text = value => typeof value === 'string';
   const filled = value => text(value) && Boolean(value.trim());
   const positive = value => /^(?:\d+(?:[.,]\d+)?|[.,]\d+)$/.test(value) && Number.isFinite(Number(value.replace(',', '.'))) &&
@@ -7,8 +8,7 @@ window.panel03Recipes = (() => {
   const unique = rows => new Set(rows.map(row => row.id)).size === rows.length;
 
   function validate(recipes, points) {
-    const scopes = new Set(['', ...points.map(point => point.id)]);
-    const content = recipe => recipe && scopes.has(recipe.pointId) && text(recipe.method) &&
+    const content = recipe => recipe && pointPicker.validScope(recipe, points) && text(recipe.method) &&
       Array.isArray(recipe.ingredients) && recipe.ingredients.every(row =>
         row && text(row.name) && text(row.amount) && text(row.unit));
     const complete = recipe => filled(recipe.method) && recipe.ingredients.length > 0 &&
@@ -24,8 +24,9 @@ window.panel03Recipes = (() => {
     let common;
     for (let index = item.versions.length - 1; index >= 0; index -= 1) {
       const version = item.versions[index];
-      if (version.pointId === pointId) return version;
-      if (!version.pointId && !common) common = version;
+      const assigned = pointPicker.scopeFor(version);
+      if (assigned?.includes(pointId)) return version;
+      if (!assigned && !common) common = version;
     }
     return common;
   }
@@ -38,11 +39,14 @@ window.panel03Recipes = (() => {
     const points = () => getRecords().points;
     const item = () => records().find(row => row.id === itemId);
     const title = drink => drink.name + ' ' + drink.volumeMl + ' мл';
-    const scopeName = id => id ? points().find(point => point.id === id)?.name ?? 'Точка' : 'Вся сеть';
-    const versionType = version => version.pointId ? 'Версия для точки' : 'Общая версия';
+    const scopeName = selection => pointPicker.scopeName(selection, points());
+    function versionType(version) {
+      const assigned = pointPicker.scopeFor(version);
+      if (!assigned) return 'Общая версия';
+      return assigned.length === 1 ? 'Версия для точки' : 'Версия для нескольких точек';
+    }
     const stamp = version => dateFormat.format(new Date(version.publishedAt));
-    const options = (value, common) => [{id:'',name:common}, ...points()].map(point =>
-      `<option value="${escape(point.id)}"${point.id === value ? ' selected' : ''}>${escape(point.name)}</option>`).join('');
+    const picker = (name, label, selection, options) => pointPicker.picker(points(), selection, {name,label,escape,...options});
     const action = (name, label, primary = false) => `<button type="button" class="action${primary ? ' primary' : ''}" data-recipe-action="${name}">${label}</button>`;
     const back = (name, label) => `<button type="button" class="back" data-recipe-action="${name}">← ${label}</button>`;
     const normalized = value => value.trim().toLocaleLowerCase('ru').normalize('NFC');
@@ -52,7 +56,8 @@ window.panel03Recipes = (() => {
 
     function open() {
       screen = 'list';
-      itemId = scope = filter = query = '';
+      itemId = query = '';
+      scope = filter = null;
       dirty = false;
       editor = preview = null;
     }
@@ -64,12 +69,15 @@ window.panel03Recipes = (() => {
     function rows() {
       const search = normalized(query);
       const visible = records().filter(drink => normalized(title(drink)).includes(search) &&
-        (!filter || effective(drink, filter) || (drink.draft && ['', filter].includes(drink.draft.pointId))));
+        (!filter || filter.some(id => {
+          const draftScope = drink.draft && pointPicker.scopeFor(drink.draft);
+          return effective(drink, id) || (drink.draft && (!draftScope || draftScope.includes(id)));
+        })));
       if (!visible.length) return `<p class="empty">${records().length ? 'По заданным условиям ничего не найдено.' :
         'Нажми «+», чтобы добавить первую позицию меню.'}</p>`;
       return visible.sort((first, second) => title(first).localeCompare(title(second), 'ru', {numeric:true})).map(drink => {
-        const version = effective(drink, filter);
-        const details = filter && version ? versionType(version) : '';
+        const version = filter?.length === 1 ? effective(drink, filter[0]) : undefined;
+        const details = version ? versionType(version) : '';
         return `<button type="button" class="section recipe-row" data-recipe-action="item" data-recipe-id="${escape(drink.id)}">
           <span><strong>${escape(title(drink))}</strong><small>${escape(details || (drink.versions.length ? 'Есть действующая техкарта' : 'Черновик'))}</small></span>
           <span aria-hidden="true">›</span></button>`;
@@ -80,7 +88,7 @@ window.panel03Recipes = (() => {
       return `${hero('Меню и техкарты', 'Кофейное направление', true)}
         <div class="recipe-layout">
           <label>Поиск по меню<input type="search" name="recipe-search" value="${escape(query)}" placeholder="Напиток или объём"></label>
-          <label>Фильтр по точке<select name="recipe-filter">${options(filter, 'Все точки')}</select></label>
+          ${picker('recipe-filter', 'Фильтр по точкам', filter, {allLabel:'Выбрать все'})}
           <div class="recipe-layout" id="recipe-results">${rows()}</div>
           ${records().some(drink => drink.versions.length) ? action('all-history', 'Открыть историю изменений') : ''}
         </div>`;
@@ -88,24 +96,40 @@ window.panel03Recipes = (() => {
 
     function card() {
       const drink = item();
-      const version = effective(drink, scope);
-      const current = [{id:'',name:'Вся сеть'}, ...points()].map(point => {
+      const choices = points().map(point => {
         const published = effective(drink, point.id);
-        return `<li><span>${escape(point.name)}</span><small>${published ? versionType(published) : 'Техкарта ещё не введена'}</small></li>`;
-      }).join('');
+        return {...point, detail:published ? versionType(published) : 'Техкарта ещё не введена'};
+      });
+      const allDetail = effective(drink) ? 'Есть общая техкарта' : 'Общая техкарта ещё не введена';
       return `${back('list', 'Меню и техкарты')}${hero(title(drink), 'Меню и техкарты', true)}
         <div class="recipe-layout">
-          <section class="section"><h2>Какая версия действует</h2><ul class="recipe-composition">${current}</ul></section>
-          <label>Точка для просмотра или правки<select name="recipe-scope">${options(scope, 'Вся сеть')}</select></label>
-          <div class="recipe-layout" id="recipe-card-actions">${cardActions(drink, version)}</div>
+          ${pointPicker.picker(choices, scope, {name:'recipe-scope', label:'Точки для просмотра или правки',
+            escape, allLabel:'Выбрать все', allDetail})}
+          <div class="recipe-layout" id="recipe-card-actions">${cardActions(drink)}</div>
           ${drink.versions.length ? action('history', 'История версий') : ''}
         </div>`;
     }
 
-    function cardActions(drink, version) {
-      return `${version ? action('current', 'Открыть состав и приготовление', true) : '<p class="empty">Для выбранной точки пока нет действующей техкарты.</p>'}
-        ${drink.draft ? action('draft', 'Продолжить черновик · ' + escape(scopeName(drink.draft.pointId))) :
-          action('draft', 'Создать новую версию')}`;
+    function activeVersions(drink) {
+      const selected = scope ?? points().map(point => point.id);
+      const grouped = new Map();
+      for (const id of selected) {
+        const version = effective(drink, id);
+        if (!grouped.has(version)) grouped.set(version, []);
+        grouped.get(version).push(id);
+      }
+      const common = effective(drink);
+      if (scope === null && common && !grouped.has(common)) grouped.set(common, []);
+      return grouped;
+    }
+
+    function cardActions(drink) {
+      const hasVersion = [...activeVersions(drink).keys()].some(Boolean);
+      const unavailable = scope?.length === 0 ? 'Отметь хотя бы одну точку для просмотра или правки.' :
+        'Для выбранных точек пока нет действующей техкарты.';
+      return `${hasVersion ? action('current', 'Открыть состав и приготовление', true) : `<p class="empty">${unavailable}</p>`}
+        ${drink.draft ? action('draft', 'Продолжить черновик · ' + escape(scopeName(pointPicker.scopeFor(drink.draft)))) :
+          scope?.length === 0 ? '' : action('draft', 'Создать новую версию')}`;
     }
 
     function ingredient(row, position) {
@@ -126,8 +150,8 @@ window.panel03Recipes = (() => {
         <form data-form="recipe" novalidate>
           ${editableTitle ? `<label>Название напитка<input name="drinkName" maxlength="140" value="${escape(editor.name)}" required></label>
             <label>Объём, мл<input name="volume" inputmode="numeric" maxlength="12" value="${escape(editor.volume)}" required></label>` : ''}
-          <div class="field-help"><label>Где будет действовать<select name="pointId">${options(editor.pointId, 'Вся сеть')}</select></label>
-            ${hint('где действует техкарта', 'Версия для точки имеет приоритет. Общий рецепт действует на всех точках без своей версии.')}</div>
+          ${picker('recipe-target', 'Где будет действовать', editor.selection, {hint:hint('где действует техкарта',
+            'Сними галочки с точек, где рецепт должен остаться прежним. Версия для выбранных точек имеет приоритет перед общей.')})}
           <section class="section recipe-layout">
             <h2>Состав на порцию</h2>
             <div class="recipe-layout" id="recipe-ingredients">${editor.ingredients.map((row,index) => ingredient(row,index + 1)).join('')}</div>
@@ -143,7 +167,7 @@ window.panel03Recipes = (() => {
 
     function review() {
       return `${back('preview-back', 'К черновику')}${hero('Проверка техкарты', title(preview), true)}
-        <div class="recipe-layout"><p>Где будет действовать <strong>${escape(scopeName(preview.pointId))}</strong></p>
+        <div class="recipe-layout"><p>Где будет действовать <strong>${escape(scopeName(pointPicker.scopeFor(preview)))}</strong></p>
           ${contents(preview)}${action('publish', 'Ввести в действие', true)}</div>`;
     }
 
@@ -154,23 +178,29 @@ window.panel03Recipes = (() => {
       return `${back(historyId ? 'card' : 'list', historyId ? 'К позиции' : 'Меню и техкарты')}
         ${hero(historyId ? 'История версий' : 'История изменений', historyId ? title(item()) : 'Меню и техкарты', true)}
         <div class="recipe-layout">${releases.map(({drink,version}) => {
-          const current = effective(drink,version.pointId)?.id === version.id;
+          const assigned = pointPicker.scopeFor(version);
+          const targets = assigned ?? [''];
+          const current = targets.filter(id => effective(drink, id)?.id === version.id).length;
+          const status = current === targets.length ? 'Действует' : current ? 'Действует частично' : 'Предыдущая';
           return `<button type="button" class="section recipe-row" data-recipe-action="release" data-recipe-id="${escape(drink.id)}" data-version-id="${escape(version.id)}">
-            <span><strong>${escape(historyId ? scopeName(version.pointId) : title(drink))}</strong>
-            <small>${historyId ? '' : escape(scopeName(version.pointId)) + ' · '}${escape(stamp(version))} · ${current ? 'Действует' : 'Предыдущая'}</small></span>
+            <span><strong>${escape(historyId ? scopeName(pointPicker.scopeFor(version)) : title(drink))}</strong>
+            <small>${historyId ? '' : escape(scopeName(pointPicker.scopeFor(version))) + ' · '}${escape(stamp(version))} · ${status}</small></span>
             <span aria-hidden="true">›</span></button>`;
         }).join('')}</div>`;
     }
 
     function recipe() {
       const drink = item();
-      const version = screen === 'release' ? drink.versions.find(row => row.id === versionId) : effective(drink, scope);
-      return `${back(screen === 'release' ? 'history-back' : 'card', screen === 'release' ? 'К истории' : 'К позиции')}
+      const historical = screen === 'release';
+      const selected = historical ? new Map([[drink.versions.find(row => row.id === versionId), []]]) : activeVersions(drink);
+      return `${back(historical ? 'history-back' : 'card', historical ? 'К истории' : 'К позиции')}
         ${hero(title(drink), 'Техкарта', true)}
-        <div class="recipe-layout">
-          <p>${escape(versionType(version))} · ${escape(scopeName(version.pointId))}<br><small>Введена в действие ${escape(stamp(version))}</small></p>
-          ${contents(version)}
-        </div>`;
+        <div class="recipe-layout">${[...selected].map(([version, ids]) => {
+          if (!version) return `<p class="empty">Техкарта ещё не введена: ${escape(scopeName(ids))}.</p>`;
+          const label = scopeName(ids.length ? ids : pointPicker.scopeFor(version));
+          return `<div class="recipe-layout"><p>${escape(versionType(version))} · ${escape(label)}<br>
+            <small>Введена в действие ${escape(stamp(version))}</small></p>${contents(version)}</div>`;
+        }).join('')}</div>`;
     }
 
     function draw() {
@@ -183,8 +213,13 @@ window.panel03Recipes = (() => {
     }
 
     function edit(drink) {
-      const source = drink?.draft ?? (drink ? effective(drink, scope) : undefined);
-      editor = {name:drink?.name ?? '', volume:drink?.volumeMl ?? '', pointId:drink?.draft?.pointId ?? (drink ? scope : filter),
+      const selection = drink?.draft ? pointPicker.scopeFor(drink.draft) : drink ? scope : filter;
+      let source = drink?.draft;
+      if (!source && drink) {
+        const versions = [...activeVersions(drink).keys()];
+        source = selection && versions.length === 1 ? versions[0] : effective(drink);
+      }
+      editor = {name:drink?.name ?? '', volume:drink?.volumeMl ?? '', selection,
         ingredients:source?.ingredients?.length ? source.ingredients : [blank], method:source?.method ?? ''};
       dirty = false;
       screen = 'edit';
@@ -193,7 +228,7 @@ window.panel03Recipes = (() => {
     function readEditor(form) {
       const name = form.elements.drinkName?.value ?? editor.name;
       const volume = form.elements.volume?.value ?? editor.volume;
-      return {name, volume, pointId:form.elements.pointId.value,
+      return {name, volume, selection:pointPicker.read(form.querySelector('[data-point-picker]')),
         ingredients:[...form.querySelectorAll('.recipe-ingredient')].map(row => ({
           name:row.querySelector('[name=ingredient]').value,
           amount:row.querySelector('[name=amount]').value,
@@ -232,9 +267,12 @@ window.panel03Recipes = (() => {
         return error(form, 'Позиция с таким названием и объёмом уже есть в каталоге.', fields.drinkName);
       }
       const ingredients = values.ingredients.map(row => ({name:row.name.trim(), amount:row.amount.trim(), unit:row.unit.trim()}));
-      const draft = {pointId:values.pointId, ingredients, method:values.method.trim()};
+      if (values.selection?.length === 0) {
+        return error(form, 'Отметь хотя бы одну точку или выбери всю сеть.', form.querySelector('[data-point-all]'));
+      }
+      const draft = {...pointPicker.scopeFields(values.selection), ingredients, method:values.method.trim()};
       if (submittingButton?.value !== 'preview') {
-        scope = draft.pointId;
+        scope = values.selection;
         store({id:itemId || crypto.randomUUID(), name, volumeMl, versions:item()?.versions ?? [], draft}, 'Черновик сохранён.');
         return;
       }
@@ -286,7 +324,7 @@ window.panel03Recipes = (() => {
       } else if (action === 'publish') {
         const {name,volumeMl,...content} = preview;
         const version = {...content, id:crypto.randomUUID(), publishedAt:new Date().toISOString()};
-        scope = version.pointId;
+        scope = pointPicker.scopeFor(version);
         store({id:itemId || crypto.randomUUID(), name, volumeMl, versions:[...(item()?.versions ?? []), version]}, 'Техкарта введена в действие.');
         return true;
       } else if (action === 'history' || action === 'all-history' || action === 'history-back') {
@@ -310,17 +348,23 @@ window.panel03Recipes = (() => {
       if (target.form?.dataset.form === 'recipe') {
         dirty = true;
         target.form.querySelector('.recipe-error').hidden = true;
-      } else if (name === 'recipe-filter' || name === 'recipe-search') {
-        if (name === 'recipe-filter') filter = target.value;
-        else query = target.value;
+      } else if (name === 'recipe-search') {
+        query = target.value;
         getMain().querySelector('#recipe-results').innerHTML = rows();
-      } else if (name === 'recipe-scope') {
-        scope = target.value;
-        getMain().querySelector('#recipe-card-actions').innerHTML = cardActions(item(), effective(item(), scope));
       }
     }
 
-    return {open, draw, click, change, submit, beforeLeave, isList:() => screen === 'list'};
+    function selectPoints(pickerName, selection) {
+      if (pickerName === 'recipe-filter') {
+        filter = selection;
+        getMain().querySelector('#recipe-results').innerHTML = rows();
+      } else if (pickerName === 'recipe-scope') {
+        scope = selection;
+        getMain().querySelector('#recipe-card-actions').innerHTML = cardActions(item());
+      }
+    }
+
+    return {open, draw, click, change, selectPoints, submit, beforeLeave, isList:() => screen === 'list'};
   }
 
   return {validate, effective, create};

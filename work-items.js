@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  const pointPicker = window.panel03Points;
   const taskStatuses = {open:'К выполнению', waiting:'Ожидает', done:'Готово'};
   const filters = {active:'Активные', waiting:'Ожидают', done:'Готово'};
   const frequencies = {none:'', daily:'', weekdays:'', weekly:'', monthly:'', yearly:''};
@@ -26,7 +27,7 @@
 
   function validWork(work, points, fields) {
     const ids = new Set(fields.map(field => field.id));
-    return work && (work.pointId === '' || points.some(point => point.id === work.pointId)) &&
+    return work && pointPicker.validScope(work, points) &&
       typeof work.owner === 'string' && validProgress(work) &&
       (work.values === undefined || (work.values && typeof work.values === 'object' && !Array.isArray(work.values) &&
         Object.entries(work.values).every(([id, value]) => ids.has(id) && typeof value === 'string')));
@@ -69,48 +70,52 @@
     return record.workLog?.[slot] ? {...work, ...record.workLog[slot]} : work;
   }
 
-  const scopeKey = pointId => pointId ? 'point:' + pointId : 'network';
-  const scopePoint = key => key.startsWith('point:') ? key.slice(6) : '';
+  const pointKey = id => 'point:' + id;
 
-  function mount({records, rows, save, redraw, goBack, hero, escape, optionList, formatDate, today, main}) {
+  function mount({records, rows, save, redraw, goBack, hero, escape, formatDate, today, main}) {
     let screen = 'list';
-    let scope = 'all';
+    let scope = null;
     let filter = 'active';
     let origin = '';
     let fieldId = '';
     const taskFields = () => records().taskFields ?? [];
     const selectedField = () => taskFields().find(field => field.id === fieldId);
-    const point = id => records().points.find(item => item.id === id);
-    const scopeName = id => point(id)?.name ?? 'Вся сеть';
-    const scopeChoices = () => Object.fromEntries([['network','Вся сеть'],
-      ...records().points.map(point => [scopeKey(point.id), point.name])]);
+    const scopeName = work => pointPicker.scopeName(pointPicker.scopeFor(work), records().points);
     const action = (name, label, primary = false) => `<button type="button" data-task-action="${name}" class="action${primary ? ' primary' : ''}">${label}</button>`;
 
     function open(pointId = '') {
       origin = pointId;
-      scope = pointId ? scopeKey(pointId) : 'all';
+      scope = pointId ? [pointKey(pointId)] : null;
       filter = 'active';
       fieldId = '';
       screen = 'list';
     }
 
-    function list() {
-      const items = rows().filter(({work}) => (scope === 'all' || scopeKey(work.pointId) === scope) &&
-        (filter === 'active' ? work.status !== 'done' : work.status === filter));
+    function results() {
+      const items = rows().filter(({work}) => {
+        const assigned = pointPicker.scopeFor(work);
+        const matches = !scope || (assigned ? assigned.some(id => scope.includes(pointKey(id))) : scope.includes('network'));
+        return matches && (filter === 'active' ? work.status !== 'done' : work.status === filter);
+      });
       items.sort((a, b) => (a.entry.date || '9999').localeCompare(b.entry.date || '9999') ||
         (a.entry.start ?? '').localeCompare(b.entry.start ?? ''));
       const empty = {active:'Нет активных дел.', waiting:'Нет дел в ожидании.', done:'Нет завершённых дел.'};
-      return `${hero('Дела', 'Кофейное направление', true)}
-        <label class="task-scope">Область<select data-task-scope>${optionList({'all':'Все точки и сеть', ...scopeChoices()}, scope)}</select></label>
-        <div class="periods" role="group" aria-label="Состояние дел">${Object.entries(filters).map(([key, label]) =>
-          `<button type="button" data-task-action="filter" data-filter="${key}" aria-pressed="${filter === key}">${label}</button>`).join('')}</div>
-        ${items.length ? `<div class="task-list">${items.map(({record, slot, entry, work}) => `
+      return items.length ? `<div class="task-list">${items.map(({record, slot, entry, work}) => `
           <button type="button" class="section task-row" data-event="${escape(record.id)}" data-slot="${slot}">
-            <strong>${escape(entry.title)}</strong><small>${escape(scopeName(work.pointId))} ·
+            <strong>${escape(entry.title)}</strong><small>${escape(scopeName(work))} ·
               ${entry.date ? escape(formatDate(entry.date)) + (entry.allDay ? ' · Весь день' : ' · ' + escape(entry.start)) : 'Без даты'}</small>
             <span class="task-badges"><span class="task-badge">${taskStatuses[work.status]}</span>
               ${entry.date && entry.date < today() && work.status !== 'done' ? '<span class="task-badge task-overdue">Просрочено</span>' : ''}</span>
-          </button>`).join('')}</div>` : `<p class="empty">${empty[filter]}</p>`}
+          </button>`).join('')}</div>` : `<p class="empty">${empty[filter]}</p>`;
+    }
+
+    function list() {
+      const options = [{id:'network',name:'Вся сеть'}, ...records().points.map(point => ({...point,id:pointKey(point.id)}))];
+      return `${hero('Дела', 'Кофейное направление', true)}
+        ${pointPicker.picker(options, scope, {name:'task-filter', label:'Фильтр по точкам', escape, allLabel:'Выбрать все'})}
+        <div class="periods task-filters" role="group" aria-label="Состояние дел">${Object.entries(filters).map(([key, label]) =>
+          `<button type="button" data-task-action="filter" data-filter="${key}" aria-pressed="${filter === key}">${label}</button>`).join('')}</div>
+        <div id="task-results">${results()}</div>
         <div class="controls point-controls">${action('exit', origin ? 'Назад к точке' : 'Назад к обзору')}</div>`;
     }
 
@@ -169,11 +174,9 @@
       }
       redraw();
     }
-    function change(control) {
-      if (!control.hasAttribute('data-task-scope')) return;
-      scope = control.value;
-      redraw(undefined, false);
-      main.querySelector('[data-task-scope]')?.focus({preventScroll:true});
+    function selectPoints(selection) {
+      scope = selection;
+      main.querySelector('#task-results').innerHTML = results();
     }
     function submit(form, get) {
       if (form.dataset.form !== 'task-field') return;
@@ -189,8 +192,11 @@
       saveField({id:fieldId || crypto.randomUUID(), label, hint:get('hint').trim(),
         archived:selectedField()?.archived ?? false}, 'Поле сохранено.');
     }
-    return {open, isList:() => screen === 'list', createPoint:() => scopePoint(scope), scopeChoices,
-      scopeName, draw, click, change, submit};
+    function createScope() {
+      const choices = scope?.filter(key => key !== 'network') ?? [];
+      return choices.length ? choices.map(key => key.slice('point:'.length)) : null;
+    }
+    return {open, isList:() => screen === 'list', createScope, scopeName, draw, click, selectPoints, submit};
   }
-  window.panel03WorkItems = {taskStatuses, emptyWork, scopeKey, scopePoint, validLegacyTasks, validWork, validProgress, migrate, workFor, mount};
+  window.panel03WorkItems = {taskStatuses, emptyWork, validLegacyTasks, validWork, validProgress, migrate, workFor, mount};
 })();

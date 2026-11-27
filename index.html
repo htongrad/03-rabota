@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.1.1">
+<meta name="panel-build" content="3.2.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.1.1">
+<link rel="stylesheet" href="./relief.css?v=3.2.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.1.1</small>
+      <small>Сборка 3.2.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,10 +81,11 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.1.1" defer></script>
-<script src="./google-sync.js?v=3.1.1" defer></script>
-<script src="./work-items.js?v=3.1.1"></script>
-<script src="./menu-recipes.js?v=3.1.1"></script>
+<script src="./calendar-sync.js?v=3.2.0" defer></script>
+<script src="./google-sync.js?v=3.2.0" defer></script>
+<script src="./point-picker.js?v=3.2.0"></script>
+<script src="./work-items.js?v=3.2.0"></script>
+<script src="./menu-recipes.js?v=3.2.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -144,6 +145,7 @@
   const notice = root.querySelector('.notice');
   function refreshSyncSummary() { window.refreshGoogleStatus?.(); }
   const storageKey = 'panel-03:base:v1';
+  const pointPicker = window.panel03Points;
   const workItems = window.panel03WorkItems;
   const menuRecipes = window.panel03Recipes;
   const menu = root.querySelector('.menu');
@@ -227,7 +229,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -287,7 +289,13 @@
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
-  function backupVersion(records = data) { return records.recipes === undefined ? 8 : 9; }
+  function backupVersion(records = data) {
+    const groupedWork = entry => entry?.work?.pointIds !== undefined;
+    const grouped = records.events.some(event => groupedWork(event) || Object.values(event.exceptions).some(groupedWork)) ||
+      records.recipes?.some(item => item.draft?.pointIds !== undefined || item.versions.some(version => version.pointIds !== undefined));
+    if (grouped) return 10;
+    return records.recipes === undefined ? 8 : 9;
+  }
   function downloadBackup() {
     const backup = {format:'03-rabota-backup',version:backupVersion(data),exportedAt:new Date().toISOString(),data};
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], {type:'application/json'}));
@@ -681,10 +689,15 @@
     return {single:'Только это дело', following:'Это и следующие', series:'Вся серия'};
   }
   const visibleWorkFields = () => (data.taskFields ?? []).filter(field => !field.archived);
+  function defaultOwner(selection) {
+    if (!selection?.length) return '';
+    const owners = new Set(selection.map(id => data.points.find(point => point.id === id)?.owner ?? ''));
+    return owners.size === 1 ? owners.values().next().value : '';
+  }
   function readWork() {
-    return view.record ? workItems.workFor(view.record, view.entry, view.slot) : {
-      ...workItems.emptyWork, pointId:view.pointId ?? '', owner:data.points.find(point => point.id === view.pointId)?.owner ?? '',
-    };
+    if (view.record) return workItems.workFor(view.record, view.entry, view.slot);
+    const selection = view.workScope ?? null;
+    return {status:'open', result:'', ...pointPicker.scopeFields(selection), owner:defaultOwner(selection)};
   }
   function editForm() {
     const note = page === 'notes';
@@ -717,7 +730,8 @@
           <label data-until>Последняя дата включительно<input name="until" type="date" value="${escape(original?.until ?? value.until)}"></label>
           <label data-count>Число дел в серии<input name="count" type="number" min="1" max="9999" value="${escape(original?.count ?? value.count ?? 10)}"></label>
         </div>
-        <label>Область<select name="workScope">${optionList(taskPanel.scopeChoices(), workItems.scopeKey(work.pointId))}</select></label>
+        ${pointPicker.picker(data.points, pointPicker.scopeFor(work), {name:'work-target', label:'Точки для дела', escape,
+          hint:pointHint('точки для дела','Общее дело для сети или одно дело для нескольких выбранных точек. Сними галочки с тех, кого оно не касается.')})}
         <label>Ответственный · по желанию<input name="owner" maxlength="120" value="${escape(work.owner)}"></label>
         ${visibleWorkFields().map(field => `<div${field.hint ? ' class="field-help"' : ''}>
           <label>${escape(field.label)}<input name="field-${escape(field.id)}" maxlength="120" value="${escape(work.values?.[field.id])}"></label>
@@ -754,7 +768,7 @@
     if (scroll) window.scrollTo(0, 0);
   }
   const taskPanel = workItems.mount({
-    records:() => data, rows:workRows, main, hero, escape, optionList, today:() => today,
+    records:() => data, rows:workRows, main, hero, escape, today:() => today,
     formatDate:date => shortDate.format(asDate(date)),
     save(changes) {
       const next = {...data, ...changes};
@@ -791,7 +805,7 @@
     const {record, entry, returnView} = view;
     const work = readWork();
     const timing = !entry.date ? 'Без даты' : entry.allDay ? 'Весь день' : entry.start + '–' + entry.end;
-    const scope = taskPanel.scopeName(work.pointId);
+    const scope = taskPanel.scopeName(work);
     return `${hero(entry.title, entry.date ? capital(fullDate.format(asDate(entry.date))) : scope, true)}
       <dl class="section point-details">
         <div><dt>Когда</dt><dd>${escape(timing)}${record.repeat !== 'none' ? ' · ' + repeats[record.repeat] : ''}</dd></div>
@@ -901,6 +915,7 @@
     } else {
       main.innerHTML = page === 'calendar' ? calendar() : `${hero('Заметки', 'Записей: ' + data.notes.length, true)}${noteList(false)}`;
     }
+    pointPicker.refresh(main);
     refreshSyncSummary();
     pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
     const taskList = view?.type === 'tasks' && taskPanel.isList();
@@ -937,12 +952,17 @@
     if (input.name === 'owner' && input.form?.dataset.form === 'edit') input.form.setAttribute('data-owner-edited', '');
   });
   main.addEventListener('change', event => {
+    const target = event.target;
+    const selection = pointPicker.change(target);
     if (view?.type === 'recipes') {
-      if (event.target instanceof HTMLSelectElement) recipePanel.change(event.target);
+      if (selection !== undefined) recipePanel.selectPoints(target.closest('[data-point-picker]').dataset.pointPicker, selection);
       return;
     }
-    if (view?.type === 'tasks') return taskPanel.change(event.target);
-    const form = event.target.form;
+    if (view?.type === 'tasks') {
+      if (selection !== undefined) taskPanel.selectPoints(selection);
+      return;
+    }
+    const form = target.form;
     if (form?.dataset.form !== 'edit' || !form.elements.scheduled) return;
     if (event.target.name === 'scope') {
       const scope = event.target.value;
@@ -953,9 +973,10 @@
           : view.record.count;
       }
     }
-    if (event.target.name === 'workScope' && !view.record && !form.hasAttribute('data-owner-edited')) {
-      const id = workItems.scopePoint(form.elements.workScope.value);
-      form.elements.owner.value = data.points.find(point => point.id === id)?.owner ?? '';
+    if (selection !== undefined) {
+      const picker = target.closest('[data-point-picker]');
+      picker.querySelector('[data-point-all]').setCustomValidity('');
+      if (!view.record && !form.hasAttribute('data-owner-edited')) form.elements.owner.value = defaultOwner(selection);
     }
     for (const name of ['end','until']) form.elements.namedItem(name).setCustomValidity('');
     fields(form);
@@ -994,7 +1015,18 @@
     }
     const scheduled = form.elements.scheduled.checked;
     const allDay = !scheduled || values.has('allDay');
-    const work = {...readWork(), pointId:workItems.scopePoint(get('workScope')), owner:get('owner').trim()};
+    const pointField = form.querySelector('[data-point-picker]');
+    const selection = pointPicker.read(pointField);
+    if (selection?.length === 0) {
+      const all = pointField.querySelector('[data-point-all]');
+      all.setCustomValidity('Отметь хотя бы одну точку или выбери всю сеть.');
+      all.reportValidity();
+      return;
+    }
+    const work = {...readWork(), owner:get('owner').trim()};
+    delete work.pointId;
+    delete work.pointIds;
+    Object.assign(work, pointPicker.scopeFields(selection));
     const fields = {...work.values};
     for (const field of visibleWorkFields()) {
       const value = get('field-' + field.id).trim();
@@ -1163,7 +1195,7 @@
     else if (action === 'edit-point') view = {...view, type:'point-edit'};
     else if (action === 'cancel-point') view = view.record ? {...view, type:'point'} : null;
     else if (action === 'new-work') {
-      view = {type:'edit', pointId:view?.type === 'tasks' ? taskPanel.createPoint() : '', returnView:view?.type === 'tasks' ? view : null};
+      view = {type:'edit', workScope:view?.type === 'tasks' ? taskPanel.createScope() : null, returnView:view?.type === 'tasks' ? view : null};
     } else if (action === 'new-note') view = {type:'edit'};
     else if (action === 'work-close') view.type = 'work-close';
     else if (action === 'work-open' || action === 'work-wait') {

@@ -128,7 +128,7 @@ nav button { display:grid; justify-items:center; align-content:center; gap:2px; 
 nav [aria-current=page] { color:var(--accent); background:var(--tint); }
 .create { position:absolute; right:calc(var(--gutter) + 4px); bottom:calc(100% + 8px); width:54px; height:54px; border-radius:50%; color:white; background:var(--action); box-shadow:0 4px 10px #15251d30; display:grid; place-items:center; pointer-events:auto; }
 #personal:has(.create:not([hidden])) main { padding-bottom:74px; }
-#personal:has(form[data-form=edit] :is(input,textarea,select):focus) .bottom,
+#personal:has(form[data-form=edit] :is(input:not([type=checkbox]),textarea,select):focus) .bottom,
 #personal[data-keyboard]:has(form:is([data-form=point],[data-form=point-definition],[data-form=work-close],[data-form=task-field])) .bottom { position:static; }
 .ui-icon { display:inline-block; vertical-align:middle; flex:none; }
 .help { display:inline-grid; place-items:center; vertical-align:middle; min-width:44px; height:44px; color:var(--accent); border:0; background:transparent; }
@@ -176,7 +176,7 @@ form[data-form=point-definition] textarea { min-height:5rem; }
 @media (prefers-color-scheme: dark) {
   .task-overdue { color:#ffb8aa; background:#482b28; }
 }
-.task-scope { margin-bottom:10px; }
+.task-filters { margin-top:10px; }
 .task-list { display:grid; gap:10px; }
 .task-row { display:grid; gap:6px; width:100%; text-align:left; }
 .task-row strong { font-size:1.05rem; }
@@ -197,3 +197,13 @@ form:is([data-form=work-close],[data-form=task-field]) textarea { min-height:6re
 .recipe-ingredient .action { justify-self:start; }
 .recipe-error { margin:0; }
 #personal[data-keyboard]:has(form[data-form=recipe],input[name=recipe-search]) .bottom { position:static; }
+
+.point-picker { min-width:0; padding:0 10px 6px; margin:0; border:1px solid var(--edge); border-radius:12px; }
+.point-picker legend { padding:0 5px; font-size:.9rem; font-weight:650; }
+.point-picker-heading { display:flex; align-items:center; justify-content:space-between; }
+.point-picker .check { display:flex; align-items:center; gap:8px; min-height:44px; padding:4px; cursor:pointer; }
+.point-picker input { flex:none; width:18px; height:18px; margin:0; accent-color:var(--accent); }
+.point-picker small { display:block; color:var(--muted); font-weight:400; }
+.point-picker-list { display:grid; border-top:1px solid var(--edge); }
+.point-picker-list label + label { border-top:1px solid var(--edge); }
+.point-picker-empty { padding:0 4px 7px; font-size:.85rem; color:var(--muted); }
