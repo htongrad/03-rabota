@@ -319,17 +319,18 @@
     if (sendCalendar) {
       if (!calendarGranted) {
         calendarIssue = true;
-        calendarMessage = 'Для отправки событий и дел разреши доступ к календарю при синхронизации.';
+        calendarMessage = 'Для отправки дел разреши доступ к календарю при синхронизации.';
       } else {
         try {
           calendarMessage = 'Обновляю календарь…';
           paint();
-          const taskLink = id => {
+          const workLink = (id, date) => {
             const link = new URL('./', location.href);
-            link.searchParams.set('task', id);
-            return link.href;
+            link.searchParams.set('work', id);
+            if (date) link.searchParams.set('date', date);
+            return link.href.replaceAll('&', '&amp;');
           };
-          const count = await calendar.mirror({request,settings:read(),update,digest,events:records.events,tasks:records.tasks,taskLink});
+          const count = await calendar.mirror({request,settings:read(),update,digest,events:records.events,workLink});
           update({ calendarHash: hash, calendarTaskHash: hash });
           calendarPoll = Date.now();
           calendarIssue = false;

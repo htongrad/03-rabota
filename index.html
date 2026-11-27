@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.7.0">
+<meta name="panel-build" content="3.0.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
-<meta name="description" content="Работа · Дела, календарь, заметки и точки.">
+<meta name="description" content="Работа · Календарь рабочих дел, заметки и точки.">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.7.0">
+<link rel="stylesheet" href="./relief.css?v=3.0.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.7.0</small>
+      <small>Сборка 3.0.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -64,7 +64,7 @@
         <h3>Календарь «03 РАБОТА»</h3>
         <p id="google-calendar-status" role="status"></p>
         <p id="google-calendar-last-sync" class="quiet"></p>
-        <p class="quiet">События и даты дел отправляются по московскому времени.</p>
+        <p class="quiet">Даты и время рабочих дел считаются по Москве.</p>
       </section>
       <button type="button" id="google-close" class="action">Закрыть</button>
     </div>
@@ -80,9 +80,9 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.7.0" defer></script>
-<script src="./google-sync.js?v=2.7.0" defer></script>
-<script src="./work-items.js?v=2.7.0"></script>
+<script src="./calendar-sync.js?v=3.0.0" defer></script>
+<script src="./google-sync.js?v=3.0.0" defer></script>
+<script src="./work-items.js?v=3.0.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -161,7 +161,7 @@
   };
   const pointSettings = records => records.pointSettings ?? defaultPointSettings;
   const visiblePointFields = () => pointSettings(data).fields.filter(field => !field.archived);
-  const createActions = {calendar:['new-event','Создать событие'], notes:['new-note','Создать заметку'],
+  const createActions = {overview:['new-work','Добавить дело'], calendar:['new-work','Добавить дело'], notes:['new-note','Создать заметку'],
     points:['new-point','Добавить точку']};
   const periods = {day:'День', week:'Неделя', month:'Месяц'};
   const repeats = {none:'Не повторяется', daily:'Каждый день', weekdays:'По будням', weekly:'Каждую неделю', monthly:'Каждый месяц', yearly:'Каждый год'};
@@ -177,7 +177,7 @@
   let period = 'day';
   let page = 'overview';
   let view = null;
-  const emptyRecords = () => ({events:[], notes:[], points:[], tasks:[]});
+  const emptyRecords = () => ({events:[], notes:[], points:[]});
   let data = emptyRecords();
   // An explicit prior reset permits synchronising an empty panel on this device.
   function wasResetHere() {
@@ -189,10 +189,14 @@
     } catch { return false; }
   }
   let loadedRecords = null;
+  let needsUpgrade = false;
   try {
     loadedRecords = localStorage.getItem(storageKey);
-    if (loadedRecords) data = validate(JSON.parse(loadedRecords));
-    else if (wasResetHere()) {
+    if (loadedRecords) {
+      const stored = JSON.parse(loadedRecords);
+      data = validate(stored);
+      needsUpgrade = stored?.format !== '03-rabota-backup' || stored.version !== 8;
+    } else if (wasResetHere()) {
       loadedRecords = JSON.stringify(data);
       localStorage.setItem(storageKey, loadedRecords);
     }
@@ -220,21 +224,22 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
-    const tasks = records?.tasks === undefined && !(version >= 6) ? [] : records?.tasks;
+    const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version === 8) ? [] : records?.tasks;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
     const time = value => str(value) && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
     const record = item => item && str(item.id) && item.id.length > 0 && str(item.title) && item.title.trim();
-    const entry = item => item && str(item.title) && item.title.trim() && date(item.date) &&
-      (item.allDay === true || (time(item.start) && time(item.end) && item.start < item.end));
+    const entry = (item, allowUndated = false) => item && str(item.title) && item.title.trim() &&
+      ((allowUndated && item.date === '' && item.repeat === 'none') ||
+        (date(item.date) && (item.allDay === true || (time(item.start) && time(item.end) && item.start < item.end))));
     const unique = rows => new Set(rows.map(row => row.id)).size === rows.length;
     if (!Array.isArray(records?.events) || !Array.isArray(records?.notes) ||
         !records.notes.every(note => record(note) && str(note.text)) ||
-        !records.events.every(event => record(event) && entry(event) && Object.hasOwn(repeats,event.repeat) &&
+        !records.events.every(event => record(event) && entry(event, true) && Object.hasOwn(repeats,event.repeat) &&
           ['never','date','count'].includes(event.ending) &&
           (event.ending !== 'date' || date(event.until)) &&
           (event.ending !== 'count' || (Number.isSafeInteger(event.count) && event.count > 0)) &&
@@ -258,8 +263,16 @@
         !unique(points)) throw new Error('Invalid point records');
     const taskFields = records.taskFields === undefined ? [] : records.taskFields;
     if (!validDefinitions(taskFields) || !taskFields.every(field => str(field.hint)) ||
-        !workItems.validTasks(tasks, points, taskFields, date)) throw new Error('Invalid work items');
-    const validated = {events:records.events, notes:records.notes, points, tasks};
+        !workItems.validLegacyTasks(tasks, points, taskFields, date)) throw new Error('Invalid work items');
+    const checkWork = item => item.work === undefined || workItems.validWork(item.work, points, taskFields);
+    const events = workItems.migrate(records.events, tasks);
+    if (!events.every(event => checkWork(event) && (event.legacyTaskId === undefined || (str(event.legacyTaskId) && event.legacyTaskId)) &&
+        Object.values(event.exceptions).every(item => item === null || checkWork(item)) &&
+        (event.workLog === undefined || (event.workLog && typeof event.workLog === 'object' && !Array.isArray(event.workLog) &&
+          Object.entries(event.workLog).every(([slot, state]) => date(slot) && workItems.validProgress(state)))))) {
+      throw new Error('Invalid work details');
+    }
+    const validated = {events, notes:records.notes, points};
     if (records.pointSettings !== undefined) validated.pointSettings = settings;
     if (records.taskFields !== undefined) validated.taskFields = taskFields;
     // Preserve saved prototype data as an archive while running the restored interface.
@@ -267,13 +280,7 @@
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
-  function backupVersion(records) {
-    if (records.taskFields || records.tasks.some(task => task.repeat || task.values)) return 7;
-    if (records.tasks.length) return 6;
-    if (records.pointSettings) return 5;
-    if (records.points.length) return 4;
-    return Object.hasOwn(records, 'chef') ? 3 : 2;
-  }
+  function backupVersion() { return 8; }
   function downloadBackup() {
     const backup = {format:'03-rabota-backup',version:backupVersion(data),exportedAt:new Date().toISOString(),data};
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], {type:'application/json'}));
@@ -343,7 +350,7 @@
         showNotice('Записи изменились в другом окне. Скачайте копию несохранённых изменений и откройте панель заново.');
         return false;
       }
-      const serialized = JSON.stringify(records);
+      const serialized = JSON.stringify({format:'03-rabota-backup', version:backupVersion(), data:records});
       localStorage.setItem(storageKey, serialized);
       loadedRecords = serialized;
     } catch (error) {
@@ -385,6 +392,7 @@
     return count;
   }
   function occurs(event, date) {
+    if (!event.date) return false;
     if (event.stopBefore && date >= event.stopBefore) return false;
     if (event.ending === 'date' && date > event.until) return false;
     const position = ordinal(event, date);
@@ -403,50 +411,75 @@
   function hero(title, subtitle = '', pageTitle = false) {
     return `<div class="hero${pageTitle ? ' page-title' : ''}">${pageTitle ? '<svg class="relief" viewBox="0 0 170 100" preserveAspectRatio="xMaxYMid slice" fill="none" aria-hidden="true"><path d="M28 -18v45q0 17 18 17h123" stroke="currentColor" opacity="0.15" stroke-width="2"/><path d="M36 -18v47q0 17 18 17h120" stroke="currentColor" opacity="0.19" stroke-width="2"/><path d="M44 -18v49q0 17 18 17h117" stroke="currentColor" opacity="0.22" stroke-width="2"/><path d="M52 -18v51q0 17 18 17h114" stroke="currentColor" opacity="0.26" stroke-width="2"/><path d="M60 -18v53q0 17 18 17h111" stroke="currentColor" opacity="0.30" stroke-width="2"/><path d="M68 -18v55q0 17 18 17h108" stroke="currentColor" opacity="0.33" stroke-width="2"/><path d="M76 -18v57q0 17 18 17h105" stroke="currentColor" opacity="0.37" stroke-width="2"/><path d="M84 -18v59q0 17 18 17h102" stroke="currentColor" opacity="0.41" stroke-width="2"/><path d="M92 -18v61q0 17 18 17h99" stroke="currentColor" opacity="0.45" stroke-width="2"/><path d="M100 -18v63q0 17 18 17h96" stroke="currentColor" opacity="0.48" stroke-width="2"/><path d="M108 -18v65q0 17 18 17h93" stroke="currentColor" opacity="0.52" stroke-width="2"/><path d="M116 -18v67q0 17 18 17h90" stroke="currentColor" opacity="0.56" stroke-width="2"/></svg>' : ''}${subtitle ? `<p>${escape(subtitle)}</p>` : ''}<h1>${escape(title)}</h1></div>`;
   }
+  function eventEntry(record, slot) {
+    return Object.hasOwn(record.exceptions, slot) ? record.exceptions[slot] : {...record, date:slot};
+  }
+  function workRows(records = data.events) {
+    const rows = [];
+    for (const record of records) {
+      const slots = new Set(Object.keys(record.workLog ?? {}));
+      if (record.repeat === 'none') slots.add(record.date);
+      else {
+        for (const slot of Object.keys(record.exceptions)) slots.add(slot);
+        const last = [record.ending === 'date' ? record.until : '', record.stopBefore ? offsetDay(record.stopBefore, -1) : '']
+          .filter(Boolean).sort()[0];
+        const first = record.date > today ? record.date : today;
+        for (const direction of [-1, 1]) {
+          let slot = direction === 1 ? first : offsetDay(today, -1);
+          if (direction === -1 && last && slot > last) slot = last;
+          for (let i = 0; i <= 8 * 366 && slot >= record.date && (!last || slot <= last) && slot.length === 10;
+              i++, slot = offsetDay(slot, direction)) {
+            const ordinalCount = ordinal(record, slot);
+            if (direction === 1 && record.ending === 'count' && ordinalCount > record.count) break;
+            if (!occurs(record, slot) || Object.hasOwn(record.exceptions, slot) || record.workLog?.[slot]?.status === 'done') continue;
+            slots.add(slot);
+            break;
+          }
+        }
+      }
+      for (const slot of slots) {
+        if (record.repeat !== 'none' && !occurs(record, slot)) continue;
+        const entry = eventEntry(record, slot);
+        if (entry) rows.push({record, slot, entry, work:workItems.workFor(record, entry, slot)});
+      }
+    }
+    return rows;
+  }
   function eventList(date, rows = occurrences(date), compact = false) {
-    if (!rows.length) return '<p class="empty">Нет событий</p>';
+    if (!rows.length) return '<p class="empty">Нет дел</p>';
     const day = asDate(date);
     const dateLabel = `<b>${day.getUTCDate()}</b><small>${escape(dayOfWeek.format(day))}</small>`;
     return `<div class="events">${rows.map(({id, slot, entry}) => {
       const series = data.events.find(item => item.id === id);
+      const work = workItems.workFor(series, entry, slot);
       const time = entry.allDay ? '<span class="event-time">Весь день</span>'
         : `<time class="event-time" datetime="${escape(entry.start)}">${escape(entry.start)}</time>`;
-      const label = `<span class="title"><b>${escape(entry.title)}</b>${compact ? '' : `<small>${[entry.allDay ? '' : 'До '+escape(entry.end),series.repeat === 'none' ? '' : repeats[series.repeat]].filter(Boolean).join(' · ')}</small>`}</span>`;
+      const details = [!compact && !entry.allDay ? 'До '+escape(entry.end) : '',
+        !compact && series.repeat !== 'none' ? repeats[series.repeat] : '',
+        work.status !== 'open' ? workItems.taskStatuses[work.status] : ''].filter(Boolean).join(' · ');
+      const label = `<span class="title"><b>${escape(entry.title)}</b>${details ? `<small>${details}</small>` : ''}</span>`;
       return `<button type="button" class="event${compact ? ' event-compact' : ''}" data-event="${escape(id)}"
-        data-slot="${slot}" data-occurrence-date="${date}">${compact
+        data-slot="${slot}">${compact
           ? `<span class="event-date">${dateLabel}</span>${label}${time}`
           : time + label + '<svg class="ui-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'}</button>`;
     }).join('')}</div>`;
   }
-  function calendarTaskList(tasks) {
-    return `<div class="events">${tasks.map(task => `
-      <button type="button" class="event calendar-task" data-calendar-task="${escape(task.id)}">
-        <span class="event-time">Дело</span>
-        <span class="title"><b>${escape(task.title)}</b><small>${workItems.taskStatuses[task.status]}</small></span>
-        <svg class="ui-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
-      </button>`).join('')}</div>`;
-  }
-  function daySchedule(date, events, tasks) {
-    if (!events.length && !tasks.length) return '<p class="empty">Нет событий и дел</p>';
-    return (tasks.length ? calendarTaskList(tasks) : '') + (events.length ? eventList(date, events) : '');
-  }
   function offsetDay(date, offset) { return key(new Date(+asDate(date) + offset * dayMs)); }
-  function agenda(title, first, last, range, {compact = false, eventsFor = occurrences, tasksFor} = {}) {
+  function agenda(title, first, last, range, {compact = false, eventsFor = occurrences} = {}) {
     const groups = [];
     for (let date = first; date <= last; date = offsetDay(date, 1)) {
       const rows = eventsFor(date);
-      const tasks = tasksFor?.(date) ?? [];
-      if (!rows.length && !tasks.length) continue;
-      const content = tasksFor ? daySchedule(date, rows, tasks) : eventList(date, rows, compact);
+      if (!rows.length) continue;
+      const content = eventList(date, rows, compact);
       groups.push(compact ? content : `<div class="agenda-day"><h3>${capital(fullDate.format(asDate(date)))}</h3>${content}</div>`);
     }
     return `<section class="section"><div class="agenda-header"><h2>${title}</h2><small class="agenda-range">${range}</small></div>
-      <div${compact ? ' class="agenda-compact"' : ''}>${groups.join('') || `<p class="empty">${tasksFor ? 'Нет событий и дел' : 'Нет событий'}</p>`}</div></section>`;
+      <div${compact ? ' class="agenda-compact"' : ''}>${groups.join('') || '<p class="empty">Нет дел</p>'}</div></section>`;
   }
-  function weekAgenda(eventsFor, tasksFor) {
+  function weekAgenda(eventsFor) {
     const first = offsetDay(selected, -((asDate(selected).getUTCDay() + 6) % 7));
     const last = offsetDay(first, 6);
-    return agenda('События и дела недели', first, last, shortDate.formatRange(asDate(first), asDate(last)), {eventsFor, tasksFor});
+    return agenda('Дела недели', first, last, shortDate.formatRange(asDate(first), asDate(last)), {eventsFor});
   }
   function nextWeekAgenda() {
     const first = offsetDay(today, 1);
@@ -469,28 +502,19 @@
     const count = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
     const namedMonth = capital(monthName.format(first)).replace(/\s*г\.$/u, '');
     const rowsByDate = new Map();
-    const tasksByDate = new Map();
-    for (const task of data.tasks) {
-      if (!task.due) continue;
-      if (!tasksByDate.has(task.due)) tasksByDate.set(task.due, []);
-      tasksByDate.get(task.due).push(task);
-    }
-    const tasksFor = date => tasksByDate.get(date) ?? [];
     const dates = Array.from({length:count}, (_, index) => {
       const date = month + '-' + String(index + 1).padStart(2, '0');
       const rows = occurrences(date);
       rowsByDate.set(date, rows);
-      const taskCount = tasksFor(date).length;
-      const label = capital(fullDate.format(asDate(date))) + (rows.length ? `, событий: ${rows.length}` : '') +
-        (taskCount ? `, дел: ${taskCount}` : '');
+      const label = capital(fullDate.format(asDate(date))) + (rows.length ? `, дел: ${rows.length}` : '');
       return `<button type="button" data-day="${date}" aria-label="${escape(label)}" aria-pressed="${selected === date}"${date === today ? ' aria-current="date"' : ''}>
-        <span class="day-number"${rows.length || taskCount ? ' data-events' : ''}>${index + 1}</span></button>`;
+        <span class="day-number"${rows.length ? ' data-events' : ''}>${index + 1}</span></button>`;
     }).join('');
     const eventsFor = date => rowsByDate.get(date) ?? occurrences(date);
     let schedule;
-    if (period === 'week') schedule = weekAgenda(eventsFor, tasksFor);
-    else if (period === 'month') schedule = agenda('События и дела месяца', month + '-01', month + '-' + count, namedMonth, {eventsFor, tasksFor});
-    else schedule = `<section class="section"><h2>${capital(fullDate.format(asDate(selected)))}</h2>${daySchedule(selected, eventsFor(selected), tasksFor(selected))}</section>`;
+    if (period === 'week') schedule = weekAgenda(eventsFor);
+    else if (period === 'month') schedule = agenda('Дела месяца', month + '-01', month + '-' + count, namedMonth, {eventsFor});
+    else schedule = `<section class="section"><h2>${capital(fullDate.format(asDate(selected)))}</h2>${eventList(selected, eventsFor(selected))}</section>`;
     return `${hero('Календарь', namedMonth, true)}<div class="periods" role="group" aria-label="Период календаря">${Object.entries(periods).map(([id, label]) =>
         `<button type="button" data-period="${id}" aria-pressed="${period === id}">${label}</button>`).join('')}</div><section class="section"><div class="month-controls">
       <h2>${namedMonth}</h2><button type="button" data-action="today">Сегодня</button>
@@ -647,38 +671,67 @@
     commitPointDefinition(item, 'Настройки карточек сохранены.');
   }
   function scopeOptions() {
-    return {single:'Только это событие', following:'Это и следующие', series:'Вся серия'};
+    return {single:'Только это дело', following:'Это и следующие', series:'Вся серия'};
+  }
+  const visibleWorkFields = () => (data.taskFields ?? []).filter(field => !field.archived);
+  function readWork() {
+    return view.record ? workItems.workFor(view.record, view.entry, view.slot) : {
+      ...workItems.emptyWork, pointId:view.pointId ?? '', owner:data.points.find(point => point.id === view.pointId)?.owner ?? '',
+    };
   }
   function editForm() {
     const note = page === 'notes';
     const original = view.record;
-    const value = note ? original ?? {} : view.entry ?? {date:selected, start:'09:00', end:'10:00', repeat:'none', ending:'never'};
-    const recurring = !note && original && original.repeat !== 'none';
-    return `${hero((original ? 'Редактировать ' : note ? 'Новая ' : 'Новое ') + (note ? original ? 'заметку' : 'заметка' : 'событие'))}
+    if (note) return `${hero(original ? 'Редактировать заметку' : 'Новая заметка')}
       <form data-form="edit">
-        ${recurring ? `<div class="field-help"><label>Применить к<select name="scope">${optionList(scopeOptions(), 'single')}</select></label><button type="button" class="help" data-hint="Можно изменить одно событие, остаток серии или всю серию." aria-label="Подсказка: Применить к" aria-expanded="false"><span aria-hidden="true">?</span></button></div>` : ''}
+        <label>Название<input name="title" required maxlength="200" value="${escape(original?.title)}"></label>
+        <label>Текст<textarea name="text" rows="6">${escape(original?.text)}</textarea></label>
+        <div class="controls"><button type="submit" class="action primary">Сохранить</button>
+          <button type="button" data-action="cancel">Отмена</button></div>
+      </form>`;
+    const value = view.entry ?? {date:selected, start:'09:00', end:'10:00', repeat:'none', ending:'never'};
+    const recurring = original && original.repeat !== 'none';
+    const work = readWork();
+    return `${hero(original ? 'Изменить дело' : 'Новое дело', '', true)}
+      <form data-form="edit">
+        ${recurring ? `<div class="field-help"><label>Применить к<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>
+          ${pointHint('область изменения','Можно изменить одно дело, следующие дела или всю серию.')}</div>` : ''}
         <label>Название<input name="title" required maxlength="200" value="${escape(value.title)}"></label>
-        ${note ? `<label>Текст<textarea name="text" rows="6">${escape(value.text)}</textarea></label>` : `
-          <label>Дата<input type="date" name="date" required value="${escape(value.date)}"></label>
+        <label class="check"><input type="checkbox" name="scheduled"${value.date ? ' checked' : ''}> В календаре</label>
+        <div class="work-schedule" data-schedule>
+          <label>Дата<input type="date" name="date" max="9999-12-30" value="${escape(value.date)}"></label>
           <label class="check"><input type="checkbox" name="allDay"${value.allDay ? ' checked' : ''}> Весь день</label>
-          <div class="times"><label>Начало<input name="start" type="time" value="${escape(value.start || '09:00')}"></label>
-          <label>Окончание<input name="end" type="time" value="${escape(value.end || '10:00')}"></label></div>
-          <div class="field-help" data-repeat><label>Повтор<select name="repeat">${optionList(repeats, original?.repeat ?? value.repeat)}</select></label><button type="button" class="help" data-hint="Выбери частоту, чтобы создать серию событий." aria-label="Подсказка: Повтор" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
+          <div class="times">
+            <label>Начало<input name="start" type="time" value="${escape(value.start || '09:00')}"></label>
+            <label>Окончание<input name="end" type="time" value="${escape(value.end || '10:00')}"></label></div>
+          <div class="field-help" data-repeat><label>Повтор<select name="repeat">${optionList(repeats, original?.repeat ?? value.repeat)}</select></label>
+            ${pointHint('повтор','Выбери частоту. Дела сразу появятся в календаре по расписанию.')}</div>
           <label data-ending>Окончание серии<select name="ending">${optionList({never:'Бессрочно',date:'До даты',count:'После заданного числа повторений'}, original?.ending ?? value.ending)}</select></label>
           <label data-until>Последняя дата включительно<input name="until" type="date" value="${escape(original?.until ?? value.until)}"></label>
-          <label data-count>Число событий в серии<input name="count" type="number" min="1" max="9999" value="${escape(original?.count ?? value.count ?? 10)}"></label>`}
-        <div class="controls"><button type="submit" class="action primary">Сохранить</button><button type="button" data-action="cancel">Отмена</button></div>
+          <label data-count>Число дел в серии<input name="count" type="number" min="1" max="9999" value="${escape(original?.count ?? value.count ?? 10)}"></label>
+        </div>
+        <label>Область<select name="workScope">${optionList(taskPanel.scopeChoices(), workItems.scopeKey(work.pointId))}</select></label>
+        <label>Ответственный · по желанию<input name="owner" maxlength="120" value="${escape(work.owner)}"></label>
+        ${visibleWorkFields().map(field => `<div${field.hint ? ' class="field-help"' : ''}>
+          <label>${escape(field.label)}<input name="field-${escape(field.id)}" maxlength="120" value="${escape(work.values?.[field.id])}"></label>
+          ${pointHint(field.label, field.hint)}</div>`).join('')}
+        <div class="controls"><button type="submit" class="action primary">Сохранить</button>
+          <button type="button" data-action="cancel">Отмена</button></div>
       </form>`;
   }
   function fields(form) {
-    if (page === 'notes') return;
+    if (!form.elements.scheduled) return;
     const get = name => form.elements.namedItem(name);
     const single = get('scope')?.value === 'single';
-    const allDay = get('allDay').checked;
     const repeatsEnabled = !single && get('repeat').value !== 'none';
+    get('scheduled').disabled = single || repeatsEnabled;
+    const scheduled = get('scheduled').checked;
+    const allDay = get('allDay').checked;
     const ending = get('ending').value;
+    form.querySelector('[data-schedule]').hidden = !scheduled;
+    get('date').required = scheduled;
     form.querySelector('.times').hidden = allDay;
-    get('start').required = get('end').required = !allDay;
+    get('start').required = get('end').required = scheduled && !allDay;
     form.querySelector('[data-repeat]').hidden = single;
     form.querySelector('[data-ending]').hidden = !repeatsEnabled;
     form.querySelector('[data-until]').hidden = !repeatsEnabled || ending !== 'date';
@@ -694,7 +747,7 @@
     if (scroll) window.scrollTo(0, 0);
   }
   const taskPanel = workItems.mount({
-    records:() => data, main, hero, escape, optionList, hint:pointHint, today:() => today,
+    records:() => data, rows:workRows, main, hero, escape, optionList, today:() => today,
     formatDate:date => shortDate.format(asDate(date)),
     save(changes) {
       const next = {...data, ...changes};
@@ -703,27 +756,65 @@
       return true;
     },
     redraw:redrawTasks,
-    goBack(pointId, due) {
-      if (page === 'calendar' && due) {
-        selected = due;
-        month = due.slice(0, 7);
-      }
+    goBack(pointId) {
       const record = data.points.find(point => point.id === pointId);
       view = record ? {type:'point', record} : null;
       redrawTasks();
     },
   });
-  function showCalendarTask(taskId, followDate = false) {
-    const task = data.tasks.find(item => item.id === taskId);
-    if (!task) return false;
-    page = 'calendar';
-    if (followDate && task.due) {
-      selected = task.due;
-      month = task.due.slice(0, 7);
+  function showWork(id, slot, returnView = null) {
+    const record = data.events.find(item => item.id === id || item.legacyTaskId === id);
+    if (!record) return false;
+    if (record.repeat === 'none') slot = record.date;
+    if (record.repeat !== 'none' && (!/^\d{4}-\d{2}-\d{2}$/.test(slot ?? '') || !occurs(record, slot) || eventEntry(record, slot) === null)) {
+      const slots = workRows([record]).sort((a, b) => a.entry.date.localeCompare(b.entry.date));
+      slot = slots.find(row => row.entry.date >= today)?.slot ?? slots.at(-1)?.slot;
+      if (!slot) return false;
     }
-    taskPanel.open('', task.id);
-    view = {type:'tasks'};
+    const entry = eventEntry(record, slot);
+    if (!entry) return false;
+    if (page === 'calendar' && entry.date) {
+      selected = entry.date;
+      month = entry.date.slice(0, 7);
+    }
+    view = {type:'record', record, entry, slot, returnView};
     return true;
+  }
+  function workCard() {
+    const {record, entry, returnView} = view;
+    const work = readWork();
+    const timing = !entry.date ? 'Без даты' : entry.allDay ? 'Весь день' : entry.start + '–' + entry.end;
+    const scope = taskPanel.scopeName(work.pointId);
+    return `${hero(entry.title, entry.date ? capital(fullDate.format(asDate(entry.date))) : scope, true)}
+      <dl class="section point-details">
+        <div><dt>Когда</dt><dd>${escape(timing)}${record.repeat !== 'none' ? ' · ' + repeats[record.repeat] : ''}</dd></div>
+        <div><dt>Состояние</dt><dd>${workItems.taskStatuses[work.status]}</dd></div>
+        <div><dt>Область</dt><dd>${escape(scope)}</dd></div>
+        ${work.owner ? `<div><dt>Ответственный</dt><dd>${escape(work.owner)}</dd></div>` : ''}
+        ${visibleWorkFields().map(field => `<div><dt class="point-field-title">${escape(field.label)}${pointHint(field.label, field.hint)}</dt>
+          <dd>${escape(work.values?.[field.id]) || '<small>Пока не заполнено</small>'}</dd></div>`).join('')}
+        ${work.result ? `<div><dt>Результат</dt><dd class="task-result">${escape(work.result)}</dd></div>` : ''}
+      </dl>
+      <div class="controls point-controls">
+        ${work.status === 'done' ? '<button type="button" class="action primary" data-action="work-open">Вернуть в работу</button><button type="button" class="action" data-action="work-close">Изменить результат</button>'
+          : '<button type="button" class="action primary" data-action="work-close">Завершить дело</button>'}
+        ${work.status === 'open' ? '<button type="button" class="action" data-action="work-wait">Отметить ожидание</button>'
+          : work.status === 'waiting' ? '<button type="button" class="action" data-action="work-open">Вернуть к выполнению</button>' : ''}
+        <button type="button" class="action" data-action="edit">Изменить дело</button>
+        <button type="button" class="action" data-action="delete">Удалить</button>
+        <button type="button" class="action" data-action="back">Назад ${returnView ? 'к делам' : page === 'calendar' ? 'к календарю' : 'к обзору'}</button>
+      </div>`;
+  }
+  function updateWork(status, result) {
+    const {record, slot} = view;
+    const state = {status, result};
+    const updated = record.repeat === 'none' ? {...record, work:{...readWork(), ...state}}
+      : {...record, workLog:{...record.workLog, [slot]:state}};
+    const next = {...data, events:data.events.map(item => item.id === updated.id ? updated : item)};
+    if (!save(next, 'В браузере не хватает места для изменений в деле.')) return;
+    data = next;
+    view = {...view, type:'record', record:updated, entry:eventEntry(updated, slot)};
+    redrawTasks('Дело обновлено.');
   }
   function render() {
     closeHint();
@@ -732,7 +823,7 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, дел — ${candidate.tasks.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
     } else if (view?.type === 'tasks') {
       main.innerHTML = taskPanel.draw();
@@ -747,24 +838,30 @@
     } else if (view?.type === 'edit') {
       main.innerHTML = editForm();
       fields(main.querySelector('form'));
+    } else if (view?.type === 'work-close') {
+      const work = readWork();
+      main.innerHTML = `${hero(work.status === 'done' ? 'Изменить результат' : 'Завершить дело', view.entry.title, true)}
+        <form data-form="work-close"><label>Результат · по желанию<textarea name="result" rows="3" maxlength="1200">${escape(work.result)}</textarea></label>
+        <div class="controls point-controls"><button type="submit" class="action primary">${work.status === 'done' ? 'Сохранить' : 'Отметить готовым'}</button>
+          <button type="button" class="action" data-action="cancel">Назад к делу</button></div></form>`;
     } else if (view?.type === 'delete') {
-      const series = page === 'calendar' && view.record.repeat !== 'none';
-      main.innerHTML = `${hero('Удалить ' + (page === 'notes' ? 'заметку' : 'событие') + '?')}
+      const series = page !== 'notes' && view.record.repeat !== 'none';
+      main.innerHTML = `${hero('Удалить ' + (page === 'notes' ? 'заметку' : 'дело') + '?')}
         <p class="record">${escape(view.entry?.title ?? view.record.title)}</p><form data-form="delete">
         ${series ? `<label>Удалить<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>` : ''}
         <div class="controls"><button type="submit" class="action primary">Удалить</button><button type="button" data-action="cancel">Отмена</button></div></form>`;
+    } else if (view?.type === 'record' && page !== 'notes') {
+      main.innerHTML = workCard();
     } else if (view?.type === 'record') {
-      const item = view.entry ?? view.record;
-      const detail = page === 'notes' ? item.text : (item.allDay ? 'Весь день' : item.start + '–' + item.end)
-        + (view.record.repeat === 'none' ? '' : ' · ' + repeats[view.record.repeat]);
+      const item = view.record;
       main.innerHTML = `<button type="button" class="back" data-action="back">← ${labels[page]}</button>
-        ${hero(item.title, page === 'calendar' ? capital(fullDate.format(asDate(item.date))) : '')}
-        <p class="record">${escape(detail)}</p><div class="controls"><button type="button" class="action" data-action="edit">Изменить</button>
+        ${hero(item.title)}
+        <p class="record">${escape(item.text)}</p><div class="controls"><button type="button" class="action" data-action="edit">Изменить</button>
         <button type="button" data-action="delete">Удалить</button></div>`;
     } else if (page === 'overview') {
       main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
         <div class="overview-modules">
-          ${taskPanel.overview()}
+          <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
           <section class="section"><h2>Сегодня</h2>${eventList(today)}</section>
           ${nextWeekAgenda()}
           <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
@@ -782,7 +879,7 @@
     pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
     const taskList = view?.type === 'tasks' && taskPanel.isList();
     taskSettingsButton.hidden = !taskList || !storageReadable;
-    const createAction = taskList ? ['new-task','Добавить дело'] : createActions[page];
+    const createAction = taskList ? ['new-work','Добавить дело'] : createActions[page];
     create.hidden = !storageReadable || (Boolean(view) && !taskList) || !createAction;
     if (createAction) {
       create.dataset.action = createAction[0];
@@ -800,18 +897,18 @@
       return;
     }
     if (date) { selected = date; month = date.slice(0, 7); }
-    view = null;
+    view = view?.returnView ?? null;
     render();
   }
   main.addEventListener('input', event => {
     const input = event.target;
     if (input instanceof HTMLInputElement) input.setCustomValidity('');
-    if (input.name === 'owner' && input.form?.dataset.form === 'task-edit') input.form.setAttribute('data-owner-edited', '');
+    if (input.name === 'owner' && input.form?.dataset.form === 'edit') input.form.setAttribute('data-owner-edited', '');
   });
   main.addEventListener('change', event => {
     if (view?.type === 'tasks') return taskPanel.change(event.target);
     const form = event.target.form;
-    if (form?.dataset.form !== 'edit' || page !== 'calendar') return;
+    if (form?.dataset.form !== 'edit' || !form.elements.scheduled) return;
     if (event.target.name === 'scope') {
       const scope = event.target.value;
       form.elements.date.value = scope === 'series' ? view.record.date : scope === 'following' ? view.slot : view.entry.date;
@@ -820,6 +917,10 @@
           ? view.record.count - ordinal(view.record, view.slot) + 1
           : view.record.count;
       }
+    }
+    if (event.target.name === 'workScope' && !view.record && !form.hasAttribute('data-owner-edited')) {
+      const id = workItems.scopePoint(form.elements.workScope.value);
+      form.elements.owner.value = data.points.find(point => point.id === id)?.owner ?? '';
     }
     for (const name of ['end','until']) form.elements.namedItem(name).setCustomValidity('');
     fields(form);
@@ -831,6 +932,7 @@
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (view?.type === 'tasks') return taskPanel.submit(form, get);
+    if (form.dataset.form === 'work-close') return updateWork('done', get('result').trim());
     if (form.dataset.form === 'point') return savePoint(form, get);
     if (form.dataset.form === 'point-definition') return savePointDefinition(form, get);
     const original = view.record;
@@ -854,8 +956,18 @@
       finish();
       return;
     }
-    const allDay = values.has('allDay');
-    const entry = {title, date:get('date'), allDay, start:allDay ? '' : get('start'), end:allDay ? '' : get('end')};
+    const scheduled = form.elements.scheduled.checked;
+    const allDay = !scheduled || values.has('allDay');
+    const work = {...readWork(), pointId:workItems.scopePoint(get('workScope')), owner:get('owner').trim()};
+    const fields = {...work.values};
+    for (const field of visibleWorkFields()) {
+      const value = get('field-' + field.id).trim();
+      if (value) fields[field.id] = value;
+      else delete fields[field.id];
+    }
+    if (Object.keys(fields).length) work.values = fields;
+    else delete work.values;
+    const entry = {title, date:scheduled ? get('date') : '', allDay, start:allDay ? '' : get('start'), end:allDay ? '' : get('end'), work};
     if (!allDay && entry.end <= entry.start) {
       form.elements.end.setCustomValidity('Окончание должно быть позже начала.');
       form.elements.end.reportValidity();
@@ -864,26 +976,45 @@
     if (scope === 'single') {
       original.exceptions[view.slot] = entry;
     } else {
-      const repeat = get('repeat');
+      const repeat = scheduled ? get('repeat') : 'none';
       const ending = repeat === 'none' ? 'never' : get('ending');
       if (ending === 'date' && get('until') < entry.date) {
         form.elements.until.setCustomValidity('Дата окончания серии должна быть не раньше начала.');
         form.elements.until.reportValidity();
         return;
       }
-      const updated = {...entry, id:original?.id ?? crypto.randomUUID(), repeat, ending, until:get('until'), count:Number(get('count')), exceptions:{}};
+      const updated = {...entry, id:original?.id ?? crypto.randomUUID(), repeat, ending, until:get('until'),
+        count:Number(get('count')), exceptions:{}};
+      if (original?.legacyTaskId && scope !== 'following') updated.legacyTaskId = original.legacyTaskId;
       if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
+      if (original) {
+        const affected = slot => scope !== 'following' || slot >= view.slot;
+        const eligible = slot => repeat !== 'none' && affected(slot) && occurs(updated, slot);
+        if (repeat !== 'none') {
+          updated.work = {...work, status:'open', result:''};
+          updated.exceptions = Object.fromEntries(Object.entries(original.exceptions).filter(([slot]) => eligible(slot)));
+          const workLog = Object.fromEntries(Object.entries(original.workLog ?? {}).filter(([slot]) => eligible(slot)));
+          if (original.repeat === 'none' && eligible(entry.date) && (work.status !== 'open' || work.result)) {
+            workLog[entry.date] = {status:work.status, result:work.result};
+          }
+          if (Object.keys(workLog).length) updated.workLog = workLog;
+        }
+        for (const [slot, state] of Object.entries(original.workLog ?? {})) {
+          if (!affected(slot) || eligible(slot) || (!state.result && state.status === 'open') ||
+              (repeat === 'none' && slot === view.slot) || !occurs(original, slot)) continue;
+          const previous = eventEntry(original, slot);
+          const id = original.id + ':history:' + slot;
+          if (!previous || data.events.some(item => item.id === id)) continue;
+          const {title, date, allDay, start, end} = previous;
+          data.events.push({id, title, date, allDay, start, end, repeat:'none', ending:'never', exceptions:{},
+            work:workItems.workFor(original, previous, slot)});
+        }
+      }
       if (scope === 'following') {
         updated.id = crypto.randomUUID();
-        for (const [slot, exception] of Object.entries(original.exceptions)) {
-          if (slot >= view.slot && occurs(updated, slot)) updated.exceptions[slot] = exception;
-        }
         original.stopBefore = view.slot;
         data.events.push(updated);
       } else if (original) {
-        for (const [slot, exception] of Object.entries(original.exceptions)) {
-          if (repeat !== 'none' && occurs(updated, slot)) updated.exceptions[slot] = exception;
-        }
         data.events[data.events.indexOf(original)] = updated;
       } else {
         data.events.push(updated);
@@ -894,7 +1025,7 @@
   root.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button || !root.contains(button) || button.type === 'submit') return;
-    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, definitionId, calendarTask, action} = button.dataset;
+    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, definitionId, action} = button.dataset;
     if (!menu.contains(button) || ['backups', 'google', 'install', 'point-settings', 'task-settings'].includes(action)) menu.open = false;
     if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
@@ -903,18 +1034,14 @@
       prompt.prompt().catch(() => showNotice('Откройте меню Chrome, чтобы установить приложение.'));
       return;
     }
-    if (calendarTask) {
-      if (showCalendarTask(calendarTask)) redrawTasks();
-      return;
-    }
     if (action === 'open-tasks' || action === 'point-tasks') {
       taskPanel.open(action === 'point-tasks' ? view.record.id : '');
       view = {type:'tasks'};
       redrawTasks();
       return;
     }
-    if (view?.type === 'tasks' && (button.dataset.taskAction || action === 'new-task' || action === 'task-settings')) {
-      taskPanel.click(button.dataset.taskAction || (action === 'new-task' ? 'new' : 'fields'), button);
+    if (view?.type === 'tasks' && (button.dataset.taskAction || action === 'task-settings')) {
+      taskPanel.click(button.dataset.taskAction || 'fields', button);
       return;
     }
     if (action === 'export') { downloadBackup(); return; }
@@ -925,7 +1052,7 @@
         return [...current, ...incoming.filter(item => !ids.has(item.id))];
       };
       const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes),
-        points:addMissing(data.points,candidate.points), tasks:addMissing(data.tasks,candidate.tasks)};
+        points:addMissing(data.points,candidate.points)};
       if (data.taskFields || candidate.taskFields) merged.taskFields = addMissing(data.taskFields ?? [], candidate.taskFields ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
@@ -946,7 +1073,7 @@
         showNotice('Копия добавлена в браузер.');
       }
     } else if (action === 'backups') { candidate = null; view = {type:'backups'}; }
-    else if (!storageReadable && ['edit','delete','new-event','new-note','new-point','edit-point','point-settings',
+    else if (!storageReadable && ['edit','delete','new-work','new-note','new-point','edit-point','point-settings',
         'new-point-definition','archive-point-definition'].includes(action)) return;
     else if (destination) { page = destination; view = null; }
     else if (direction) {
@@ -959,10 +1086,7 @@
       period = 'day';
     } else if (Object.hasOwn(periods, nextPeriod)) period = nextPeriod;
     else if (id) {
-      const record = data.events.find(item => item.id === id);
-      const entry = record.exceptions[slot] ?? {...record, date:button.dataset.occurrenceDate};
-      page = 'calendar'; selected = entry.date; month = selected.slice(0, 7);
-      view = {type:'record', record, entry, slot};
+      if (!showWork(id, slot, view?.type === 'tasks' ? view : null)) return;
     } else if (note) {
       page = 'notes'; view = {type:'record', record:data.notes.find(item => item.id === note)};
     } else if (point) {
@@ -986,16 +1110,23 @@
     } else if (action === 'new-point') view = {type:'point-edit'};
     else if (action === 'edit-point') view = {...view, type:'point-edit'};
     else if (action === 'cancel-point') view = view.record ? {...view, type:'point'} : null;
-    else if (action === 'new-event' || action === 'new-note') view = {type:'edit'};
+    else if (action === 'new-work') {
+      view = {type:'edit', pointId:view?.type === 'tasks' ? taskPanel.createPoint() : '', returnView:view?.type === 'tasks' ? view : null};
+    } else if (action === 'new-note') view = {type:'edit'};
+    else if (action === 'work-close') view.type = 'work-close';
+    else if (action === 'work-open' || action === 'work-wait') {
+      if (storageReadable) updateWork(action === 'work-wait' ? 'waiting' : 'open', readWork().result);
+      return;
+    }
     else if (action === 'edit' || action === 'delete') view.type = action;
-    else if (action === 'cancel') view = view.record ? {...view, type:'record'} : null;
-    else if (action === 'back') view = null;
+    else if (action === 'cancel') view = view.record ? {...view, type:'record'} : view.returnView ?? null;
+    else if (action === 'back') view = view?.returnView ?? null;
     else return;
     const pointScreen = page === 'points' && view?.type !== 'backups';
     if (pointScreen && storageReadable) showNotice('');
     render();
-    if (destination || pointScreen) window.scrollTo(0, 0);
-    if (action === 'new-event' || action === 'new-note') main.querySelector('h1').scrollIntoView({block:'start'});
+    if (destination || pointScreen || id || ['edit','delete','work-close','back','cancel'].includes(action)) window.scrollTo(0, 0);
+    if (action === 'new-work' || action === 'new-note') main.querySelector('h1').scrollIntoView({block:'start'});
     if (day) main.querySelector('[data-day="' + day + '"]')?.focus({preventScroll:true});
     if (direction) main.querySelector('[data-month="' + direction + '"]')?.focus({preventScroll:true});
     if (nextPeriod) main.querySelector('[data-period="' + nextPeriod + '"]')?.focus({preventScroll:true});
@@ -1051,9 +1182,14 @@
       return 0;
     },
   };
-  const linkedTask = new URLSearchParams(location.search).get('task');
-  if (linkedTask && !showCalendarTask(linkedTask, true) && storageReadable) {
-    showNotice('Дело недоступно в этом браузере. Если записи хранятся на другом устройстве, восстанови копию данных.');
+  if (needsUpgrade && !save(data, 'В браузере не хватает места для обновления записей.')) storageReadable = false;
+  const link = new URLSearchParams(location.search);
+  const linkedWork = link.get('work') ?? link.get('task');
+  if (linkedWork) {
+    page = 'calendar';
+    if (!showWork(linkedWork, link.get('date')) && storageReadable) {
+      showNotice('Дело недоступно в этом браузере. Если записи хранятся на другом устройстве, восстанови копию данных.');
+    }
   }
   updateToday();
   render();

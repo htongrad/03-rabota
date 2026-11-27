@@ -34,16 +34,26 @@
     return {summary:event.title,start:event.allDay ? {date:event.date} : {dateTime:instant(event.date,event.start,zone),timeZone:zone},
       end:event.allDay ? {date:plus(event.date,1)} : {dateTime:instant(event.date,event.end,zone),timeZone:zone}};
   }
-  function calendarRows(events, zone) {
+  function workPayload(event, entry, slot, zone, workLink) {
+    const item = payload(entry, zone);
+    const work = event.workLog?.[slot] ?? entry.work ?? event.work;
+    if (work?.status === 'done') item.summary = 'Готово · ' + item.summary;
+    if (work?.status === 'waiting') item.summary = 'Ожидает · ' + item.summary;
+    if (workLink) item.description = `<a href="${workLink(event.id, slot)}">Открыть дело в панели 03</a>`;
+    if (event.legacyTaskId) item.transparency = entry.allDay ? 'transparent' : 'opaque';
+    return item;
+  }
+  function calendarRows(events, zone, workLink) {
     const rows = new Map();
     for (const event of events) {
+      if (!event.date) continue;
       const recurring = event.repeat !== 'none';
       let start = event.date;
       if (event.repeat === 'weekdays') {
         while ([0,6].includes(new Date(start+'T00:00:00Z').getUTCDay())) start = plus(start,1);
       }
       if (!window.panelRecords.occurs(event,start)) continue;
-      const item = payload({...event,date:start},zone);
+      const item = workPayload(event, {...event,date:start}, recurring ? null : start, zone, workLink);
       if (recurring) {
         let rule = 'RRULE:FREQ=' + freq[event.repeat];
         const stop = event.stopBefore ? plus(event.stopBefore,-1) : '';
@@ -55,34 +65,25 @@
         } else if (limit) {
           rule += ';COUNT=' + window.panelRecords.countThrough(event,limit);
         }
-        const slots = Object.keys(event.exceptions).filter(slot => window.panelRecords.occurs(event,slot));
+        const handled = Object.entries(event.workLog ?? {}).filter(([, work]) => work.status !== 'open').map(([slot]) => slot);
+        const slots = [...new Set([...Object.keys(event.exceptions), ...handled])]
+          .filter(slot => window.panelRecords.occurs(event,slot)).sort();
         item.recurrence = [rule];
         if (slots.length) {
           item.recurrence.push(event.allDay ? 'EXDATE;VALUE=DATE:'+slots.map(compact).join(',')
             : 'EXDATE;TZID='+zone+':'+slots.map(slot => compact(slot)+'T'+event.start.replace(':','')+'00').join(','));
         }
         for (const slot of slots) {
-          const changed = event.exceptions[slot];
-          if (changed) rows.set(JSON.stringify(['event',event.id,slot]),payload(changed,zone));
+          const changed = Object.hasOwn(event.exceptions, slot) ? event.exceptions[slot] : {...event, date:slot};
+          if (changed) rows.set(JSON.stringify(['event',event.id,slot]), workPayload(event, changed, slot, zone, workLink));
         }
       }
-      rows.set(JSON.stringify(['event',event.id]),item);
+      const key = event.legacyTaskId ? ['task',event.legacyTaskId] : ['event',event.id];
+      rows.set(JSON.stringify(key),item);
     }
     return rows;
   }
   const isTaskKey = key => key.startsWith('["task",');
-  function taskRows(tasks, taskLink) {
-    const rows = new Map();
-    for (const task of tasks) {
-      if (!task.due) continue;
-      const label = task.status === 'done' ? 'Дело готово' : task.status === 'waiting' ? 'Дело ожидает' : 'Дело';
-      const item = payload({title:label + ' · ' + task.title, date:task.due, allDay:true}, eventZone);
-      item.description = `<a href="${taskLink(task.id)}">Открыть дело в панели 03</a>`;
-      item.transparency = 'transparent';
-      rows.set(JSON.stringify(['task',task.id]), item);
-    }
-    return rows;
-  }
   function belongs(event, key) { return event.extendedProperties?.private?.panel === tag && event.extendedProperties.private.key === key; }
   function same(remote, body) {
     const stamp = value => value?.date || (value?.dateTime ? new Date(value.dateTime).toISOString() : '');
@@ -92,7 +93,7 @@
       stamp(remote.start) === stamp(body.start) && stamp(remote.end) === stamp(body.end) && JSON.stringify(remote.recurrence || []) === JSON.stringify(body.recurrence || []);
   }
 
-  async function mirror({ request, settings, update, digest, events, tasks = [], taskLink }) {
+  async function mirror({ request, settings, update, digest, events, workLink }) {
     async function list(url, params) {
       const rows = [];
       let pageToken;
@@ -112,7 +113,7 @@
       calendar = found[0];
     }
     if (calendar.primary || calendar.deleted || calendar.summary?.trim() !== name || calendar.accessRole !== 'owner' || !calendar.id) throw Error('Проверь доступ и название календаря «03 РАБОТА».');
-    const desired = new Map([...calendarRows(events,eventZone), ...taskRows(tasks, taskLink)]);
+    const desired = calendarRows(events, eventZone, workLink);
     update({ calendarId: calendar.id, calendarZone: eventZone });
     const url = base + '/calendars/' + encode(calendar.id) + '/events';
     const remote = await list(url, { privateExtendedProperty: 'panel=' + tag, maxResults: '2500', showDeleted: 'false', fields: 'nextPageToken,items(id,etag,status,summary,description,location,transparency,start,end,recurrence,extendedProperties)' });
@@ -145,14 +146,14 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...entry })
         }, false, [409]);
         if (response.status !== 409) return response.json();
-        const existing = await request(url + '/' + encode(id), {}, false, isTaskKey(key) ? [404, 410] : []);
-        if (existing.status === 404 || existing.status === 410) continue;
+        const existing = await request(url + '/' + encode(id), {}, false, [410]);
+        if (existing.status === 410) continue;
         const record = await existing.json();
-        if (isTaskKey(key) && record.status === 'cancelled') continue;
+        if (record.status === 'cancelled') continue;
         if (!belongs(record, key)) throw Error('Идентификатор события занят другой записью. Она оставлена без изменений.');
         return record;
       }
-      throw Error('Google пока удерживает идентификаторы удалённых сроков. Повтори синхронизацию.');
+      throw Error('Google пока удерживает идентификаторы удалённых записей. Повтори синхронизацию.');
     }
     const confirmed = [];
     for (const [key, body] of desired) {
