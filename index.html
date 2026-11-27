@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.6.0">
+<meta name="panel-build" content="3.7.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.6.0">
+<link rel="stylesheet" href="./relief.css?v=3.7.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.6.0</small>
+      <small>Сборка 3.7.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,15 +81,16 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.6.0" defer></script>
-<script src="./google-sync.js?v=3.6.0" defer></script>
-<script src="./point-picker.js?v=3.6.0"></script>
-<script src="./work-items.js?v=3.6.0"></script>
-<script src="./menu-recipes.js?v=3.6.0"></script>
-<script src="./point-audits.js?v=3.6.0"></script>
-<script src="./point-team.js?v=3.6.0"></script>
-<script src="./point-equipment.js?v=3.6.0"></script>
-<script src="./point-stock.js?v=3.6.0"></script>
+<script src="./calendar-sync.js?v=3.7.0" defer></script>
+<script src="./google-sync.js?v=3.7.0" defer></script>
+<script src="./point-picker.js?v=3.7.0"></script>
+<script src="./work-items.js?v=3.7.0"></script>
+<script src="./menu-recipes.js?v=3.7.0"></script>
+<script src="./point-audits.js?v=3.7.0"></script>
+<script src="./point-team.js?v=3.7.0"></script>
+<script src="./point-equipment.js?v=3.7.0"></script>
+<script src="./point-stock.js?v=3.7.0"></script>
+<script src="./point-economy.js?v=3.7.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -156,6 +157,7 @@
   const team = window.panel03Team;
   const equipment = window.panel03Equipment;
   const stock = window.panel03Stock;
+  const economy = window.panel03Economy;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -237,7 +239,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -307,12 +309,17 @@
       if (!stock.validate(records.stock, points, date)) throw new Error('Invalid point stock');
       validated.stock = records.stock;
     }
+    if (records.economy !== undefined || version === 15) {
+      if (!economy.validate(records.economy, points)) throw new Error('Invalid point economy');
+      validated.economy = records.economy;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.economy !== undefined) return 15;
     if (records.stock !== undefined) return 14;
     if (records.equipment !== undefined) return 13;
     if (records.team !== undefined) return 12;
@@ -607,6 +614,7 @@
         <button type="button" class="action" data-action="point-team">Команда</button>
         <button type="button" class="action" data-action="point-equipment">Оборудование</button>
         <button type="button" class="action" data-action="point-stock">Сырьё</button>
+        <button type="button" class="action" data-action="point-economy">Экономика</button>
         <button type="button" class="action" data-action="edit-point">Изменить карточку</button>
         <button type="button" class="action" data-action="back">Назад к точкам</button>
       </div>`;
@@ -1018,6 +1026,25 @@
       redrawTasks();
     },
   });
+  function openStock(pointId) {
+    stockPanel.open(pointId);
+    view = {type:'stock'};
+    redrawTasks();
+  }
+  const economyPanel = economy.create({
+    records:() => data, getMain:() => main, hero, escape, options:optionList, effective:menuRecipes.effective,
+    commit(records) {
+      const next = {...data, economy:records};
+      if (!save(next, 'В браузере не хватает места для настроек экономики.')) return false;
+      data = next;
+      return true;
+    },
+    redraw:redrawTasks, openStock,
+    exit(point) {
+      view = {type:'point', record:point};
+      redrawTasks();
+    },
+  });
   function saveDiagnosisWork(event) {
     const records = equipment.linkDiagnosis(data.equipment,data.events,view.equipmentSource,event.id);
     if (!records) return showNotice('Для этой диагностики уже сохранено дело.');
@@ -1054,8 +1081,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'economy') {
+      main.innerHTML = economyPanel.draw();
     } else if (view?.type === 'stock') {
       main.innerHTML = stockPanel.draw();
     } else if (view?.type === 'equipment') {
@@ -1149,6 +1178,7 @@
   main.addEventListener('input', event => {
     if (view?.type === 'recipes') return recipePanel.change(event.target);
     if (view?.type === 'stock') return stockPanel.input(event.target);
+    if (view?.type === 'economy') return economyPanel.input(event.target);
     const input = event.target;
     if (input instanceof HTMLInputElement) input.setCustomValidity('');
     if (input.name === 'owner' && input.form?.dataset.form === 'edit') input.form.setAttribute('data-owner-edited', '');
@@ -1194,6 +1224,7 @@
     if (view?.type === 'team') return teamPanel.submit(form);
     if (view?.type === 'equipment') return equipmentPanel.submit(form);
     if (view?.type === 'stock') return stockPanel.submit(form);
+    if (view?.type === 'economy') return economyPanel.submit(form);
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (view?.type === 'tasks') return taskPanel.submit(form, get);
@@ -1331,9 +1362,11 @@
       if ((destination || action === 'backups') && !stockPanel.beforeLeave()) return;
       if (button.dataset.stockAction) return stockPanel.click(button);
     }
-    if (action === 'point-stock') {
-      stockPanel.open(view.record.id);
-      view = {type:'stock'};
+    if (action === 'point-stock') return openStock(view.record.id);
+    if (view?.type === 'economy' && button.dataset.economyAction) return economyPanel.click(button);
+    if (action === 'point-economy') {
+      economyPanel.open(view.record.id);
+      view = {type:'economy'};
       redrawTasks();
       return;
     }
@@ -1381,6 +1414,7 @@
       if (data.team || candidate.team) merged.team = addMissing(data.team ?? [], candidate.team ?? []);
       if (data.equipment || candidate.equipment) merged.equipment = addMissing(data.equipment ?? [], candidate.equipment ?? []);
       if (data.stock || candidate.stock) merged.stock = addMissing(data.stock ?? [], candidate.stock ?? []);
+      if (data.economy || candidate.economy) merged.economy = addMissing(data.economy ?? [], candidate.economy ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {
