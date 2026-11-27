@@ -181,3 +181,6 @@ form[data-form=point-definition] textarea { min-height:5rem; }
 .task-closing { margin-bottom:13px; }
 .task-result { white-space:pre-wrap; }
 form:is([data-form=task-close],[data-form=task-edit],[data-form=task-field]) textarea { min-height:6rem; }
+
+.calendar-task .event-time { color:var(--accent); font-weight:650; }
+.section > .events + .events, .agenda-day .events + .events { margin-top:6px; }

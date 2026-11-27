@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.6.0">
+<meta name="panel-build" content="2.7.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.6.0">
+<link rel="stylesheet" href="./relief.css?v=2.7.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.6.0</small>
+      <small>Сборка 2.7.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -64,7 +64,7 @@
         <h3>Календарь «03 РАБОТА»</h3>
         <p id="google-calendar-status" role="status"></p>
         <p id="google-calendar-last-sync" class="quiet"></p>
-        <p class="quiet">События отправляются по московскому времени.</p>
+        <p class="quiet">События и даты дел отправляются по московскому времени.</p>
       </section>
       <button type="button" id="google-close" class="action">Закрыть</button>
     </div>
@@ -80,9 +80,9 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.6.0" defer></script>
-<script src="./google-sync.js?v=2.6.0" defer></script>
-<script src="./work-items.js?v=2.6.0"></script>
+<script src="./calendar-sync.js?v=2.7.0" defer></script>
+<script src="./google-sync.js?v=2.7.0" defer></script>
+<script src="./work-items.js?v=2.7.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -418,22 +418,35 @@
           : time + label + '<svg class="ui-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'}</button>`;
     }).join('')}</div>`;
   }
+  function calendarTaskList(tasks) {
+    return `<div class="events">${tasks.map(task => `
+      <button type="button" class="event calendar-task" data-calendar-task="${escape(task.id)}">
+        <span class="event-time">Дело</span>
+        <span class="title"><b>${escape(task.title)}</b><small>${workItems.taskStatuses[task.status]}</small></span>
+        <svg class="ui-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </button>`).join('')}</div>`;
+  }
+  function daySchedule(date, events, tasks) {
+    if (!events.length && !tasks.length) return '<p class="empty">Нет событий и дел</p>';
+    return (tasks.length ? calendarTaskList(tasks) : '') + (events.length ? eventList(date, events) : '');
+  }
   function offsetDay(date, offset) { return key(new Date(+asDate(date) + offset * dayMs)); }
-  function agenda(title, first, last, range, {compact = false, eventsFor = occurrences} = {}) {
+  function agenda(title, first, last, range, {compact = false, eventsFor = occurrences, tasksFor} = {}) {
     const groups = [];
     for (let date = first; date <= last; date = offsetDay(date, 1)) {
       const rows = eventsFor(date);
-      if (!rows.length) continue;
-      const events = eventList(date, rows, compact);
-      groups.push(compact ? events : `<div class="agenda-day"><h3>${capital(fullDate.format(asDate(date)))}</h3>${events}</div>`);
+      const tasks = tasksFor?.(date) ?? [];
+      if (!rows.length && !tasks.length) continue;
+      const content = tasksFor ? daySchedule(date, rows, tasks) : eventList(date, rows, compact);
+      groups.push(compact ? content : `<div class="agenda-day"><h3>${capital(fullDate.format(asDate(date)))}</h3>${content}</div>`);
     }
     return `<section class="section"><div class="agenda-header"><h2>${title}</h2><small class="agenda-range">${range}</small></div>
-      <div${compact ? ' class="agenda-compact"' : ''}>${groups.join('') || '<p class="empty">Нет событий</p>'}</div></section>`;
+      <div${compact ? ' class="agenda-compact"' : ''}>${groups.join('') || `<p class="empty">${tasksFor ? 'Нет событий и дел' : 'Нет событий'}</p>`}</div></section>`;
   }
-  function weekAgenda(eventsFor) {
+  function weekAgenda(eventsFor, tasksFor) {
     const first = offsetDay(selected, -((asDate(selected).getUTCDay() + 6) % 7));
     const last = offsetDay(first, 6);
-    return agenda('События недели', first, last, shortDate.formatRange(asDate(first), asDate(last)), {eventsFor});
+    return agenda('События и дела недели', first, last, shortDate.formatRange(asDate(first), asDate(last)), {eventsFor, tasksFor});
   }
   function nextWeekAgenda() {
     const first = offsetDay(today, 1);
@@ -456,20 +469,29 @@
     const count = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
     const namedMonth = capital(monthName.format(first)).replace(/\s*г\.$/u, '');
     const rowsByDate = new Map();
+    const tasksByDate = new Map();
+    for (const task of data.tasks) {
+      if (!task.due) continue;
+      if (!tasksByDate.has(task.due)) tasksByDate.set(task.due, []);
+      tasksByDate.get(task.due).push(task);
+    }
+    const tasksFor = date => tasksByDate.get(date) ?? [];
     const dates = Array.from({length:count}, (_, index) => {
       const date = month + '-' + String(index + 1).padStart(2, '0');
       const rows = occurrences(date);
       rowsByDate.set(date, rows);
-      const label = capital(fullDate.format(asDate(date))) + (rows.length ? `, событий: ${rows.length}` : '');
+      const taskCount = tasksFor(date).length;
+      const label = capital(fullDate.format(asDate(date))) + (rows.length ? `, событий: ${rows.length}` : '') +
+        (taskCount ? `, дел: ${taskCount}` : '');
       return `<button type="button" data-day="${date}" aria-label="${escape(label)}" aria-pressed="${selected === date}"${date === today ? ' aria-current="date"' : ''}>
-        <span class="day-number"${rows.length ? ' data-events' : ''}>${index + 1}</span></button>`;
+        <span class="day-number"${rows.length || taskCount ? ' data-events' : ''}>${index + 1}</span></button>`;
     }).join('');
     const eventsFor = date => rowsByDate.get(date) ?? occurrences(date);
     let schedule;
-    if (period === 'week') schedule = weekAgenda(eventsFor);
-    else if (period === 'month') schedule = agenda('События месяца', month + '-01', month + '-' + count, namedMonth, {eventsFor});
-    else schedule = `<section class="section"><h2>${capital(fullDate.format(asDate(selected)))}</h2>${eventList(selected, eventsFor(selected))}</section>`;
-    return `${hero('Календарь', namedMonth, true)}<div class="periods" role="group" aria-label="Период событий">${Object.entries(periods).map(([id, label]) =>
+    if (period === 'week') schedule = weekAgenda(eventsFor, tasksFor);
+    else if (period === 'month') schedule = agenda('События и дела месяца', month + '-01', month + '-' + count, namedMonth, {eventsFor, tasksFor});
+    else schedule = `<section class="section"><h2>${capital(fullDate.format(asDate(selected)))}</h2>${daySchedule(selected, eventsFor(selected), tasksFor(selected))}</section>`;
+    return `${hero('Календарь', namedMonth, true)}<div class="periods" role="group" aria-label="Период календаря">${Object.entries(periods).map(([id, label]) =>
         `<button type="button" data-period="${id}" aria-pressed="${period === id}">${label}</button>`).join('')}</div><section class="section"><div class="month-controls">
       <h2>${namedMonth}</h2><button type="button" data-action="today">Сегодня</button>
       <button type="button" data-month="-1" aria-label="Предыдущий месяц"><svg class="ui-icon" aria-hidden="true" focusable="false" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg></button>
@@ -681,12 +703,28 @@
       return true;
     },
     redraw:redrawTasks,
-    goBack(pointId) {
+    goBack(pointId, due) {
+      if (page === 'calendar' && due) {
+        selected = due;
+        month = due.slice(0, 7);
+      }
       const record = data.points.find(point => point.id === pointId);
       view = record ? {type:'point', record} : null;
       redrawTasks();
     },
   });
+  function showCalendarTask(taskId, followDate = false) {
+    const task = data.tasks.find(item => item.id === taskId);
+    if (!task) return false;
+    page = 'calendar';
+    if (followDate && task.due) {
+      selected = task.due;
+      month = task.due.slice(0, 7);
+    }
+    taskPanel.open('', task.id);
+    view = {type:'tasks'};
+    return true;
+  }
   function render() {
     closeHint();
     if (view?.type === 'backups') {
@@ -856,13 +894,17 @@
   root.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button || !root.contains(button) || button.type === 'submit') return;
-    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, definitionId, action} = button.dataset;
+    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, definitionId, calendarTask, action} = button.dataset;
     if (!menu.contains(button) || ['backups', 'google', 'install', 'point-settings', 'task-settings'].includes(action)) menu.open = false;
     if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
       installPrompt = null;
       installButton.hidden = true;
       prompt.prompt().catch(() => showNotice('Откройте меню Chrome, чтобы установить приложение.'));
+      return;
+    }
+    if (calendarTask) {
+      if (showCalendarTask(calendarTask)) redrawTasks();
       return;
     }
     if (action === 'open-tasks' || action === 'point-tasks') {
@@ -1009,6 +1051,10 @@
       return 0;
     },
   };
+  const linkedTask = new URLSearchParams(location.search).get('task');
+  if (linkedTask && !showCalendarTask(linkedTask, true) && storageReadable) {
+    showNotice('Дело недоступно в этом браузере. Если записи хранятся на другом устройстве, восстанови копию данных.');
+  }
   updateToday();
   render();
 })();

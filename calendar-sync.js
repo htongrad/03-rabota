@@ -70,15 +70,29 @@
     }
     return rows;
   }
+  const isTaskKey = key => key.startsWith('["task",');
+  function taskRows(tasks, taskLink) {
+    const rows = new Map();
+    for (const task of tasks) {
+      if (!task.due) continue;
+      const label = task.status === 'done' ? 'Дело готово' : task.status === 'waiting' ? 'Дело ожидает' : 'Дело';
+      const item = payload({title:label + ' · ' + task.title, date:task.due, allDay:true}, eventZone);
+      item.description = `<a href="${taskLink(task.id)}">Открыть дело в панели 03</a>`;
+      item.transparency = 'transparent';
+      rows.set(JSON.stringify(['task',task.id]), item);
+    }
+    return rows;
+  }
   function belongs(event, key) { return event.extendedProperties?.private?.panel === tag && event.extendedProperties.private.key === key; }
   function same(remote, body) {
     const stamp = value => value?.date || (value?.dateTime ? new Date(value.dateTime).toISOString() : '');
     return remote.status !== 'cancelled' && remote.summary === body.summary &&
       (remote.description || '') === (body.description || '') && (remote.location || '') === (body.location || '') &&
+      (!body.transparency || remote.transparency === body.transparency) &&
       stamp(remote.start) === stamp(body.start) && stamp(remote.end) === stamp(body.end) && JSON.stringify(remote.recurrence || []) === JSON.stringify(body.recurrence || []);
   }
 
-  async function mirror({ request, settings, update, digest, events }) {
+  async function mirror({ request, settings, update, digest, events, tasks = [], taskLink }) {
     async function list(url, params) {
       const rows = [];
       let pageToken;
@@ -98,11 +112,18 @@
       calendar = found[0];
     }
     if (calendar.primary || calendar.deleted || calendar.summary?.trim() !== name || calendar.accessRole !== 'owner' || !calendar.id) throw Error('Проверь доступ и название календаря «03 РАБОТА».');
-    const desired = calendarRows(events,eventZone);
+    const desired = new Map([...calendarRows(events,eventZone), ...taskRows(tasks, taskLink)]);
     update({ calendarId: calendar.id, calendarZone: eventZone });
     const url = base + '/calendars/' + encode(calendar.id) + '/events';
-    const remote = await list(url, { privateExtendedProperty: 'panel=' + tag, maxResults: '2500', showDeleted: 'false', fields: 'nextPageToken,items(id,etag,status,summary,description,location,start,end,recurrence,extendedProperties)' });
-    const known = new Map((settings.calendarKnown || []).map(item => [item.id, item.key]));
+    const remote = await list(url, { privateExtendedProperty: 'panel=' + tag, maxResults: '2500', showDeleted: 'false', fields: 'nextPageToken,items(id,etag,status,summary,description,location,transparency,start,end,recurrence,extendedProperties)' });
+    // Older builds may still sync ordinary events in another tab.
+    const known = new Map([...(settings.calendarKnown || []), ...(settings.calendarTaskKnown || [])].map(item => [item.id, item.key]));
+    function savedKeys(items) {
+      return {
+        calendarKnown:items.filter(item => !isTaskKey(item.key)),
+        calendarTaskKnown:items.filter(item => isTaskKey(item.key)),
+      };
+    }
     const active = new Map();
     for (const item of remote) {
       const key = item.extendedProperties?.private?.key;
@@ -112,23 +133,31 @@
     }
     function remember(id, key) {
       known.set(id, key);
-      update({ calendarKnown: Array.from(known, ([id, key]) => ({ id, key })) });
+      update(savedKeys(Array.from(known, ([id, key]) => ({ id, key }))));
     }
-    const confirmed = [];
-    for (const [key, body] of desired) {
-      let current = active.get(key);
-      const id = current?.id || 'r03' + await digest(calendar.id + '\0' + key);
-      const entry = { ...body, extendedProperties: { private: { panel: tag, key } } };
-      if (!current) {
+    async function createRecord(key, entry) {
+      for (let attempt = 0; attempt < 16; attempt++) {
+        // Deleted deadlines can leave an ID reserved in Google's trash.
+        const suffix = attempt ? '\0' + attempt : '';
+        const id = 'r03' + await digest(calendar.id + '\0' + key + suffix);
         remember(id, key);
         const response = await request(url + query({ sendUpdates: 'none' }), {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...entry })
         }, false, [409]);
-        if (response.status === 409) {
-          current = await (await request(url + '/' + encode(id))).json();
-          if (!belongs(current, key)) throw Error('Идентификатор события занят другой записью. Она оставлена без изменений.');
-        } else current = await response.json();
+        if (response.status !== 409) return response.json();
+        const existing = await request(url + '/' + encode(id), {}, false, isTaskKey(key) ? [404, 410] : []);
+        if (existing.status === 404 || existing.status === 410) continue;
+        const record = await existing.json();
+        if (isTaskKey(key) && record.status === 'cancelled') continue;
+        if (!belongs(record, key)) throw Error('Идентификатор события занят другой записью. Она оставлена без изменений.');
+        return record;
       }
+      throw Error('Google пока удерживает идентификаторы удалённых сроков. Повтори синхронизацию.');
+    }
+    const confirmed = [];
+    for (const [key, body] of desired) {
+      const entry = { ...body, extendedProperties: { private: { panel: tag, key } } };
+      const current = active.get(key) ?? await createRecord(key, entry);
       if (!belongs(current, key)) throw Error('Google не подтвердил принадлежность события панели.');
       remember(current.id, key);
       if (!same(current, body)) {
@@ -145,7 +174,7 @@
       if (!current.etag) throw Error('Google не вернул версию удаляемого события. Повтори отправку.');
       await request(url + '/' + encode(current.id) + query({ sendUpdates: 'none' }), { method: 'DELETE', headers: { 'If-Match': current.etag } }, false, [404, 410]);
     }
-    update({ calendarKnown: confirmed, calendarLastSync: new Date().toISOString() });
+    update({ ...savedKeys(confirmed), calendarLastSync: new Date().toISOString() });
     return desired.size;
   }
 

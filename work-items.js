@@ -68,6 +68,7 @@
     let origin = '';
     let taskId = '';
     let fieldId = '';
+    let fromCalendar = false;
     const taskFields = () => records().taskFields ?? [];
     const visibleFields = () => taskFields().filter(field => !field.archived);
     const selectedField = () => taskFields().find(field => field.id === fieldId);
@@ -80,7 +81,7 @@
       `<button type="button" data-task-action="${name}" class="action${primary ? ' primary' : ''}">${label}</button>`;
     const badge = (label, late = false) => `<span class="task-badge${late ? ' task-overdue' : ''}">${label}</span>`;
     const taskBadges = task => badge(taskStatuses[task.status]) + (overdue(task, today()) ? badge('Просрочено', true) : '');
-    const dueText = task => task.due ? 'Срок ' + formatDate(task.due) : 'Без срока';
+    const dueText = task => task.due ? 'Сделать до ' + formatDate(task.due) : 'Без срока';
     const repeatText = task => task.repeat ? frequencies[task.repeat.frequency] : '';
     const canChangeRepeat = task => task?.status !== 'done' && !task?.repeat?.advanced;
 
@@ -96,12 +97,13 @@
         <button type="button" class="action primary" data-action="open-tasks">Открыть дела</button></section>`;
     }
 
-    function open(pointId = '') {
+    function open(pointId = '', deadlineId = '') {
       origin = pointId;
       scope = pointId ? scopeKey(pointId) : 'all';
       filter = 'active';
-      taskId = '';
-      screen = 'list';
+      fromCalendar = Boolean(deadlineId);
+      taskId = deadlineId;
+      screen = fromCalendar ? 'card' : 'list';
     }
 
     function list() {
@@ -126,7 +128,7 @@
       return `${hero(task.title, scopeName(task.pointId), true)}
         <dl class="section point-details">
           <div><dt>Состояние</dt><dd class="task-badges">${taskBadges(task)}</dd></div>
-          <div><dt>Срок</dt><dd>${task.due ? escape(formatDate(task.due)) : '<small>Пока не указан</small>'}</dd></div>
+          <div><dt>Сделать до</dt><dd>${task.due ? escape(formatDate(task.due)) : '<small>Пока не указан</small>'}</dd></div>
           ${task.repeat ? `<div><dt>Повтор</dt><dd>${repeatText(task)}${task.repeat.until ? ' · до ' + escape(formatDate(task.repeat.until)) : ''}</dd></div>` : ''}
           <div><dt>Ответственный</dt><dd>${escape(task.owner) || '<small>Пока не указан</small>'}</dd></div>
           ${visibleFields().map(field => `<div><dt class="point-field-title">${escape(field.label)}${hint(field.label, field.hint)}</dt>
@@ -138,7 +140,7 @@
           ${task.status === 'open' ? action('wait', 'Отметить ожидание') : ''}
           ${task.status === 'waiting' ? action('reopen', 'Вернуть к выполнению') : ''}
           ${action('edit', 'Изменить дело')}
-          ${action('list', 'Назад к делам')}
+          ${fromCalendar ? action('exit', 'Назад к календарю') : action('list', 'Назад к делам')}
         </div>`;
     }
 
@@ -153,7 +155,7 @@
           <div class="field-help"><label>Область<select name="scope">
             ${optionList(scopeChoices(), scopeKey(pointId))}</select></label>
             ${hint('область дела','Выбери одну точку или «Вся сеть». Дело по точке будет видно в списке этой точки.')}</div>
-          <label><span data-due-label>Срок${repeating ? '' : ' · по желанию'}</span><input name="due" type="date" max="9999-12-31" value="${escape(task?.due)}"${repeating ? ' required' : ''}></label>
+          <label><span data-due-label>Сделать до${repeating ? '' : ' · по желанию'}</span><input name="due" type="date" max="9999-12-31" value="${escape(task?.due)}"${repeating ? ' required' : ''}></label>
           ${changeRepeat ? `<div class="field-help"><label>Повтор<select name="frequency">${optionList(frequencies, task?.repeat?.frequency ?? 'none')}</select></label>
             ${hint('повтор','Когда завершишь дело, появится следующее по графику. Изменение срока задаёт новую дату отсчёта.')}</div>
             <label data-repeat-until${repeating ? '' : ' hidden'}>Последний день повтора · по желанию
@@ -251,7 +253,7 @@
     function click(name, button) {
       const task = selectedTask();
       switch (name) {
-        case 'exit': return goBack(origin);
+        case 'exit': return goBack(origin, fromCalendar ? task?.due : undefined);
         case 'new': taskId = ''; screen = 'edit'; break;
         case 'fields': screen = 'fields'; break;
         case 'new-field': fieldId = ''; screen = 'field'; break;
@@ -290,7 +292,7 @@
         const repeating = control.value !== 'none';
         due.required = repeating;
         due.setCustomValidity('');
-        control.form.querySelector('[data-due-label]').textContent = repeating ? 'Срок' : 'Срок · по желанию';
+        control.form.querySelector('[data-due-label]').textContent = repeating ? 'Сделать до' : 'Сделать до · по желанию';
         until.setCustomValidity('');
         until.disabled = !repeating;
         control.form.querySelector('[data-repeat-until]').hidden = !repeating;
@@ -310,7 +312,7 @@
       }
       if (form.dataset.form === 'task-field') {
         const label = get('label').trim();
-        const used = ['Что нужно сделать','Название','Область','Срок','Повтор','Ответственный','Результат','Состояние',
+        const used = ['Что нужно сделать','Название','Область','Срок','Сделать до','Повтор','Ответственный','Результат','Состояние',
           ...taskFields().filter(item => item.id !== fieldId).map(item => item.label)];
         if (!label || used.some(value => label.localeCompare(value, 'ru', {sensitivity:'base'}) === 0)) {
           form.elements.label.setCustomValidity(!label ? 'Введите название.' : 'Это название уже используется.');
@@ -372,5 +374,5 @@
     return {overview, open, isList:() => screen === 'list', draw, click, change, submit};
   }
 
-  window.panel03WorkItems = {validTasks, mount};
+  window.panel03WorkItems = {validTasks, mount, taskStatuses};
 })();

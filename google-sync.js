@@ -319,16 +319,21 @@
     if (sendCalendar) {
       if (!calendarGranted) {
         calendarIssue = true;
-        calendarMessage = 'Для отправки событий разреши доступ к календарю при синхронизации.';
+        calendarMessage = 'Для отправки событий и дел разреши доступ к календарю при синхронизации.';
       } else {
         try {
           calendarMessage = 'Обновляю календарь…';
           paint();
-          const count = await calendar.mirror({request,settings:read(),update,digest,events:records.events});
-          update({ calendarHash: hash });
+          const taskLink = id => {
+            const link = new URL('./', location.href);
+            link.searchParams.set('task', id);
+            return link.href;
+          };
+          const count = await calendar.mirror({request,settings:read(),update,digest,events:records.events,tasks:records.tasks,taskLink});
+          update({ calendarHash: hash, calendarTaskHash: hash });
           calendarPoll = Date.now();
           calendarIssue = false;
-          calendarMessage = 'Календарь обновлён. Событий: ' + count + '.';
+          calendarMessage = 'Календарь обновлён. Записей: ' + count + '.';
         } catch (error) {
           errorFound = true;
           calendarIssue = true;
@@ -543,7 +548,8 @@
       if (!records) return;
       if (Date.now() - dirtySince < 3000) return;
       const drive = localHash !== settings.lastBackup?.hash || Boolean(settings.upload);
-      const sendCalendar = calendarGranted && (localHash !== settings.calendarHash || Date.now() - calendarPoll > 60000);
+      const sendCalendar = calendarGranted && (localHash !== settings.calendarHash ||
+        localHash !== settings.calendarTaskHash || Date.now() - calendarPoll > 60000);
       if (drive || sendCalendar) await run(() => sync({ drive, sendCalendar }));
     } catch (error) { message = error.message; paint(); }
     finally { monitoring = false; }
