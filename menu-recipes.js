@@ -7,15 +7,18 @@ window.panel03Recipes = (() => {
     Number(value.replace(',', '.')) > 0;
   const unique = rows => new Set(rows.map(row => row.id)).size === rows.length;
 
+  function completeRecipe(recipe) {
+    return !!recipe && filled(recipe.method) && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0 &&
+      recipe.ingredients.every(row => row && filled(row.name) && text(row.amount) && positive(row.amount) && filled(row.unit));
+  }
+
   function validate(recipes, points) {
     const content = recipe => recipe && pointPicker.validScope(recipe, points) && text(recipe.method) &&
       Array.isArray(recipe.ingredients) && recipe.ingredients.every(row =>
         row && text(row.name) && text(row.amount) && text(row.unit));
-    const complete = recipe => filled(recipe.method) && recipe.ingredients.length > 0 &&
-      recipe.ingredients.every(row => filled(row.name) && positive(row.amount) && filled(row.unit));
     return Array.isArray(recipes) && recipes.every(item => item && filled(item.id) && filled(item.name) &&
       Number.isSafeInteger(item.volumeMl) && item.volumeMl > 0 && Array.isArray(item.versions) &&
-      item.versions.every(version => content(version) && complete(version) && filled(version.id) &&
+      item.versions.every(version => content(version) && completeRecipe(version) && filled(version.id) &&
         text(version.publishedAt) && Number.isFinite(Date.parse(version.publishedAt))) && unique(item.versions) &&
       (item.draft === undefined ? item.versions.length > 0 : content(item.draft))) && unique(recipes);
   }
@@ -367,5 +370,5 @@ window.panel03Recipes = (() => {
     return {open, draw, click, change, selectPoints, submit, beforeLeave, isList:() => screen === 'list'};
   }
 
-  return {validate, effective, create};
+  return {validate, completeRecipe, effective, create};
 })();

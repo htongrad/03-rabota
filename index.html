@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.7.0">
+<meta name="panel-build" content="3.8.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.7.0">
+<link rel="stylesheet" href="./relief.css?v=3.8.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.7.0</small>
+      <small>Сборка 3.8.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,16 +81,17 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.7.0" defer></script>
-<script src="./google-sync.js?v=3.7.0" defer></script>
-<script src="./point-picker.js?v=3.7.0"></script>
-<script src="./work-items.js?v=3.7.0"></script>
-<script src="./menu-recipes.js?v=3.7.0"></script>
-<script src="./point-audits.js?v=3.7.0"></script>
-<script src="./point-team.js?v=3.7.0"></script>
-<script src="./point-equipment.js?v=3.7.0"></script>
-<script src="./point-stock.js?v=3.7.0"></script>
-<script src="./point-economy.js?v=3.7.0"></script>
+<script src="./calendar-sync.js?v=3.8.0" defer></script>
+<script src="./google-sync.js?v=3.8.0" defer></script>
+<script src="./point-picker.js?v=3.8.0"></script>
+<script src="./work-items.js?v=3.8.0"></script>
+<script src="./menu-recipes.js?v=3.8.0"></script>
+<script src="./point-audits.js?v=3.8.0"></script>
+<script src="./point-team.js?v=3.8.0"></script>
+<script src="./point-equipment.js?v=3.8.0"></script>
+<script src="./point-stock.js?v=3.8.0"></script>
+<script src="./point-economy.js?v=3.8.0"></script>
+<script src="./network-rollouts.js?v=3.8.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -158,6 +159,7 @@
   const equipment = window.panel03Equipment;
   const stock = window.panel03Stock;
   const economy = window.panel03Economy;
+  const rollouts = window.panel03Rollouts;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -239,7 +241,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -313,12 +315,17 @@
       if (!economy.validate(records.economy, points)) throw new Error('Invalid point economy');
       validated.economy = records.economy;
     }
+    if (records.rollouts !== undefined || version === 16) {
+      if (!rollouts.validate(records.rollouts, points, date, menuRecipes.completeRecipe)) throw new Error('Invalid network rollouts');
+      validated.rollouts = records.rollouts;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.rollouts !== undefined) return 16;
     if (records.economy !== undefined) return 15;
     if (records.stock !== undefined) return 14;
     if (records.equipment !== undefined) return 13;
@@ -755,14 +762,14 @@
         <div class="controls"><button type="submit" class="action primary">Сохранить</button>
           <button type="button" data-action="cancel">Отмена</button></div>
       </form>`;
-    const linked = Boolean(view.auditSource || view.teamSource || view.equipmentSource);
+    const linked = Boolean(view.auditSource || view.teamSource || view.equipmentSource || view.rolloutSource);
     const diagnosis = view.equipmentSource || (original && equipment.sourceForWork(data.equipment ?? [], original.id)?.kind === 'diagnosis');
-    const value = view.entry ?? {title:view.title, date:linked ? '' : selected, allDay:linked,
+    const value = view.entry ?? {title:view.title, date:view.suggestedDate ?? (linked ? '' : selected), allDay:linked,
       start:'09:00', end:'10:00', repeat:'none', ending:'never'};
     const recurring = original && original.repeat !== 'none';
     const work = readWork();
     return `${hero(original ? 'Изменить дело' : 'Новое дело', '', true)}
-      <form data-form="edit"${diagnosis ? ' data-one-off' : ''}>
+      <form data-form="edit"${diagnosis || view.rolloutSource ? ' data-one-off' : ''}>
         ${recurring ? `<div class="field-help"><label>Применить к<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>
           ${pointHint('область изменения','Можно изменить одно дело, следующие дела или всю серию.')}</div>` : ''}
         <label>Название<input name="title" required maxlength="200" value="${escape(value.title)}"></label>
@@ -888,7 +895,7 @@
         ${maintenance?.kind === 'diagnosis' ? '<button type="button" class="action" data-action="open-equipment-source">Открыть диагностику оборудования</button>' : ''}`}
         <button type="button" class="action" data-action="back">${returnView?.type === 'audits' ? 'Назад к аудиту' :
           returnView?.type === 'team' ? 'Назад к проверке' : returnView?.type === 'equipment' ? 'Назад к оборудованию' :
-          returnView ? 'Назад к делам' :
+          returnView?.type === 'rollouts' ? 'Назад к запуску' : returnView ? 'Назад к делам' :
           page === 'calendar' ? 'Назад к календарю' : 'Назад к обзору'}</button>
       </div>`;
   }
@@ -1045,6 +1052,34 @@
       redrawTasks();
     },
   });
+  const rolloutPanel = rollouts.create({
+    records:() => data, getMain:() => main, today:() => today, validDay, hero, escape, options:optionList, picker:pointPicker,
+    completeRecipe:menuRecipes.completeRecipe, effective:menuRecipes.effective, foodCost:economy.foodCost,
+    commit(records, recipes = data.recipes) {
+      const next = {...data, rollouts:records, recipes};
+      if (!save(next, 'В браузере не хватает места для запуска.')) return false;
+      data = next;
+      return true;
+    },
+    redraw:redrawTasks, openAudit:openAudits, openEquipment,
+    exit() {
+      view = null;
+      redrawTasks();
+    },
+    newWork(rolloutSource, suggestedDate, title) {
+      if (!storageReadable) return;
+      view = {type:'edit', rolloutSource, suggestedDate, title, workScope:[rolloutSource.pointId], returnView:view};
+      redrawTasks();
+    },
+    openWork(id) {
+      if (showWork(id, '', view)) redrawTasks();
+    },
+  });
+  function saveRolloutWork(event) {
+    const records = rollouts.linkWork(data.rollouts,data.events,view.rolloutSource,event.id);
+    if (!records) return showNotice('Для этой точки уже сохранено дело проверки.');
+    saveLinkedWork(event,{rollouts:records},'Проверка запланирована.');
+  }
   function saveDiagnosisWork(event) {
     const records = equipment.linkDiagnosis(data.equipment,data.events,view.equipmentSource,event.id);
     if (!records) return showNotice('Для этой диагностики уже сохранено дело.');
@@ -1081,8 +1116,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'rollouts') {
+      main.innerHTML = rolloutPanel.draw();
     } else if (view?.type === 'economy') {
       main.innerHTML = economyPanel.draw();
     } else if (view?.type === 'stock') {
@@ -1132,6 +1169,7 @@
       main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
         <div class="overview-modules">
           <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
+          <button type="button" class="action" data-action="open-rollouts">Запуски</button>
           <section class="section"><h2>Сегодня</h2>${eventList(today)}</section>
           ${nextWeekAgenda()}
           <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
@@ -1188,6 +1226,7 @@
     if (view?.type === 'equipment') return equipmentPanel.change(target);
     if (view?.type === 'stock') return stockPanel.change(target);
     const selection = pointPicker.change(target);
+    if (view?.type === 'rollouts') return rolloutPanel.change(target,selection);
     if (view?.type === 'recipes') {
       if (selection !== undefined) recipePanel.selectPoints(target.closest('[data-point-picker]').dataset.pointPicker, selection);
       return;
@@ -1225,6 +1264,7 @@
     if (view?.type === 'equipment') return equipmentPanel.submit(form);
     if (view?.type === 'stock') return stockPanel.submit(form);
     if (view?.type === 'economy') return economyPanel.submit(form);
+    if (view?.type === 'rollouts') return rolloutPanel.submit(form);
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (view?.type === 'tasks') return taskPanel.submit(form, get);
@@ -1295,6 +1335,7 @@
       if (view.auditSource) return saveAuditWork(updated);
       if (view.teamSource) return saveTrainingWork(updated);
       if (view.equipmentSource) return saveDiagnosisWork(updated);
+      if (view.rolloutSource) return saveRolloutWork(updated);
       if (original?.legacyTaskId && scope !== 'following') updated.legacyTaskId = original.legacyTaskId;
       if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
       if (original) {
@@ -1364,6 +1405,13 @@
     }
     if (action === 'point-stock') return openStock(view.record.id);
     if (view?.type === 'economy' && button.dataset.economyAction) return economyPanel.click(button);
+    if (view?.type === 'rollouts' && button.dataset.rolloutAction) return rolloutPanel.click(button);
+    if (action === 'open-rollouts') {
+      rolloutPanel.open();
+      view = {type:'rollouts'};
+      redrawTasks();
+      return;
+    }
     if (action === 'point-economy') {
       economyPanel.open(view.record.id);
       view = {type:'economy'};
@@ -1415,6 +1463,7 @@
       if (data.equipment || candidate.equipment) merged.equipment = addMissing(data.equipment ?? [], candidate.equipment ?? []);
       if (data.stock || candidate.stock) merged.stock = addMissing(data.stock ?? [], candidate.stock ?? []);
       if (data.economy || candidate.economy) merged.economy = addMissing(data.economy ?? [], candidate.economy ?? []);
+      if (data.rollouts || candidate.rollouts) merged.rollouts = addMissing(data.rollouts ?? [], candidate.rollouts ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {

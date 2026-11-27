@@ -70,6 +70,19 @@ window.panel03Economy = (() => {
   }
 
   const round = (n,d) => (2n*n + d) / (2n*d);
+  function basisPoints(calculation,sale) {
+    return calculation.total === null || !sale ? null :
+      round(calculation.total * 10000n,calculation.divisor * BigInt(sale));
+  }
+
+  function foodCost(records,pointId,recipeId,version) {
+    const state = records.economy?.find(row=>row.id === pointId);
+    const settings = state?.drinks.find(row=>row.id === recipeId);
+    if (!settings?.sale) return null;
+    const items = records.stock?.find(row=>row.id === pointId)?.items ?? [];
+    return basisPoints(calculate(version,items,state,settings),settings.sale)?.toString() ?? null;
+  }
+
   const minimum = ({total,divisor},goal) => {
     if (total === null || !target(goal)) return null;
     const denominator = divisor * BigInt(goal);
@@ -86,8 +99,10 @@ window.panel03Economy = (() => {
     };
     const money = cents => cents === null ? '—' : decimals(cents) + ' ₽';
     const asField = value => value === undefined ? '' : String(value / 100).replace('.',',');
-    const percentages = (calculation,sale) => calculation.total === null || !sale ? '—' :
-      decimals(round(calculation.total * 10000n,calculation.divisor * BigInt(sale))) + ' %';
+    function percentages(calculation,sale) {
+      const value = basisPoints(calculation,sale);
+      return value === null ? '—' : decimals(value) + ' %';
+    }
     const roundedCost = ({total,divisor}) => total === null ? null : round(total,divisor);
     const economy = () => records().economy ?? [];
     const point = () => records().points.find(row => row.id === pointId);
@@ -323,5 +338,5 @@ window.panel03Economy = (() => {
     return {open,draw,submit:submitForm,click,input};
   }
 
-  return {create,validate};
+  return {create,validate,foodCost};
 })();
