@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.1.0">
+<meta name="panel-build" content="3.1.1">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,21 +11,21 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.1.0">
+<link rel="stylesheet" href="./relief.css?v=3.1.1">
 </head>
 <body>
 <div id="personal">
   <header><button type="button" class="brand" data-page="overview" aria-label="Работа. Открыть обзор"><img src="./icon-192.png?v=2.1.0" width="38" height="38" alt="">Работа</button><button type="button" id="header-sync" aria-label="Синхронизировать" title="Синхронизировать" disabled>
     <svg class="ui-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 14-5l2 2 M20 3v5h-5 M20 13a8 8 0 0 1-14 5l-2-2 M4 21v-5h5"/></svg>
   </button><details class="menu">
-    <summary aria-label="Меню"><svg class="ui-icon" aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h.1 M12 12h.1 M20 12h.1"/></svg></summary>
+    <summary aria-label="Меню панели"><svg class="ui-icon" aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h.1 M12 12h.1 M20 12h.1"/></svg></summary>
     <div class="menu-items">
       <button type="button" id="google-open">Синхронизация Google</button>
       <button type="button" data-action="point-settings" hidden>Настроить карточки точек</button>
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.1.0</small>
+      <small>Сборка 3.1.1</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -77,13 +77,14 @@
       <button type="button" data-page="calendar"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5 M8 14h3"/></svg>Календарь</button>
       <button type="button" data-page="notes"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3.5h14v17H5z M8 3.5v17 M11 8h5 M11 12h4"/></svg>Заметки</button>
       <button type="button" data-page="points"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l2-5h14l2 5v2H3z M5 11v9h14v-9 M10 20v-6h4v6"/></svg>Точки</button>
+      <button type="button" data-page="recipes"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z M17 8h2a2 2 0 0 1 0 4h-2 M3 20h17"/></svg>Меню</button>
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.1.0" defer></script>
-<script src="./google-sync.js?v=3.1.0" defer></script>
-<script src="./work-items.js?v=3.1.0"></script>
-<script src="./menu-recipes.js?v=3.1.0"></script>
+<script src="./calendar-sync.js?v=3.1.1" defer></script>
+<script src="./google-sync.js?v=3.1.1" defer></script>
+<script src="./work-items.js?v=3.1.1"></script>
+<script src="./menu-recipes.js?v=3.1.1"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -886,10 +887,7 @@
     } else if (page === 'overview') {
       main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
         <div class="overview-modules">
-          <div class="overview-actions">
-            <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
-            <button type="button" class="action" data-action="open-recipes">Меню и техкарты</button>
-          </div>
+          <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
           <section class="section"><h2>Сегодня</h2>${eventList(today)}</section>
           ${nextWeekAgenda()}
           <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
@@ -1072,24 +1070,9 @@
       prompt.prompt().catch(() => showNotice('Откройте меню Chrome, чтобы установить приложение.'));
       return;
     }
-    if (action === 'open-recipes') {
-      recipePanel.open();
-      view = {type:'recipes'};
-      if (storageReadable) showNotice('');
-      render();
-      window.scrollTo(0, 0);
-      return;
-    }
     if (view?.type === 'recipes') {
       const recipeAction = button.dataset.recipeAction;
       if ((destination || action === 'backups') && !recipePanel.beforeLeave()) return;
-      if (recipeAction === 'overview') {
-        view = null;
-        if (storageReadable) showNotice('');
-        render();
-        window.scrollTo(0, 0);
-        return;
-      }
       if (recipeAction) {
         if (storageReadable || !['new','draft','publish'].includes(recipeAction)) recipePanel.click(button);
         return;
@@ -1137,8 +1120,15 @@
     } else if (action === 'backups') { candidate = null; view = {type:'backups'}; }
     else if (!storageReadable && ['edit','delete','new-work','new-note','new-point','edit-point','point-settings',
         'new-point-definition','archive-point-definition'].includes(action)) return;
-    else if (destination) { page = destination; view = null; }
-    else if (direction) {
+    else if (destination) {
+      if (storageReadable && (view?.type === 'recipes' || destination === 'recipes')) showNotice('');
+      page = destination;
+      view = null;
+      if (page === 'recipes') {
+        recipePanel.open();
+        view = {type:'recipes'};
+      }
+    } else if (direction) {
       const first = asDate(month + '-01');
       selected = key(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + Number(direction), 1)));
       month = selected.slice(0, 7);

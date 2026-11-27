@@ -77,7 +77,7 @@ window.panel03Recipes = (() => {
     }
 
     function list() {
-      return `${back('overview', 'Обзор')}${hero('Меню и техкарты', 'Кофейное направление', true)}
+      return `${hero('Меню и техкарты', 'Кофейное направление', true)}
         <div class="recipe-layout">
           <label>Поиск по меню<input type="search" name="recipe-search" value="${escape(query)}" placeholder="Напиток или объём"></label>
           <label>Фильтр по точке<select name="recipe-filter">${options(filter, 'Все точки')}</select></label>
@@ -257,7 +257,6 @@ window.panel03Recipes = (() => {
 
     function click(button) {
       const action = button.dataset.recipeAction;
-      if (action === 'overview') return false;
       if (action === 'list') {
         screen = 'list';
       } else if (action === 'item') {
