@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.2.1">
+<meta name="panel-build" content="2.3.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
-<meta name="description" content="Работа · Календарь и заметки.">
+<meta name="description" content="Работа · Календарь, заметки и точки.">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.2.1">
+<link rel="stylesheet" href="./relief.css?v=2.3.0">
 </head>
 <body>
 <div id="personal">
@@ -23,7 +23,7 @@
       <button type="button" id="google-open">Синхронизация Google</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.2.1</small>
+      <small>Сборка 2.3.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -74,11 +74,12 @@
       <button type="button" data-page="overview"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h7v8H3z M14 3.5h7v4h-7z M3 15.5h7v5H3z M14 11.5h7v9h-7z"/></svg>Обзор</button>
       <button type="button" data-page="calendar"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5 M8 14h3"/></svg>Календарь</button>
       <button type="button" data-page="notes"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3.5h14v17H5z M8 3.5v17 M11 8h5 M11 12h4"/></svg>Заметки</button>
+      <button type="button" data-page="points"><svg class="ui-icon" aria-hidden="true" focusable="false" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l2-5h14l2 5v2H3z M5 11v9h14v-9 M10 20v-6h4v6"/></svg>Точки</button>
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.2.1" defer></script>
-<script src="./google-sync.js?v=2.2.1" defer></script>
+<script src="./calendar-sync.js?v=2.3.0" defer></script>
+<script src="./google-sync.js?v=2.3.0" defer></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -126,7 +127,11 @@
   document.addEventListener('scroll', positionHint, true);
   document.addEventListener('close', closeHint, true);
   window.addEventListener('resize', positionHint);
-  window.visualViewport?.addEventListener('resize', positionHint);
+  window.visualViewport?.addEventListener('resize', () => {
+    positionHint();
+    const viewport = window.visualViewport;
+    root.toggleAttribute('data-keyboard', viewport.scale === 1 && innerHeight - viewport.height > 100);
+  });
 
   const main = root.querySelector('main');
   const nav = root.querySelector('nav');
@@ -140,7 +145,10 @@
   const backupFile = root.querySelector('#backup-file');
   let candidate = null;
   let storageReadable = true;
-  const labels = {overview:'Обзор', calendar:'Календарь', notes:'Заметки'};
+  const labels = {overview:'Обзор', calendar:'Календарь', notes:'Заметки', points:'Точки'};
+  const pointStatuses = {active:'Работает', opening:'Готовится к открытию'};
+  const createActions = {calendar:['new-event','Создать событие'], notes:['new-note','Создать заметку'],
+    points:['new-point','Добавить точку']};
   const periods = {day:'День', week:'Неделя', month:'Месяц'};
   const repeats = {none:'Не повторяется', daily:'Каждый день', weekdays:'По будням', weekly:'Каждую неделю', monthly:'Каждый месяц', yearly:'Каждый год'};
   const fullDate = new Intl.DateTimeFormat('ru', {weekday:'long', day:'numeric', month:'long', timeZone:'UTC'});
@@ -155,7 +163,8 @@
   let period = 'day';
   let page = 'overview';
   let view = null;
-  let data = {events:[], notes:[]};
+  const emptyRecords = () => ({events:[], notes:[], points:[]});
+  let data = emptyRecords();
   // An explicit prior reset permits synchronising an empty panel on this device.
   function wasResetHere() {
     try {
@@ -191,8 +200,9 @@
   }
   function validate(value) {
     value = readLegacyCopy(value);
-    const records = value?.format === '03-rabota-backup' && [2, 3].includes(value.version) ? value.data
+    const records = value?.format === '03-rabota-backup' && [2, 3, 4].includes(value.version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
+    const points = records?.points === undefined && value?.version !== 4 ? [] : records?.points;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
@@ -211,13 +221,19 @@
           event.exceptions && typeof event.exceptions === 'object' && !Array.isArray(event.exceptions) &&
           Object.entries(event.exceptions).every(([slot,item]) => date(slot) && (item === null || entry(item)))) ||
         !unique(records.events) || !unique(records.notes)) throw new Error('Invalid backup');
-    const validated = {events:records.events, notes:records.notes};
+    if (!Array.isArray(points) || !points.every(point => point && str(point.id) && point.id.length > 0 &&
+        str(point.name) && point.name.trim() && str(point.status) && Object.hasOwn(pointStatuses, point.status) && str(point.owner)) ||
+        !unique(points)) throw new Error('Invalid point records');
+    const validated = {events:records.events, notes:records.notes, points};
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
-  function backupVersion(records) { return Object.hasOwn(records, 'chef') ? 3 : 2; }
+  function backupVersion(records) {
+    if (records.points.length) return 4;
+    return Object.hasOwn(records, 'chef') ? 3 : 2;
+  }
   function downloadBackup() {
     const backup = {format:'03-rabota-backup',version:backupVersion(data),exportedAt:new Date().toISOString(),data};
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], {type:'application/json'}));
@@ -424,6 +440,63 @@
   function optionList(values, value) {
     return Object.entries(values).map(([id,label]) => `<option value="${id}"${id === value ? ' selected' : ''}>${label}</option>`).join('');
   }
+  function pointStatus(status) {
+    return `<span class="point-status" data-status="${status}">${pointStatuses[status]}</span>`;
+  }
+  function pointList() {
+    return `${hero('Точки', 'Кофейное направление', true)}${data.points.length
+      ? `<div class="point-list">${data.points.map(point => `<button type="button" class="section point-card" data-point="${escape(point.id)}">
+        <span><strong>${escape(point.name)}</strong>${pointStatus(point.status)}</span>
+        <svg class="ui-icon" aria-hidden="true" focusable="false" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+        </button>`).join('')}</div>`
+      : '<p class="empty">Нажми «+», чтобы добавить первую точку.</p>'}`;
+  }
+  function pointCard(point) {
+    return `${hero(point.name, 'Точки', true)}
+      <dl class="section point-details">
+        <div><dt>Статус</dt><dd>${pointStatus(point.status)}</dd></div>
+        <div><dt>Ответственный</dt><dd>${point.owner ? escape(point.owner) : '<small>Пока не указан</small>'}</dd></div>
+      </dl>
+      <div class="controls point-controls">
+        <button type="button" class="action primary" data-action="edit-point">Изменить карточку</button>
+        <button type="button" class="action" data-action="back">Назад к точкам</button>
+      </div>`;
+  }
+  function pointForm(point) {
+    return `${hero(point ? 'Изменить точку' : 'Новая точка', 'Точки', true)}
+      <form data-form="point">
+        <label>Название<input name="name" required maxlength="120" value="${escape(point?.name)}"></label>
+        <label>Статус<select name="status">${optionList(pointStatuses, point?.status ?? 'active')}</select></label>
+        <div class="field-help">
+          <label>Ответственный · по желанию<input name="owner" maxlength="120" value="${escape(point?.owner)}"></label>
+          <button type="button" class="help" data-hint="Укажи, с кем связываться по рабочим вопросам этой точки. Поле можно заполнить позже." aria-label="Подсказка: ответственный" aria-expanded="false"><span aria-hidden="true">?</span></button>
+        </div>
+        <div class="controls point-controls">
+          <button type="submit" class="action primary">Сохранить точку</button>
+          <button type="button" class="action" data-action="cancel-point">${point ? 'Назад к карточке' : 'Назад к точкам'}</button>
+        </div>
+      </form>`;
+  }
+  function savePoint(form, get) {
+    const name = get('name').trim();
+    if (!name) {
+      form.elements.name.setCustomValidity('Введите название точки.');
+      form.elements.name.reportValidity();
+      return;
+    }
+    const status = get('status');
+    if (!Object.hasOwn(pointStatuses, status)) return;
+    const original = view?.record;
+    const point = {id:original?.id ?? crypto.randomUUID(), name, status, owner:get('owner').trim()};
+    const points = original ? data.points.map(item => item.id === original.id ? point : item) : [...data.points, point];
+    const next = {...data, points};
+    if (!save(next, 'В браузере не хватает места для карточки точки.')) return;
+    data = next;
+    view = {type:'point', record:point};
+    render();
+    window.scrollTo(0, 0);
+    showNotice('Карточка точки сохранена.');
+  }
   function scopeOptions() {
     return {single:'Только это событие', following:'Это и следующие', series:'Вся серия'};
   }
@@ -473,8 +546,12 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'point-edit') {
+      main.innerHTML = pointForm(view.record);
+    } else if (view?.type === 'point') {
+      main.innerHTML = pointCard(view.record);
     } else if (view?.type === 'edit') {
       main.innerHTML = editForm();
       fields(main.querySelector('form'));
@@ -503,13 +580,18 @@
           <div class="help-title"><h2>Google</h2><button type="button" class="help" data-hint="Две стрелки в шапке сохраняют копию на Диске и обновляют календарь." aria-label="Подсказка: синхронизация" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
           <p id="google-overview-text" role="status"></p>
         </footer>`;
+    } else if (page === 'points') {
+      main.innerHTML = pointList();
     } else {
       main.innerHTML = page === 'calendar' ? calendar() : `${hero('Заметки', 'Записей: ' + data.notes.length, true)}${noteList(false)}`;
     }
     refreshSyncSummary();
-    create.hidden = !storageReadable || Boolean(view) || page === 'overview';
-    create.dataset.action = page === 'calendar' ? 'new-event' : 'new-note';
-    create.setAttribute('aria-label', page === 'calendar' ? 'Создать событие' : 'Создать заметку');
+    const createAction = createActions[page];
+    create.hidden = !storageReadable || Boolean(view) || !createAction;
+    if (createAction) {
+      create.dataset.action = createAction[0];
+      create.setAttribute('aria-label', createAction[1]);
+    }
     nav.querySelectorAll('button').forEach(button => {
       if (button.dataset.page === page) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
@@ -517,7 +599,7 @@
   }
   function finish(date) {
     if (!save()) {
-      data = loadedRecords ? validate(JSON.parse(loadedRecords)) : {events:[],notes:[]};
+      data = loadedRecords ? validate(JSON.parse(loadedRecords)) : emptyRecords();
       if (view?.record) view.record = [...data.events,...data.notes].find(item => item.id === view.record.id);
       return;
     }
@@ -549,6 +631,7 @@
     if (!storageReadable) return;
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
+    if (form.dataset.form === 'point') return savePoint(form, get);
     const original = view.record;
     const scope = get('scope');
     if (form.dataset.form === 'delete') {
@@ -610,7 +693,7 @@
   root.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button || !root.contains(button) || button.type === 'submit') return;
-    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, action} = button.dataset;
+    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, action} = button.dataset;
     if (!menu.contains(button) || ['backups', 'google', 'install'].includes(action)) menu.open = false;
     if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
@@ -626,7 +709,8 @@
         const ids = new Set(current.map(item => item.id));
         return [...current, ...incoming.filter(item => !ids.has(item.id))];
       };
-      const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes)};
+      const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes),
+        points:addMissing(data.points,candidate.points)};
       const archive = data.chef ?? candidate.chef;
       if (archive !== undefined) merged.chef = archive;
       if (save(merged, 'В браузере не хватает места для записей из копии.')) {
@@ -636,7 +720,7 @@
         showNotice('Копия добавлена в браузер.');
       }
     } else if (action === 'backups') { candidate = null; view = {type:'backups'}; }
-    else if (!storageReadable && ['edit','delete','new-event','new-note'].includes(action)) return;
+    else if (!storageReadable && ['edit','delete','new-event','new-note','new-point','edit-point'].includes(action)) return;
     else if (destination) { page = destination; view = null; }
     else if (direction) {
       const first = asDate(month + '-01');
@@ -654,13 +738,22 @@
       view = {type:'record', record, entry, slot};
     } else if (note) {
       page = 'notes'; view = {type:'record', record:data.notes.find(item => item.id === note)};
-    } else if (action === 'new-event' || action === 'new-note') view = {type:'edit'};
+    } else if (point) {
+      const record = data.points.find(item => item.id === point);
+      if (!record) return;
+      page = 'points'; view = {type:'point', record};
+    } else if (action === 'new-point') view = {type:'point-edit'};
+    else if (action === 'edit-point') view = {...view, type:'point-edit'};
+    else if (action === 'cancel-point') view = view.record ? {...view, type:'point'} : null;
+    else if (action === 'new-event' || action === 'new-note') view = {type:'edit'};
     else if (action === 'edit' || action === 'delete') view.type = action;
     else if (action === 'cancel') view = view.record ? {...view, type:'record'} : null;
     else if (action === 'back') view = null;
     else return;
+    const pointScreen = page === 'points' && view?.type !== 'backups';
+    if (pointScreen && storageReadable) showNotice('');
     render();
-    if (destination) window.scrollTo(0, 0);
+    if (destination || pointScreen) window.scrollTo(0, 0);
     if (action === 'new-event' || action === 'new-note') main.querySelector('h1').scrollIntoView({block:'start'});
     if (day) main.querySelector('[data-day="' + day + '"]')?.focus({preventScroll:true});
     if (direction) main.querySelector('[data-month="' + direction + '"]')?.focus({preventScroll:true});

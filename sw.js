@@ -1,6 +1,6 @@
 'use strict';
 const prefix = 'panel-03-shell-';
-const version = '2.2.1';
+const version = '2.3.0';
 const cacheName = prefix + version;
 const scope = self.registration.scope;
 const shell = new URL('index.html', scope).href;
