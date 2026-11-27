@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.4.0">
+<meta name="panel-build" content="3.5.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.4.0">
+<link rel="stylesheet" href="./relief.css?v=3.5.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.4.0</small>
+      <small>Сборка 3.5.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,13 +81,14 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.4.0" defer></script>
-<script src="./google-sync.js?v=3.4.0" defer></script>
-<script src="./point-picker.js?v=3.4.0"></script>
-<script src="./work-items.js?v=3.4.0"></script>
-<script src="./menu-recipes.js?v=3.4.0"></script>
-<script src="./point-audits.js?v=3.4.0"></script>
-<script src="./point-team.js?v=3.4.0"></script>
+<script src="./calendar-sync.js?v=3.5.0" defer></script>
+<script src="./google-sync.js?v=3.5.0" defer></script>
+<script src="./point-picker.js?v=3.5.0"></script>
+<script src="./work-items.js?v=3.5.0"></script>
+<script src="./menu-recipes.js?v=3.5.0"></script>
+<script src="./point-audits.js?v=3.5.0"></script>
+<script src="./point-team.js?v=3.5.0"></script>
+<script src="./point-equipment.js?v=3.5.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -152,6 +153,7 @@
   const menuRecipes = window.panel03Recipes;
   const audits = window.panel03Audits;
   const team = window.panel03Team;
+  const equipment = window.panel03Equipment;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -233,13 +235,12 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
     const str = value => typeof value === 'string';
-    const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-      Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
+    const date = validDay;
     const time = value => str(value) && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
     const record = item => item && str(item.id) && item.id.length > 0 && str(item.title) && item.title.trim();
     const entry = (item, allowUndated = false) => item && str(item.title) && item.title.trim() &&
@@ -296,12 +297,17 @@
       if (!team.validate(records.team, points)) throw new Error('Invalid point team');
       validated.team = records.team;
     }
+    if (records.equipment !== undefined || version === 13) {
+      if (!equipment.validate(records.equipment, points, date)) throw new Error('Invalid point equipment');
+      validated.equipment = records.equipment;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.equipment !== undefined) return 13;
     if (records.team !== undefined) return 12;
     if (records.audits !== undefined) return 11;
     const groupedWork = entry => entry?.work?.pointIds !== undefined;
@@ -367,6 +373,10 @@
     dayTimer = setTimeout(updateToday, Math.min(midnight - now, 3600000));
   }
   function asDate(value) { return new Date(value + 'T00:00:00Z'); }
+  function validDay(value) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+      Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
+  }
   function capital(text) { return text.charAt(0).toUpperCase() + text.slice(1); }
   function escape(text) {
     return String(text ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
@@ -447,7 +457,10 @@
     const rows = [];
     for (const record of records) {
       const slots = new Set(Object.keys(record.workLog ?? {}));
-      if (record.repeat === 'none') slots.add(record.date);
+      if (record.repeat === 'none') {
+        if (record.stopBefore && !occurs(record, record.date)) continue;
+        slots.add(record.date);
+      }
       else {
         for (const slot of Object.keys(record.exceptions)) slots.add(slot);
         const last = [record.ending === 'date' ? record.until : '', record.stopBefore ? offsetDay(record.stopBefore, -1) : '']
@@ -585,6 +598,7 @@
         <button type="button" class="action primary" data-action="point-tasks">Дела точки</button>
         <button type="button" class="action" data-action="point-audits">Аудиты</button>
         <button type="button" class="action" data-action="point-team">Команда</button>
+        <button type="button" class="action" data-action="point-equipment">Оборудование</button>
         <button type="button" class="action" data-action="edit-point">Изменить карточку</button>
         <button type="button" class="action" data-action="back">Назад к точкам</button>
       </div>`;
@@ -725,13 +739,14 @@
         <div class="controls"><button type="submit" class="action primary">Сохранить</button>
           <button type="button" data-action="cancel">Отмена</button></div>
       </form>`;
-    const linked = Boolean(view.auditSource || view.teamSource);
+    const linked = Boolean(view.auditSource || view.teamSource || view.equipmentSource);
+    const diagnosis = view.equipmentSource || (original && equipment.sourceForWork(data.equipment ?? [], original.id)?.kind === 'diagnosis');
     const value = view.entry ?? {title:view.title, date:linked ? '' : selected, allDay:linked,
       start:'09:00', end:'10:00', repeat:'none', ending:'never'};
     const recurring = original && original.repeat !== 'none';
     const work = readWork();
     return `${hero(original ? 'Изменить дело' : 'Новое дело', '', true)}
-      <form data-form="edit">
+      <form data-form="edit"${diagnosis ? ' data-one-off' : ''}>
         ${recurring ? `<div class="field-help"><label>Применить к<select name="scope">${optionList(scopeOptions(), 'single')}</select></label>
           ${pointHint('область изменения','Можно изменить одно дело, следующие дела или всю серию.')}</div>` : ''}
         <label>Название<input name="title" required maxlength="200" value="${escape(value.title)}"></label>
@@ -771,7 +786,7 @@
     get('date').required = scheduled;
     form.querySelector('.times').hidden = allDay;
     get('start').required = get('end').required = scheduled && !allDay;
-    form.querySelector('[data-repeat]').hidden = single;
+    form.querySelector('[data-repeat]').hidden = single || form.hasAttribute('data-one-off');
     form.querySelector('[data-ending]').hidden = !repeatsEnabled;
     form.querySelector('[data-until]').hidden = !repeatsEnabled || ending !== 'date';
     form.querySelector('[data-count]').hidden = !repeatsEnabled || ending !== 'count';
@@ -804,7 +819,10 @@
   function showWork(id, slot, returnView = null) {
     const record = data.events.find(item => item.id === id || item.legacyTaskId === id);
     if (!record) return false;
-    if (record.repeat === 'none') slot = record.date;
+    if (record.repeat === 'none') {
+      slot = record.date;
+      if (record.stopBefore && !occurs(record, slot)) return false;
+    }
     if (record.repeat !== 'none' && (!/^\d{4}-\d{2}-\d{2}$/.test(slot ?? '') || !occurs(record, slot) || eventEntry(record, slot) === null)) {
       const slots = workRows([record]).sort((a, b) => a.entry.date.localeCompare(b.entry.date));
       slot = slots.find(row => row.entry.date >= today)?.slot ?? slots.at(-1)?.slot;
@@ -823,6 +841,7 @@
     const {record, entry, returnView} = view;
     const source = audits.sourceForWork(data.audits ?? [], record.id);
     const training = team.sourceForWork(data.team ?? [], record.id);
+    const maintenance = equipment.sourceForWork(data.equipment ?? [], record.id);
     const work = readWork();
     const timing = !entry.date ? 'Без даты' : entry.allDay ? 'Весь день' : entry.start + '–' + entry.end;
     const scope = taskPanel.scopeName(work);
@@ -835,10 +854,13 @@
         ${visibleWorkFields().map(field => `<div><dt class="point-field-title">${escape(field.label)}${pointHint(field.label, field.hint)}</dt>
           <dd>${escape(work.values?.[field.id]) || '<small>Пока не заполнено</small>'}</dd></div>`).join('')}
         ${source ? `<div><dt>Отклонение из аудита</dt><dd class="record">${escape(source.check.note)}</dd></div>` : ''}
+        ${maintenance ? `<div><dt>Оборудование</dt><dd>${escape(maintenance.asset.name)}</dd></div>` : ''}
         ${training ? `<div><dt>Что отработать</dt><dd class="record">${escape(training.attempt.note)}</dd></div>` : ''}
         ${work.result ? `<div><dt>Результат</dt><dd class="task-result">${escape(work.result)}</dd></div>` : ''}
       </dl>
       <div class="controls point-controls">
+        ${maintenance?.kind === 'inspection' ? `<button type="button" class="action primary" data-action="open-equipment-source">${work.status === 'done' ? 'Открыть результат осмотра' : 'Зафиксировать осмотр'}</button>
+          <button type="button" class="action" data-action="open-equipment-card">Открыть оборудование</button>` : `
         ${work.status === 'done' ? '<button type="button" class="action primary" data-action="work-open">Вернуть в работу</button><button type="button" class="action" data-action="work-close">Изменить результат</button>'
           : '<button type="button" class="action primary" data-action="work-close">Завершить дело</button>'}
         ${work.status === 'open' ? '<button type="button" class="action" data-action="work-wait">Отметить ожидание</button>'
@@ -847,8 +869,10 @@
         <button type="button" class="action" data-action="delete">Удалить</button>
         ${source && returnView?.type !== 'audits' ? '<button type="button" class="action" data-action="open-audit-source">Открыть связанный аудит</button>' : ''}
         ${training && returnView?.type !== 'team' ? '<button type="button" class="action" data-action="open-training-source">Открыть связанную проверку</button>' : ''}
+        ${maintenance?.kind === 'diagnosis' ? '<button type="button" class="action" data-action="open-equipment-source">Открыть диагностику оборудования</button>' : ''}`}
         <button type="button" class="action" data-action="back">${returnView?.type === 'audits' ? 'Назад к аудиту' :
-          returnView?.type === 'team' ? 'Назад к проверке' : returnView ? 'Назад к делам' :
+          returnView?.type === 'team' ? 'Назад к проверке' : returnView?.type === 'equipment' ? 'Назад к оборудованию' :
+          returnView ? 'Назад к делам' :
           page === 'calendar' ? 'Назад к календарю' : 'Назад к обзору'}</button>
       </div>`;
   }
@@ -936,6 +960,47 @@
       if (showWork(id, '', view)) redrawTasks();
     },
   });
+  function openEquipment(pointId, id, source) {
+    page = 'points';
+    view = {type:'equipment'};
+    equipmentPanel.open(pointId,id,source);
+    redrawTasks();
+  }
+  const equipmentPanel = equipment.create({
+    records:() => data, getMain:() => main, hero, escape, labels:{...repeats,none:'Один раз'}, options:optionList,
+    today:() => today, nextDay:day => offsetDay(day,1), validDay,
+    nextInspection(plan) {
+      return workRows([plan]).filter(row => row.entry.date >= today && row.work.status !== 'done')
+        .sort((a,b) => a.entry.date.localeCompare(b.entry.date))[0];
+    },
+    inspectionEntry(event, slot) {
+      return event && occurs(event,slot) ? eventEntry(event,slot) : null;
+    },
+    commit(records, events = data.events) {
+      const next = {...data, equipment:records, events};
+      if (!save(next, 'В браузере не хватает места для данных оборудования.')) return false;
+      data = next;
+      return true;
+    },
+    redraw:redrawTasks,
+    exit(point) {
+      view = {type:'point', record:point};
+      redrawTasks();
+    },
+    newWork(equipmentSource, pointId, title) {
+      if (!storageReadable) return;
+      view = {type:'edit', equipmentSource, title, workScope:[pointId], returnView:view};
+      redrawTasks();
+    },
+    openWork(id) {
+      if (showWork(id, '', view)) redrawTasks();
+    },
+  });
+  function saveDiagnosisWork(event) {
+    const records = equipment.linkDiagnosis(data.equipment,data.events,view.equipmentSource,event.id);
+    if (!records) return showNotice('Для этой диагностики уже сохранено дело.');
+    saveLinkedWork(event,{equipment:records},'Дело на диагностику сохранено.');
+  }
   function saveTrainingWork(event) {
     const members = team.linkPractice(data.team, data.events, view.teamSource, event.id);
     if (!members) return showNotice('Для этой практики уже сохранено дело.');
@@ -967,8 +1032,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'equipment') {
+      main.innerHTML = equipmentPanel.draw();
     } else if (view?.type === 'team') {
       main.innerHTML = teamPanel.draw();
     } else if (view?.type === 'audits') {
@@ -1063,6 +1130,7 @@
   });
   main.addEventListener('change', event => {
     const target = event.target;
+    if (view?.type === 'equipment') return equipmentPanel.change(target);
     const selection = pointPicker.change(target);
     if (view?.type === 'recipes') {
       if (selection !== undefined) recipePanel.selectPoints(target.closest('[data-point-picker]').dataset.pointPicker, selection);
@@ -1098,6 +1166,7 @@
     if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
     if (view?.type === 'audits') return auditPanel.submit(form);
     if (view?.type === 'team') return teamPanel.submit(form);
+    if (view?.type === 'equipment') return equipmentPanel.submit(form);
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (view?.type === 'tasks') return taskPanel.submit(form, get);
@@ -1156,7 +1225,7 @@
     if (scope === 'single') {
       original.exceptions[view.slot] = entry;
     } else {
-      const repeat = scheduled ? get('repeat') : 'none';
+      const repeat = scheduled && !form.hasAttribute('data-one-off') ? get('repeat') : 'none';
       const ending = repeat === 'none' ? 'never' : get('ending');
       if (ending === 'date' && get('until') < entry.date) {
         form.elements.until.setCustomValidity('Дата окончания серии должна быть не раньше начала.');
@@ -1167,6 +1236,7 @@
         count:Number(get('count')), exceptions:{}};
       if (view.auditSource) return saveAuditWork(updated);
       if (view.teamSource) return saveTrainingWork(updated);
+      if (view.equipmentSource) return saveDiagnosisWork(updated);
       if (original?.legacyTaskId && scope !== 'following') updated.legacyTaskId = original.legacyTaskId;
       if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
       if (original) {
@@ -1229,6 +1299,14 @@
       if (button.dataset.auditAction) return auditPanel.click(button);
     }
     if (view?.type === 'team' && button.dataset.teamAction) return teamPanel.click(button);
+    if (view?.type === 'equipment' && button.dataset.equipmentAction) return equipmentPanel.click(button);
+    if (action === 'point-equipment') return openEquipment(view.record.id);
+    if (action === 'open-equipment-source' || action === 'open-equipment-card') {
+      const source = equipment.sourceForWork(data.equipment ?? [],view.record.id);
+      if (source) openEquipment(source.asset.pointId,source.asset.id,action === 'open-equipment-source'
+        ? {kind:source.kind,id:view.record.id,slot:view.slot} : undefined);
+      return;
+    }
     if (action === 'point-team') return openTeam(view.record.id);
     if (action === 'open-training-source') {
       const source = team.sourceForWork(data.team ?? [], view.record.id);
@@ -1264,6 +1342,7 @@
       if (data.recipes || candidate.recipes) merged.recipes = addMissing(data.recipes ?? [], candidate.recipes ?? []);
       if (data.audits || candidate.audits) merged.audits = addMissing(data.audits ?? [], candidate.audits ?? []);
       if (data.team || candidate.team) merged.team = addMissing(data.team ?? [], candidate.team ?? []);
+      if (data.equipment || candidate.equipment) merged.equipment = addMissing(data.equipment ?? [], candidate.equipment ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {

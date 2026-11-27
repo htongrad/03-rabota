@@ -237,3 +237,6 @@ form:is([data-form=audit-step],[data-form=audit-recheck]) textarea { min-height:
 
 form[data-form=team-check] textarea { min-height:5rem; }
 #personal[data-keyboard]:has(form[data-form^=team-]) .bottom { position:static; }
+
+form[data-form=equipment-report] textarea { min-height:5rem; }
+#personal[data-keyboard]:has(form[data-form^=equipment-]) .bottom { position:static; }
