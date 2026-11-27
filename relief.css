@@ -234,3 +234,6 @@ form:is([data-form=work-close],[data-form=task-field]) textarea { min-height:6re
 form:is([data-form=audit-step],[data-form=audit-recheck]) textarea { min-height:5rem; }
 .audit-error { margin:0; }
 #personal[data-keyboard]:has(form:is([data-form=audit-step],[data-form=audit-recheck])) .bottom { position:static; }
+
+form[data-form=team-check] textarea { min-height:5rem; }
+#personal[data-keyboard]:has(form[data-form^=team-]) .bottom { position:static; }
