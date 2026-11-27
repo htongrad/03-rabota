@@ -207,3 +207,30 @@ form:is([data-form=work-close],[data-form=task-field]) textarea { min-height:6re
 .point-picker-list { display:grid; border-top:1px solid var(--edge); }
 .point-picker-list label + label { border-top:1px solid var(--edge); }
 .point-picker-empty { padding:0 4px 7px; font-size:.85rem; color:var(--muted); }
+
+.audit-layout,.audit-list,.audit-choices { display:grid; gap:10px; }
+.audit-list .action { text-align:left; }
+.audit-list small { display:block; color:var(--muted); font-weight:400; }
+.audit-choices { gap:0; }
+.audit-choices label + label { border-top:1px solid var(--edge); }
+.audit-options { min-width:0; margin:0; padding:0; border:0; }
+.audit-options legend { margin-bottom:6px; padding:0; font-weight:650; }
+.audit-options div { display:flex; flex-wrap:wrap; gap:6px; }
+.audit-options label { position:relative; flex:1 0 auto; min-width:0; text-align:center; cursor:pointer; }
+.audit-options input { position:absolute; inset:0; width:100%; height:100%; min-height:0; margin:0; padding:0; opacity:0; cursor:pointer; }
+.audit-options span { display:grid; place-items:center; min-height:44px; padding:6px; border:1px solid var(--edge); border-radius:10px; background:var(--paper); font-size:.82rem; }
+.audit-options input:checked + span { border-color:var(--accent); background:var(--tint); color:var(--accent); }
+.audit-options input:focus-visible + span { outline:2px solid var(--accent); outline-offset:2px; }
+.audit-results { display:grid; list-style:none; padding:0; margin:0; }
+.audit-result,.audit-recheck-log { display:grid; gap:7px; padding:10px 0; border-top:1px solid var(--edge); }
+.audit-result-title { display:flex; flex-wrap:wrap; gap:5px 10px; align-items:center; }
+.audit-status { padding:3px 8px; border-radius:7px; background:var(--tint); color:var(--accent); font-size:.8rem; }
+.audit-status[data-outcome=issue] { background:#f6e7e1; color:#7c3024; }
+.audit-status[data-outcome=pass] { background:#e7f2e9; color:#265743; }
+@media (prefers-color-scheme: dark) {
+  .audit-status[data-outcome=issue] { background:#482b28; color:#ffb8aa; }
+  .audit-status[data-outcome=pass] { background:#263f35; color:#c1e7d0; }
+}
+form:is([data-form=audit-step],[data-form=audit-recheck]) textarea { min-height:5rem; }
+.audit-error { margin:0; }
+#personal[data-keyboard]:has(form:is([data-form=audit-step],[data-form=audit-recheck])) .bottom { position:static; }

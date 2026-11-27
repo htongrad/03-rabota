@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.2.0">
+<meta name="panel-build" content="3.3.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.2.0">
+<link rel="stylesheet" href="./relief.css?v=3.3.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.2.0</small>
+      <small>Сборка 3.3.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,11 +81,12 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.2.0" defer></script>
-<script src="./google-sync.js?v=3.2.0" defer></script>
-<script src="./point-picker.js?v=3.2.0"></script>
-<script src="./work-items.js?v=3.2.0"></script>
-<script src="./menu-recipes.js?v=3.2.0"></script>
+<script src="./calendar-sync.js?v=3.3.0" defer></script>
+<script src="./google-sync.js?v=3.3.0" defer></script>
+<script src="./point-picker.js?v=3.3.0"></script>
+<script src="./work-items.js?v=3.3.0"></script>
+<script src="./menu-recipes.js?v=3.3.0"></script>
+<script src="./point-audits.js?v=3.3.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -148,6 +149,7 @@
   const pointPicker = window.panel03Points;
   const workItems = window.panel03WorkItems;
   const menuRecipes = window.panel03Recipes;
+  const audits = window.panel03Audits;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -229,7 +231,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -284,12 +286,17 @@
       if (!menuRecipes.validate(records.recipes, points)) throw new Error('Invalid menu recipes');
       validated.recipes = records.recipes;
     }
+    if (records.audits !== undefined || version === 11) {
+      if (!audits.validate(records.audits, points)) throw new Error('Invalid point audits');
+      validated.audits = records.audits;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.audits !== undefined) return 11;
     const groupedWork = entry => entry?.work?.pointIds !== undefined;
     const grouped = records.events.some(event => groupedWork(event) || Object.values(event.exceptions).some(groupedWork)) ||
       records.recipes?.some(item => item.draft?.pointIds !== undefined || item.versions.some(version => version.pointIds !== undefined));
@@ -569,6 +576,7 @@
       </dl>
       <div class="controls point-controls">
         <button type="button" class="action primary" data-action="point-tasks">Дела точки</button>
+        <button type="button" class="action" data-action="point-audits">Аудиты</button>
         <button type="button" class="action" data-action="edit-point">Изменить карточку</button>
         <button type="button" class="action" data-action="back">Назад к точкам</button>
       </div>`;
@@ -709,7 +717,8 @@
         <div class="controls"><button type="submit" class="action primary">Сохранить</button>
           <button type="button" data-action="cancel">Отмена</button></div>
       </form>`;
-    const value = view.entry ?? {date:selected, start:'09:00', end:'10:00', repeat:'none', ending:'never'};
+    const value = view.entry ?? {title:view.title, date:view.auditSource ? '' : selected, allDay:Boolean(view.auditSource),
+      start:'09:00', end:'10:00', repeat:'none', ending:'never'};
     const recurring = original && original.repeat !== 'none';
     const work = readWork();
     return `${hero(original ? 'Изменить дело' : 'Новое дело', '', true)}
@@ -803,6 +812,7 @@
   }
   function workCard() {
     const {record, entry, returnView} = view;
+    const source = audits.sourceForWork(data.audits ?? [], record.id);
     const work = readWork();
     const timing = !entry.date ? 'Без даты' : entry.allDay ? 'Весь день' : entry.start + '–' + entry.end;
     const scope = taskPanel.scopeName(work);
@@ -814,6 +824,7 @@
         ${work.owner ? `<div><dt>Ответственный</dt><dd>${escape(work.owner)}</dd></div>` : ''}
         ${visibleWorkFields().map(field => `<div><dt class="point-field-title">${escape(field.label)}${pointHint(field.label, field.hint)}</dt>
           <dd>${escape(work.values?.[field.id]) || '<small>Пока не заполнено</small>'}</dd></div>`).join('')}
+        ${source ? `<div><dt>Отклонение из аудита</dt><dd class="record">${escape(source.check.note)}</dd></div>` : ''}
         ${work.result ? `<div><dt>Результат</dt><dd class="task-result">${escape(work.result)}</dd></div>` : ''}
       </dl>
       <div class="controls point-controls">
@@ -823,7 +834,9 @@
           : work.status === 'waiting' ? '<button type="button" class="action" data-action="work-open">Вернуть к выполнению</button>' : ''}
         <button type="button" class="action" data-action="edit">Изменить дело</button>
         <button type="button" class="action" data-action="delete">Удалить</button>
-        <button type="button" class="action" data-action="back">Назад ${returnView ? 'к делам' : page === 'calendar' ? 'к календарю' : 'к обзору'}</button>
+        ${source && returnView?.type !== 'audits' ? '<button type="button" class="action" data-action="open-audit-source">Открыть связанный аудит</button>' : ''}
+        <button type="button" class="action" data-action="back">${returnView?.type === 'audits' ? 'Назад к аудиту' :
+          returnView ? 'Назад к делам' : page === 'calendar' ? 'Назад к календарю' : 'Назад к обзору'}</button>
       </div>`;
   }
   function updateWork(status, result) {
@@ -854,6 +867,50 @@
     },
   });
 
+  function openAudits(pointId, auditId) {
+    page = 'points';
+    view = {type:'audits'};
+    auditPanel.open(pointId, auditId);
+    redrawTasks();
+  }
+  const auditPanel = audits.create({
+    records:() => data, getMain:() => main, hero, escape, effective:menuRecipes.effective,
+    commit(records) {
+      const next = {...data, audits:records};
+      if (!save(next, 'В браузере не хватает места для аудита.')) return false;
+      data = next;
+      return true;
+    },
+    redraw:redrawTasks,
+    exit(point) {
+      view = {type:'point', record:point};
+      redrawTasks();
+    },
+    newWork(auditSource, pointId, title) {
+      if (!storageReadable) return;
+      view = {type:'edit', auditSource, title, workScope:[pointId], returnView:view};
+      redrawTasks();
+    },
+    openWork(id) {
+      if (showWork(id, '', view)) redrawTasks();
+    },
+  });
+  function saveAuditWork(event) {
+    const {auditId,drinkId,checkId} = view.auditSource;
+    const record = data.audits.find(audit => audit.id === auditId);
+    const issue = audits.issueAt(record,drinkId,checkId);
+    if (!issue || data.events.some(row => row.id === issue.check.workId)) {
+      showNotice('Для этого отклонения уже сохранено дело.');
+      return;
+    }
+    const linked = audits.updateCheck(record,drinkId,checkId,{workId:event.id});
+    const next = {...data, events:[...data.events,event], audits:data.audits.map(row => row.id === linked.id ? linked : row)};
+    if (!save(next, 'В браузере не хватает места для дела.')) return;
+    data = next;
+    view = view.returnView;
+    redrawTasks('Дело связано с отклонением.');
+  }
+
   function render() {
     closeHint();
     if (view?.type === 'backups') {
@@ -861,8 +918,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'audits') {
+      main.innerHTML = auditPanel.draw();
     } else if (view?.type === 'recipes') {
       main.innerHTML = recipePanel.draw();
     } else if (view?.type === 'tasks') {
@@ -986,6 +1045,7 @@
     const form = event.target;
     if (!storageReadable) return;
     if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
+    if (view?.type === 'audits') return auditPanel.submit(form);
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (view?.type === 'tasks') return taskPanel.submit(form, get);
@@ -1053,6 +1113,7 @@
       }
       const updated = {...entry, id:original?.id ?? crypto.randomUUID(), repeat, ending, until:get('until'),
         count:Number(get('count')), exceptions:{}};
+      if (view.auditSource) return saveAuditWork(updated);
       if (original?.legacyTaskId && scope !== 'following') updated.legacyTaskId = original.legacyTaskId;
       if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
       if (original) {
@@ -1110,6 +1171,16 @@
         return;
       }
     }
+    if (view?.type === 'audits') {
+      if ((destination || action === 'backups') && !auditPanel.beforeLeave()) return;
+      if (button.dataset.auditAction) return auditPanel.click(button);
+    }
+    if (action === 'point-audits') return openAudits(view.record.id);
+    if (action === 'open-audit-source') {
+      const source = audits.sourceForWork(data.audits ?? [], view.record.id);
+      if (source) openAudits(source.audit.pointId, source.audit.id);
+      return;
+    }
     if (action === 'open-tasks' || action === 'point-tasks') {
       taskPanel.open(action === 'point-tasks' ? view.record.id : '');
       view = {type:'tasks'};
@@ -1131,6 +1202,7 @@
         points:addMissing(data.points,candidate.points)};
       if (data.taskFields || candidate.taskFields) merged.taskFields = addMissing(data.taskFields ?? [], candidate.taskFields ?? []);
       if (data.recipes || candidate.recipes) merged.recipes = addMissing(data.recipes ?? [], candidate.recipes ?? []);
+      if (data.audits || candidate.audits) merged.audits = addMissing(data.audits ?? [], candidate.audits ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {
@@ -1250,6 +1322,7 @@
     },
     offerCopy(records, message) {
       if (view?.type === 'recipes' && !recipePanel.beforeLeave()) return false;
+      if (view?.type === 'audits' && !auditPanel.beforeLeave()) return false;
       candidate = records;
       view = {type:'backups'};
       showNotice(message);
