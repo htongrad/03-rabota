@@ -386,8 +386,8 @@
     const { backup, skipped } = await findUsableBackup(settings);
     $('#google-dialog').close();
     const notice = skipped ? 'Показана предыдущая исправная копия.' : '';
-    core.offerCopy(backup, notice || 'Копия загружена. Подтверди добавление записей.');
-    message = 'Копия загружена. Проверь её состав и подтверди восстановление.';
+    const offered = core.offerCopy(backup, notice || 'Копия загружена. Подтверди добавление записей.');
+    message = offered ? 'Копия загружена. Проверь её состав и подтверди восстановление.' : 'Восстановление отменено.';
   }
 
   function paint() {

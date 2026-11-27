@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.0.0">
+<meta name="panel-build" content="3.1.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
-<meta name="description" content="Работа · Календарь рабочих дел, заметки и точки.">
+<meta name="description" content="Работа · Календарь рабочих дел, заметки, точки и техкарты.">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.0.0">
+<link rel="stylesheet" href="./relief.css?v=3.1.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.0.0</small>
+      <small>Сборка 3.1.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -80,9 +80,10 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.0.0" defer></script>
-<script src="./google-sync.js?v=3.0.0" defer></script>
-<script src="./work-items.js?v=3.0.0"></script>
+<script src="./calendar-sync.js?v=3.1.0" defer></script>
+<script src="./google-sync.js?v=3.1.0" defer></script>
+<script src="./work-items.js?v=3.1.0"></script>
+<script src="./menu-recipes.js?v=3.1.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -143,6 +144,7 @@
   function refreshSyncSummary() { window.refreshGoogleStatus?.(); }
   const storageKey = 'panel-03:base:v1';
   const workItems = window.panel03WorkItems;
+  const menuRecipes = window.panel03Recipes;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -195,7 +197,7 @@
     if (loadedRecords) {
       const stored = JSON.parse(loadedRecords);
       data = validate(stored);
-      needsUpgrade = stored?.format !== '03-rabota-backup' || stored.version !== 8;
+      needsUpgrade = stored?.format !== '03-rabota-backup' || stored.version !== backupVersion(data);
     } else if (wasResetHere()) {
       loadedRecords = JSON.stringify(data);
       localStorage.setItem(storageKey, loadedRecords);
@@ -224,10 +226,10 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
-    const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version === 8) ? [] : records?.tasks;
+    const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
@@ -275,12 +277,16 @@
     const validated = {events, notes:records.notes, points};
     if (records.pointSettings !== undefined) validated.pointSettings = settings;
     if (records.taskFields !== undefined) validated.taskFields = taskFields;
+    if (records.recipes !== undefined || version === 9) {
+      if (!menuRecipes.validate(records.recipes, points)) throw new Error('Invalid menu recipes');
+      validated.recipes = records.recipes;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
-  function backupVersion() { return 8; }
+  function backupVersion(records = data) { return records.recipes === undefined ? 8 : 9; }
   function downloadBackup() {
     const backup = {format:'03-rabota-backup',version:backupVersion(data),exportedAt:new Date().toISOString(),data};
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], {type:'application/json'}));
@@ -350,7 +356,7 @@
         showNotice('Записи изменились в другом окне. Скачайте копию несохранённых изменений и откройте панель заново.');
         return false;
       }
-      const serialized = JSON.stringify({format:'03-rabota-backup', version:backupVersion(), data:records});
+      const serialized = JSON.stringify({format:'03-rabota-backup', version:backupVersion(records), data:records});
       localStorage.setItem(storageKey, serialized);
       loadedRecords = serialized;
     } catch (error) {
@@ -816,6 +822,23 @@
     view = {...view, type:'record', record:updated, entry:eventEntry(updated, slot)};
     redrawTasks('Дело обновлено.');
   }
+  const recipePanel = menuRecipes.create({
+    getRecords:() => data,
+    getMain:() => main,
+    hero, escape, hint:pointHint,
+    commit(recipes) {
+      const records = {...data, recipes};
+      if (!save(records, 'В браузере не хватает места для техкарты.')) return false;
+      data = records;
+      return true;
+    },
+    redraw(message = '') {
+      if (storageReadable) showNotice(message);
+      render();
+      window.scrollTo(0, 0);
+    },
+  });
+
   function render() {
     closeHint();
     if (view?.type === 'backups') {
@@ -823,8 +846,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'recipes') {
+      main.innerHTML = recipePanel.draw();
     } else if (view?.type === 'tasks') {
       main.innerHTML = taskPanel.draw();
     } else if (view?.type === 'point-settings') {
@@ -861,7 +886,10 @@
     } else if (page === 'overview') {
       main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
         <div class="overview-modules">
-          <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
+          <div class="overview-actions">
+            <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
+            <button type="button" class="action" data-action="open-recipes">Меню и техкарты</button>
+          </div>
           <section class="section"><h2>Сегодня</h2>${eventList(today)}</section>
           ${nextWeekAgenda()}
           <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
@@ -879,8 +907,12 @@
     pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
     const taskList = view?.type === 'tasks' && taskPanel.isList();
     taskSettingsButton.hidden = !taskList || !storageReadable;
-    const createAction = taskList ? ['new-work','Добавить дело'] : createActions[page];
-    create.hidden = !storageReadable || (Boolean(view) && !taskList) || !createAction;
+    const recipeList = view?.type === 'recipes' && recipePanel.isList();
+    const createAction = recipeList ? ['new-recipe','Добавить позицию меню'] :
+      taskList ? ['new-work','Добавить дело'] : createActions[page];
+    create.hidden = !storageReadable || (Boolean(view) && !taskList && !recipeList) || !createAction;
+    if (recipeList) create.dataset.recipeAction = 'new';
+    else delete create.dataset.recipeAction;
     if (createAction) {
       create.dataset.action = createAction[0];
       create.setAttribute('aria-label', createAction[1]);
@@ -901,11 +933,16 @@
     render();
   }
   main.addEventListener('input', event => {
+    if (view?.type === 'recipes') return recipePanel.change(event.target);
     const input = event.target;
     if (input instanceof HTMLInputElement) input.setCustomValidity('');
     if (input.name === 'owner' && input.form?.dataset.form === 'edit') input.form.setAttribute('data-owner-edited', '');
   });
   main.addEventListener('change', event => {
+    if (view?.type === 'recipes') {
+      if (event.target instanceof HTMLSelectElement) recipePanel.change(event.target);
+      return;
+    }
     if (view?.type === 'tasks') return taskPanel.change(event.target);
     const form = event.target.form;
     if (form?.dataset.form !== 'edit' || !form.elements.scheduled) return;
@@ -929,6 +966,7 @@
     event.preventDefault();
     const form = event.target;
     if (!storageReadable) return;
+    if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (view?.type === 'tasks') return taskPanel.submit(form, get);
@@ -1034,6 +1072,29 @@
       prompt.prompt().catch(() => showNotice('Откройте меню Chrome, чтобы установить приложение.'));
       return;
     }
+    if (action === 'open-recipes') {
+      recipePanel.open();
+      view = {type:'recipes'};
+      if (storageReadable) showNotice('');
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (view?.type === 'recipes') {
+      const recipeAction = button.dataset.recipeAction;
+      if ((destination || action === 'backups') && !recipePanel.beforeLeave()) return;
+      if (recipeAction === 'overview') {
+        view = null;
+        if (storageReadable) showNotice('');
+        render();
+        window.scrollTo(0, 0);
+        return;
+      }
+      if (recipeAction) {
+        if (storageReadable || !['new','draft','publish'].includes(recipeAction)) recipePanel.click(button);
+        return;
+      }
+    }
     if (action === 'open-tasks' || action === 'point-tasks') {
       taskPanel.open(action === 'point-tasks' ? view.record.id : '');
       view = {type:'tasks'};
@@ -1054,6 +1115,7 @@
       const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes),
         points:addMissing(data.points,candidate.points)};
       if (data.taskFields || candidate.taskFields) merged.taskFields = addMissing(data.taskFields ?? [], candidate.taskFields ?? []);
+      if (data.recipes || candidate.recipes) merged.recipes = addMissing(data.recipes ?? [], candidate.recipes ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {
@@ -1165,10 +1227,12 @@
       return validate(value);
     },
     offerCopy(records, message) {
+      if (view?.type === 'recipes' && !recipePanel.beforeLeave()) return false;
       candidate = records;
       view = {type:'backups'};
       showNotice(message);
       render();
+      return true;
     },
     occurs,
     countThrough(event,date) {
