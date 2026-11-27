@@ -129,7 +129,7 @@ nav [aria-current=page] { color:var(--accent); background:var(--tint); }
 .create { position:absolute; right:calc(var(--gutter) + 4px); bottom:calc(100% + 8px); width:54px; height:54px; border-radius:50%; color:white; background:var(--action); box-shadow:0 4px 10px #15251d30; display:grid; place-items:center; pointer-events:auto; }
 #personal:has(.create:not([hidden])) main { padding-bottom:74px; }
 #personal:has(form[data-form=edit] :is(input,textarea,select):focus) .bottom,
-#personal[data-keyboard]:has(form:is([data-form=point],[data-form=point-definition],[data-form=task-edit],[data-form=task-close])) .bottom { position:static; }
+#personal[data-keyboard]:has(form:is([data-form=point],[data-form=point-definition],[data-form=task-edit],[data-form=task-close],[data-form=task-field])) .bottom { position:static; }
 .ui-icon { display:inline-block; vertical-align:middle; flex:none; }
 .help { display:inline-grid; place-items:center; vertical-align:middle; min-width:44px; height:44px; color:var(--accent); border:0; background:transparent; }
 .help span { width:19px; height:19px; border:1.4px solid currentColor; border-radius:50%; line-height:17px; font-weight:700; font-size:.78rem; text-align:center; }
@@ -180,4 +180,4 @@ form[data-form=point-definition] textarea { min-height:5rem; }
 .task-row strong { font-size:1.05rem; }
 .task-closing { margin-bottom:13px; }
 .task-result { white-space:pre-wrap; }
-form[data-form=task-close] textarea { min-height:6rem; }
+form:is([data-form=task-close],[data-form=task-edit],[data-form=task-field]) textarea { min-height:6rem; }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.5.0">
+<meta name="panel-build" content="2.6.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.5.0">
+<link rel="stylesheet" href="./relief.css?v=2.6.0">
 </head>
 <body>
 <div id="personal">
@@ -22,9 +22,10 @@
     <div class="menu-items">
       <button type="button" id="google-open">Синхронизация Google</button>
       <button type="button" data-action="point-settings" hidden>Настроить карточки точек</button>
+      <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.5.0</small>
+      <small>Сборка 2.6.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -79,9 +80,9 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.5.0" defer></script>
-<script src="./google-sync.js?v=2.5.0" defer></script>
-<script src="./work-items.js?v=2.5.0"></script>
+<script src="./calendar-sync.js?v=2.6.0" defer></script>
+<script src="./google-sync.js?v=2.6.0" defer></script>
+<script src="./work-items.js?v=2.6.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -145,6 +146,7 @@
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
+  const taskSettingsButton = menu.querySelector('[data-action=task-settings]');
   let installPrompt = null;
   const backupFile = root.querySelector('#backup-file');
   let candidate = null;
@@ -210,7 +212,7 @@
     }
     return value;
   }
-  function validPointDefinitions(rows) {
+  function validDefinitions(rows) {
     return Array.isArray(rows) && rows.every(row => row && typeof row.id === 'string' && /^[a-z0-9-]+$/.test(row.id) &&
       typeof row.label === 'string' && row.label.trim() && typeof row.archived === 'boolean') &&
       new Set(rows.map(row => row.id)).size === rows.length;
@@ -218,10 +220,10 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
-    const tasks = records?.tasks === undefined && version !== 6 ? [] : records?.tasks;
+    const tasks = records?.tasks === undefined && !(version >= 6) ? [] : records?.tasks;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
@@ -242,9 +244,9 @@
         !unique(records.events) || !unique(records.notes)) throw new Error('Invalid backup');
     const settings = pointSettings(records);
     if (records.pointSettings === null || (version === 5 && !records.pointSettings) ||
-        !validPointDefinitions(settings.statuses) || !settings.statuses.some(status => !status.archived) ||
+        !validDefinitions(settings.statuses) || !settings.statuses.some(status => !status.archived) ||
         !defaultPointSettings.statuses.every(status => settings.statuses.some(item => item.id === status.id)) ||
-        !validPointDefinitions(settings.fields) || !settings.fields.every(field => str(field.hint))) {
+        !validDefinitions(settings.fields) || !settings.fields.every(field => str(field.hint))) {
       throw new Error('Invalid point settings');
     }
     const statusIds = new Set(settings.statuses.map(status => status.id));
@@ -254,15 +256,19 @@
     if (!Array.isArray(points) || !points.every(point => point && str(point.id) && point.id.length > 0 &&
         str(point.name) && point.name.trim() && statusIds.has(point.status) && str(point.owner) && validValues(point.values)) ||
         !unique(points)) throw new Error('Invalid point records');
-    if (!workItems.validTasks(tasks, points, date)) throw new Error('Invalid work items');
+    const taskFields = records.taskFields === undefined ? [] : records.taskFields;
+    if (!validDefinitions(taskFields) || !taskFields.every(field => str(field.hint)) ||
+        !workItems.validTasks(tasks, points, taskFields, date)) throw new Error('Invalid work items');
     const validated = {events:records.events, notes:records.notes, points, tasks};
     if (records.pointSettings !== undefined) validated.pointSettings = settings;
+    if (records.taskFields !== undefined) validated.taskFields = taskFields;
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records) {
+    if (records.taskFields || records.tasks.some(task => task.repeat || task.values)) return 7;
     if (records.tasks.length) return 6;
     if (records.pointSettings) return 5;
     if (records.points.length) return 4;
@@ -668,9 +674,9 @@
   const taskPanel = workItems.mount({
     records:() => data, main, hero, escape, optionList, hint:pointHint, today:() => today,
     formatDate:date => shortDate.format(asDate(date)),
-    save(tasks) {
-      const next = {...data, tasks};
-      if (!save(next, 'В браузере не хватает места для дела.')) return false;
+    save(changes) {
+      const next = {...data, ...changes};
+      if (!save(next, 'В браузере не хватает места для изменений в делах.')) return false;
       data = next;
       return true;
     },
@@ -737,6 +743,7 @@
     refreshSyncSummary();
     pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
     const taskList = view?.type === 'tasks' && taskPanel.isList();
+    taskSettingsButton.hidden = !taskList || !storageReadable;
     const createAction = taskList ? ['new-task','Добавить дело'] : createActions[page];
     create.hidden = !storageReadable || (Boolean(view) && !taskList) || !createAction;
     if (createAction) {
@@ -850,7 +857,7 @@
     const button = event.target.closest('button');
     if (!button || !root.contains(button) || button.type === 'submit') return;
     const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, definitionId, action} = button.dataset;
-    if (!menu.contains(button) || ['backups', 'google', 'install', 'point-settings'].includes(action)) menu.open = false;
+    if (!menu.contains(button) || ['backups', 'google', 'install', 'point-settings', 'task-settings'].includes(action)) menu.open = false;
     if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
       installPrompt = null;
@@ -864,8 +871,8 @@
       redrawTasks();
       return;
     }
-    if (view?.type === 'tasks' && (button.dataset.taskAction || action === 'new-task')) {
-      taskPanel.click(button.dataset.taskAction || 'new', button);
+    if (view?.type === 'tasks' && (button.dataset.taskAction || action === 'new-task' || action === 'task-settings')) {
+      taskPanel.click(button.dataset.taskAction || (action === 'new-task' ? 'new' : 'fields'), button);
       return;
     }
     if (action === 'export') { downloadBackup(); return; }
@@ -877,6 +884,7 @@
       };
       const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes),
         points:addMissing(data.points,candidate.points), tasks:addMissing(data.tasks,candidate.tasks)};
+      if (data.taskFields || candidate.taskFields) merged.taskFields = addMissing(data.taskFields ?? [], candidate.taskFields ?? []);
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {
