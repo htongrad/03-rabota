@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.3.0">
+<meta name="panel-build" content="2.4.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.3.0">
+<link rel="stylesheet" href="./relief.css?v=2.4.0">
 </head>
 <body>
 <div id="personal">
@@ -21,9 +21,10 @@
     <summary aria-label="Меню"><svg class="ui-icon" aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h.1 M12 12h.1 M20 12h.1"/></svg></summary>
     <div class="menu-items">
       <button type="button" id="google-open">Синхронизация Google</button>
+      <button type="button" data-action="point-settings" hidden>Настроить карточки точек</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.3.0</small>
+      <small>Сборка 2.4.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -78,8 +79,8 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.3.0" defer></script>
-<script src="./google-sync.js?v=2.3.0" defer></script>
+<script src="./calendar-sync.js?v=2.4.0" defer></script>
+<script src="./google-sync.js?v=2.4.0" defer></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -141,12 +142,21 @@
   const storageKey = 'panel-03:base:v1';
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
+  const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
   let installPrompt = null;
   const backupFile = root.querySelector('#backup-file');
   let candidate = null;
   let storageReadable = true;
   const labels = {overview:'Обзор', calendar:'Календарь', notes:'Заметки', points:'Точки'};
-  const pointStatuses = {active:'Работает', opening:'Готовится к открытию'};
+  const defaultPointSettings = {
+    statuses: [
+      {id:'active', label:'Работает', archived:false},
+      {id:'opening', label:'Готовится к открытию', archived:false},
+    ],
+    fields: [],
+  };
+  const pointSettings = records => records.pointSettings ?? defaultPointSettings;
+  const visiblePointFields = () => pointSettings(data).fields.filter(field => !field.archived);
   const createActions = {calendar:['new-event','Создать событие'], notes:['new-note','Создать заметку'],
     points:['new-point','Добавить точку']};
   const periods = {day:'День', week:'Неделя', month:'Месяц'};
@@ -198,11 +208,17 @@
     }
     return value;
   }
+  function validPointDefinitions(rows) {
+    return Array.isArray(rows) && rows.every(row => row && typeof row.id === 'string' && /^[a-z0-9-]+$/.test(row.id) &&
+      typeof row.label === 'string' && row.label.trim() && typeof row.archived === 'boolean') &&
+      new Set(rows.map(row => row.id)).size === rows.length;
+  }
   function validate(value) {
     value = readLegacyCopy(value);
-    const records = value?.format === '03-rabota-backup' && [2, 3, 4].includes(value.version) ? value.data
+    const version = value?.format === '03-rabota-backup' ? value.version : undefined;
+    const records = [2, 3, 4, 5].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
-    const points = records?.points === undefined && value?.version !== 4 ? [] : records?.points;
+    const points = records?.points === undefined && version !== 4 && version !== 5 ? [] : records?.points;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
@@ -221,16 +237,29 @@
           event.exceptions && typeof event.exceptions === 'object' && !Array.isArray(event.exceptions) &&
           Object.entries(event.exceptions).every(([slot,item]) => date(slot) && (item === null || entry(item)))) ||
         !unique(records.events) || !unique(records.notes)) throw new Error('Invalid backup');
+    const settings = pointSettings(records);
+    if (records.pointSettings === null || (version === 5 && !records.pointSettings) ||
+        !validPointDefinitions(settings.statuses) || !settings.statuses.some(status => !status.archived) ||
+        !defaultPointSettings.statuses.every(status => settings.statuses.some(item => item.id === status.id)) ||
+        !validPointDefinitions(settings.fields) || !settings.fields.every(field => str(field.hint))) {
+      throw new Error('Invalid point settings');
+    }
+    const statusIds = new Set(settings.statuses.map(status => status.id));
+    const fieldIds = new Set(settings.fields.map(field => field.id));
+    const validValues = values => values === undefined || (values && typeof values === 'object' && !Array.isArray(values) &&
+      Object.entries(values).every(([id, value]) => fieldIds.has(id) && str(value)));
     if (!Array.isArray(points) || !points.every(point => point && str(point.id) && point.id.length > 0 &&
-        str(point.name) && point.name.trim() && str(point.status) && Object.hasOwn(pointStatuses, point.status) && str(point.owner)) ||
+        str(point.name) && point.name.trim() && statusIds.has(point.status) && str(point.owner) && validValues(point.values)) ||
         !unique(points)) throw new Error('Invalid point records');
     const validated = {events:records.events, notes:records.notes, points};
+    if (records.pointSettings !== undefined) validated.pointSettings = settings;
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records) {
+    if (records.pointSettings) return 5;
     if (records.points.length) return 4;
     return Object.hasOwn(records, 'chef') ? 3 : 2;
   }
@@ -438,10 +467,15 @@
       ${schedule}`;
   }
   function optionList(values, value) {
-    return Object.entries(values).map(([id,label]) => `<option value="${id}"${id === value ? ' selected' : ''}>${label}</option>`).join('');
+    return Object.entries(values).map(([id,label]) => `<option value="${escape(id)}"${id === value ? ' selected' : ''}>${escape(label)}</option>`).join('');
   }
-  function pointStatus(status) {
-    return `<span class="point-status" data-status="${status}">${pointStatuses[status]}</span>`;
+  function pointStatus(id) {
+    const status = pointSettings(data).statuses.find(item => item.id === id);
+    const tone = !status.archived && status.id === 'active' && status.label === 'Работает' ? 'active' : 'neutral';
+    return `<span class="point-status" data-status="${tone}">${escape(status.label)}${status.archived ? ' · в архиве' : ''}</span>`;
+  }
+  function pointHint(label, hint) {
+    return hint ? `<button type="button" class="help" data-hint="${escape(hint)}" aria-label="Подсказка: ${escape(label)}" aria-expanded="false"><span aria-hidden="true">?</span></button>` : '';
   }
   function pointList() {
     return `${hero('Точки', 'Кофейное направление', true)}${data.points.length
@@ -456,6 +490,9 @@
       <dl class="section point-details">
         <div><dt>Статус</dt><dd>${pointStatus(point.status)}</dd></div>
         <div><dt>Ответственный</dt><dd>${point.owner ? escape(point.owner) : '<small>Пока не указан</small>'}</dd></div>
+        ${visiblePointFields().map(field => `
+          <div><dt class="point-field-title">${escape(field.label)}${pointHint(field.label, field.hint)}</dt>
+          <dd>${escape(point.values?.[field.id]) || '<small>Пока не заполнено</small>'}</dd></div>`).join('')}
       </dl>
       <div class="controls point-controls">
         <button type="button" class="action primary" data-action="edit-point">Изменить карточку</button>
@@ -463,14 +500,19 @@
       </div>`;
   }
   function pointForm(point) {
+    const statuses = pointSettings(data).statuses.filter(status => !status.archived || status.id === point?.status);
+    const options = Object.fromEntries(statuses.map(status => [status.id, status.label + (status.archived ? ' · в архиве' : '')]));
     return `${hero(point ? 'Изменить точку' : 'Новая точка', 'Точки', true)}
       <form data-form="point">
         <label>Название<input name="name" required maxlength="120" value="${escape(point?.name)}"></label>
-        <label>Статус<select name="status">${optionList(pointStatuses, point?.status ?? 'active')}</select></label>
+        <label>Статус<select name="status">${optionList(options, point?.status ?? statuses[0].id)}</select></label>
         <div class="field-help">
           <label>Ответственный · по желанию<input name="owner" maxlength="120" value="${escape(point?.owner)}"></label>
           <button type="button" class="help" data-hint="Укажи, с кем связываться по рабочим вопросам этой точки. Поле можно заполнить позже." aria-label="Подсказка: ответственный" aria-expanded="false"><span aria-hidden="true">?</span></button>
         </div>
+        ${visiblePointFields().map(field => `<div${field.hint ? ' class="field-help"' : ''}>
+          <label>${escape(field.label)}<input name="field-${escape(field.id)}" maxlength="120"
+            value="${escape(point?.values?.[field.id])}"></label>${pointHint(field.label, field.hint)}</div>`).join('')}
         <div class="controls point-controls">
           <button type="submit" class="action primary">Сохранить точку</button>
           <button type="button" class="action" data-action="cancel-point">${point ? 'Назад к карточке' : 'Назад к точкам'}</button>
@@ -484,10 +526,17 @@
       form.elements.name.reportValidity();
       return;
     }
-    const status = get('status');
-    if (!Object.hasOwn(pointStatuses, status)) return;
     const original = view?.record;
-    const point = {id:original?.id ?? crypto.randomUUID(), name, status, owner:get('owner').trim()};
+    const status = pointSettings(data).statuses.find(item => item.id === get('status'));
+    if (!status || (status.archived && status.id !== original?.status)) return;
+    const point = {id:original?.id ?? crypto.randomUUID(), name, status:status.id, owner:get('owner').trim()};
+    const values = {...original?.values};
+    for (const field of visiblePointFields()) {
+      const value = get('field-' + field.id).trim();
+      if (value) values[field.id] = value;
+      else delete values[field.id];
+    }
+    if (Object.keys(values).length) point.values = values;
     const points = original ? data.points.map(item => item.id === original.id ? point : item) : [...data.points, point];
     const next = {...data, points};
     if (!save(next, 'В браузере не хватает места для карточки точки.')) return;
@@ -496,6 +545,71 @@
     render();
     window.scrollTo(0, 0);
     showNotice('Карточка точки сохранена.');
+  }
+  function pointSettingsPage() {
+    const settings = pointSettings(data);
+    const rows = items => items.map(item => `<button type="button" class="action" data-definition-id="${escape(item.id)}">
+      ${escape(item.label)}${item.archived ? ' · в архиве' : ''}</button>`).join('');
+    return `${hero('Настройка карточек', 'Точки', true)}
+      <section class="section point-settings-section" data-category="statuses">
+        <h2>Статусы</h2>${rows(settings.statuses)}
+        <button type="button" class="action primary" data-action="new-point-definition">Добавить статус</button>
+      </section>
+      <section class="section point-settings-section" data-category="fields">
+        <h2>Дополнительные поля</h2>${rows(settings.fields)}
+        <button type="button" class="action primary" data-action="new-point-definition">Добавить поле</button>
+      </section>
+      <div class="controls point-controls"><button type="button" class="action" data-action="back">Назад к точкам</button></div>`;
+  }
+  function canArchiveDefinition(category, item) {
+    return category === 'fields' || item.archived || pointSettings(data).statuses.some(status => status.id !== item.id && !status.archived);
+  }
+  function pointDefinitionForm(category, item) {
+    const field = category === 'fields';
+    const title = field ? (item ? 'Изменить поле' : 'Новое поле') : (item ? 'Изменить статус' : 'Новый статус');
+    const archive = item && canArchiveDefinition(category, item);
+    return `${hero(title, 'Настройка карточек', true)}
+      <form data-form="point-definition">
+        <label>Название<input name="label" maxlength="80" value="${escape(item?.label)}" required></label>
+        ${field ? `<label>Всплывающая подсказка · по желанию
+          <textarea name="hint" rows="3" maxlength="240">${escape(item?.hint)}</textarea></label>` : ''}
+        <div class="controls point-controls">
+          <button type="submit" class="action primary">Сохранить</button>
+          ${archive ? `<button type="button" class="action" data-action="archive-point-definition">${item.archived ? 'Вернуть из архива' : 'В архив'}</button>` : ''}
+          <button type="button" class="action" data-action="point-settings">Назад к настройкам</button>
+        </div>
+        ${item && !archive ? '<small>В списке должен остаться хотя бы один активный статус.</small>' : ''}
+        ${item && archive && !item.archived ? `<small>${field
+          ? 'Архивирование скрывает поле. Его значения появятся после возврата поля.'
+          : 'У точек с этим статусом он сохранится. Для новых точек будут доступны активные статусы.'}</small>` : ''}
+      </form>`;
+  }
+  function commitPointDefinition(item, message) {
+    const {category, record:original} = view;
+    const settings = pointSettings(data);
+    const updated = original ? settings[category].map(row => row.id === item.id ? item : row) : [...settings[category], item];
+    const next = {...data, pointSettings:{...settings, [category]:updated}};
+    if (!save(next, 'В браузере не хватает места для настроек карточек.')) return;
+    data = next;
+    view = {type:'point-settings'};
+    render();
+    window.scrollTo(0, 0);
+    showNotice(message);
+  }
+  function savePointDefinition(form, get) {
+    const {category, record:original} = view;
+    const label = get('label').trim();
+    const isSame = other => label.localeCompare(other, 'ru', {sensitivity:'base'}) === 0;
+    const taken = pointSettings(data)[category].some(item => item.id !== original?.id && isSame(item.label)) ||
+      (category === 'fields' && ['Название','Статус','Ответственный'].some(isSame));
+    if (!label || taken) {
+      form.elements.label.setCustomValidity(!label ? 'Введите название.' : 'Это название уже используется.');
+      form.elements.label.reportValidity();
+      return;
+    }
+    const item = {id:original?.id ?? crypto.randomUUID(), label, archived:original?.archived ?? false};
+    if (category === 'fields') item.hint = get('hint').trim();
+    commitPointDefinition(item, 'Настройки карточек сохранены.');
   }
   function scopeOptions() {
     return {single:'Только это событие', following:'Это и следующие', series:'Вся серия'};
@@ -548,6 +662,10 @@
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
         ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'point-settings') {
+      main.innerHTML = pointSettingsPage();
+    } else if (view?.type === 'point-definition') {
+      main.innerHTML = pointDefinitionForm(view.category, view.record);
     } else if (view?.type === 'point-edit') {
       main.innerHTML = pointForm(view.record);
     } else if (view?.type === 'point') {
@@ -586,6 +704,7 @@
       main.innerHTML = page === 'calendar' ? calendar() : `${hero('Заметки', 'Записей: ' + data.notes.length, true)}${noteList(false)}`;
     }
     refreshSyncSummary();
+    pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
     const createAction = createActions[page];
     create.hidden = !storageReadable || Boolean(view) || !createAction;
     if (createAction) {
@@ -632,6 +751,7 @@
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
     if (form.dataset.form === 'point') return savePoint(form, get);
+    if (form.dataset.form === 'point-definition') return savePointDefinition(form, get);
     const original = view.record;
     const scope = get('scope');
     if (form.dataset.form === 'delete') {
@@ -693,8 +813,8 @@
   root.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button || !root.contains(button) || button.type === 'submit') return;
-    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, action} = button.dataset;
-    if (!menu.contains(button) || ['backups', 'google', 'install'].includes(action)) menu.open = false;
+    const {page:destination, month:direction, day, period:nextPeriod, event:id, slot, note, point, definitionId, action} = button.dataset;
+    if (!menu.contains(button) || ['backups', 'google', 'install', 'point-settings'].includes(action)) menu.open = false;
     if (action === 'install' && installPrompt) {
       const prompt = installPrompt;
       installPrompt = null;
@@ -711,6 +831,16 @@
       };
       const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes),
         points:addMissing(data.points,candidate.points)};
+      const localSettings = data.pointSettings;
+      const restoredSettings = candidate.pointSettings;
+      if (localSettings && restoredSettings) {
+        merged.pointSettings = {
+          statuses:addMissing(localSettings.statuses, restoredSettings.statuses),
+          fields:addMissing(localSettings.fields, restoredSettings.fields),
+        };
+      } else if (localSettings || restoredSettings) {
+        merged.pointSettings = localSettings ?? restoredSettings;
+      }
       const archive = data.chef ?? candidate.chef;
       if (archive !== undefined) merged.chef = archive;
       if (save(merged, 'В браузере не хватает места для записей из копии.')) {
@@ -720,7 +850,8 @@
         showNotice('Копия добавлена в браузер.');
       }
     } else if (action === 'backups') { candidate = null; view = {type:'backups'}; }
-    else if (!storageReadable && ['edit','delete','new-event','new-note','new-point','edit-point'].includes(action)) return;
+    else if (!storageReadable && ['edit','delete','new-event','new-note','new-point','edit-point','point-settings',
+        'new-point-definition','archive-point-definition'].includes(action)) return;
     else if (destination) { page = destination; view = null; }
     else if (direction) {
       const first = asDate(month + '-01');
@@ -742,6 +873,20 @@
       const record = data.points.find(item => item.id === point);
       if (!record) return;
       page = 'points'; view = {type:'point', record};
+    } else if (action === 'point-settings') {
+      page = 'points'; view = {type:'point-settings'};
+    } else if (definitionId || action === 'new-point-definition') {
+      const category = button.closest('[data-category]')?.dataset.category;
+      if (!storageReadable || !['statuses','fields'].includes(category)) return;
+      const record = pointSettings(data)[category].find(item => item.id === definitionId);
+      if (definitionId && !record) return;
+      view = {type:'point-definition', category, record};
+    } else if (action === 'archive-point-definition') {
+      const {category, record} = view;
+      if (record && canArchiveDefinition(category, record)) {
+        return commitPointDefinition({...record, archived:!record.archived}, record.archived ? 'Возвращено из архива.' : 'Перемещено в архив.');
+      }
+      return;
     } else if (action === 'new-point') view = {type:'point-edit'};
     else if (action === 'edit-point') view = {...view, type:'point-edit'};
     else if (action === 'cancel-point') view = view.record ? {...view, type:'point'} : null;
