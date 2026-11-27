@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="2.4.0">
+<meta name="panel-build" content="2.5.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
-<meta name="description" content="Работа · Календарь, заметки и точки.">
+<meta name="description" content="Работа · Дела, календарь, заметки и точки.">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=2.4.0">
+<link rel="stylesheet" href="./relief.css?v=2.5.0">
 </head>
 <body>
 <div id="personal">
@@ -24,7 +24,7 @@
       <button type="button" data-action="point-settings" hidden>Настроить карточки точек</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 2.4.0</small>
+      <small>Сборка 2.5.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -79,8 +79,9 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=2.4.0" defer></script>
-<script src="./google-sync.js?v=2.4.0" defer></script>
+<script src="./calendar-sync.js?v=2.5.0" defer></script>
+<script src="./google-sync.js?v=2.5.0" defer></script>
+<script src="./work-items.js?v=2.5.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -140,6 +141,7 @@
   const notice = root.querySelector('.notice');
   function refreshSyncSummary() { window.refreshGoogleStatus?.(); }
   const storageKey = 'panel-03:base:v1';
+  const workItems = window.panel03WorkItems;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -173,7 +175,7 @@
   let period = 'day';
   let page = 'overview';
   let view = null;
-  const emptyRecords = () => ({events:[], notes:[], points:[]});
+  const emptyRecords = () => ({events:[], notes:[], points:[], tasks:[]});
   let data = emptyRecords();
   // An explicit prior reset permits synchronising an empty panel on this device.
   function wasResetHere() {
@@ -216,9 +218,10 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
-    const points = records?.points === undefined && version !== 4 && version !== 5 ? [] : records?.points;
+    const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
+    const tasks = records?.tasks === undefined && version !== 6 ? [] : records?.tasks;
     const str = value => typeof value === 'string';
     const date = value => str(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(+asDate(value)) && key(asDate(value)) === value;
@@ -251,7 +254,8 @@
     if (!Array.isArray(points) || !points.every(point => point && str(point.id) && point.id.length > 0 &&
         str(point.name) && point.name.trim() && statusIds.has(point.status) && str(point.owner) && validValues(point.values)) ||
         !unique(points)) throw new Error('Invalid point records');
-    const validated = {events:records.events, notes:records.notes, points};
+    if (!workItems.validTasks(tasks, points, date)) throw new Error('Invalid work items');
+    const validated = {events:records.events, notes:records.notes, points, tasks};
     if (records.pointSettings !== undefined) validated.pointSettings = settings;
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
@@ -259,6 +263,7 @@
     return validated;
   }
   function backupVersion(records) {
+    if (records.tasks.length) return 6;
     if (records.pointSettings) return 5;
     if (records.points.length) return 4;
     return Object.hasOwn(records, 'chef') ? 3 : 2;
@@ -311,7 +316,8 @@
         selected = today;
         month = today.slice(0, 7);
       }
-      if (!view && (page === 'overview' || page === 'calendar')) render();
+      if ((!view && (page === 'overview' || page === 'calendar')) ||
+          (view?.type === 'tasks' && taskPanel.isList())) render();
     }
     const midnight = new Date(+now);
     midnight.setTime(+asDate(currentDay) + 21 * 3600000);
@@ -495,7 +501,8 @@
           <dd>${escape(point.values?.[field.id]) || '<small>Пока не заполнено</small>'}</dd></div>`).join('')}
       </dl>
       <div class="controls point-controls">
-        <button type="button" class="action primary" data-action="edit-point">Изменить карточку</button>
+        <button type="button" class="action primary" data-action="point-tasks">Дела точки</button>
+        <button type="button" class="action" data-action="edit-point">Изменить карточку</button>
         <button type="button" class="action" data-action="back">Назад к точкам</button>
       </div>`;
   }
@@ -653,6 +660,27 @@
     get('count').disabled = !get('count').required;
     get('until').disabled = !get('until').required;
   }
+  function redrawTasks(message = '', scroll = true) {
+    if (storageReadable) showNotice(message);
+    render();
+    if (scroll) window.scrollTo(0, 0);
+  }
+  const taskPanel = workItems.mount({
+    records:() => data, main, hero, escape, optionList, hint:pointHint, today:() => today,
+    formatDate:date => shortDate.format(asDate(date)),
+    save(tasks) {
+      const next = {...data, tasks};
+      if (!save(next, 'В браузере не хватает места для дела.')) return false;
+      data = next;
+      return true;
+    },
+    redraw:redrawTasks,
+    goBack(pointId) {
+      const record = data.points.find(point => point.id === pointId);
+      view = record ? {type:'point', record} : null;
+      redrawTasks();
+    },
+  });
   function render() {
     closeHint();
     if (view?.type === 'backups') {
@@ -660,8 +688,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: событий — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, дел — ${candidate.tasks.length}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'tasks') {
+      main.innerHTML = taskPanel.draw();
     } else if (view?.type === 'point-settings') {
       main.innerHTML = pointSettingsPage();
     } else if (view?.type === 'point-definition') {
@@ -690,6 +720,7 @@
     } else if (page === 'overview') {
       main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
         <div class="overview-modules">
+          ${taskPanel.overview()}
           <section class="section"><h2>Сегодня</h2>${eventList(today)}</section>
           ${nextWeekAgenda()}
           <section class="section"><h2>Последние заметки</h2>${noteList(true)}</section>
@@ -705,8 +736,9 @@
     }
     refreshSyncSummary();
     pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
-    const createAction = createActions[page];
-    create.hidden = !storageReadable || Boolean(view) || !createAction;
+    const taskList = view?.type === 'tasks' && taskPanel.isList();
+    const createAction = taskList ? ['new-task','Добавить дело'] : createActions[page];
+    create.hidden = !storageReadable || (Boolean(view) && !taskList) || !createAction;
     if (createAction) {
       create.dataset.action = createAction[0];
       create.setAttribute('aria-label', createAction[1]);
@@ -727,9 +759,12 @@
     render();
   }
   main.addEventListener('input', event => {
-    if (event.target instanceof HTMLInputElement) event.target.setCustomValidity('');
+    const input = event.target;
+    if (input instanceof HTMLInputElement) input.setCustomValidity('');
+    if (input.name === 'owner' && input.form?.dataset.form === 'task-edit') input.form.setAttribute('data-owner-edited', '');
   });
   main.addEventListener('change', event => {
+    if (view?.type === 'tasks') return taskPanel.change(event.target);
     const form = event.target.form;
     if (form?.dataset.form !== 'edit' || page !== 'calendar') return;
     if (event.target.name === 'scope') {
@@ -750,6 +785,7 @@
     if (!storageReadable) return;
     const values = new FormData(form);
     const get = name => String(values.get(name) ?? '');
+    if (view?.type === 'tasks') return taskPanel.submit(form, get);
     if (form.dataset.form === 'point') return savePoint(form, get);
     if (form.dataset.form === 'point-definition') return savePointDefinition(form, get);
     const original = view.record;
@@ -822,6 +858,16 @@
       prompt.prompt().catch(() => showNotice('Откройте меню Chrome, чтобы установить приложение.'));
       return;
     }
+    if (action === 'open-tasks' || action === 'point-tasks') {
+      taskPanel.open(action === 'point-tasks' ? view.record.id : '');
+      view = {type:'tasks'};
+      redrawTasks();
+      return;
+    }
+    if (view?.type === 'tasks' && (button.dataset.taskAction || action === 'new-task')) {
+      taskPanel.click(button.dataset.taskAction || 'new', button);
+      return;
+    }
     if (action === 'export') { downloadBackup(); return; }
     if (action === 'import') { backupFile.click(); return; }
     if (action === 'restore' && candidate) {
@@ -830,7 +876,7 @@
         return [...current, ...incoming.filter(item => !ids.has(item.id))];
       };
       const merged = {events:addMissing(data.events,candidate.events), notes:addMissing(data.notes,candidate.notes),
-        points:addMissing(data.points,candidate.points)};
+        points:addMissing(data.points,candidate.points), tasks:addMissing(data.tasks,candidate.tasks)};
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {
