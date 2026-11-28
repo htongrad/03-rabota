@@ -136,6 +136,7 @@ window.panel03NetworkOverview = (() => {
         ${hero('Сводка сети','Открытые отклонения и последние сверки',true)}
         <button type="button" class="action network-period" data-action="open-period-reports">Факт за период</button>
         <button type="button" class="action network-period" data-action="open-network-reviews">Разбор сети</button>
+        <button type="button" class="action network-period" data-action="open-network-goals">Цели сети</button>
         <button type="button" class="action network-points" data-network-action="points">
           <strong>${caption}</strong><span>Изменить выбор</span></button>
         <div class="network-filters" role="group" aria-label="Категории сводки">${filters}</div>

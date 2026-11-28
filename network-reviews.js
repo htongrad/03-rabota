@@ -70,11 +70,22 @@ window.panel03NetworkReviews = (() => {
     const submit = label => `<button type="submit" class="action primary">${label}</button>`;
     const warning = '<p role="alert" class="notice audit-error" hidden></p>';
     const status = window.panel03WorkItems.taskStatuses;
-    let screen, id, source, signals = [], choices = [];
+    let screen, id, source, preset, signals = [], choices = [];
 
-    function open(reviewId) {
+    function opensGoal(review) {
+      return preset && review.start === preset.start && review.end === preset.end &&
+        review.pointIds.length === preset.pointIds.length && review.pointIds.every(id => preset.pointIds.includes(id));
+    }
+
+    function open(reviewId,goal) {
+      preset = goal;
+      if (preset) {
+        const matches = list().filter(opensGoal).reverse();
+        reviewId = (matches.find(row => !row.closedAt) ??
+          matches.sort((a,b) => Date.parse(b.closedAt) - Date.parse(a.closedAt))[0])?.id;
+      }
       id = reviewId;
-      screen = reviewId ? 'review' : 'home';
+      screen = reviewId ? 'review' : preset ? 'setup' : 'home';
     }
 
     function show(next,message) {
@@ -137,9 +148,10 @@ window.panel03NetworkReviews = (() => {
       const end = offsetDay(now,-((weekday+6)%7)-1);
       return `${back('home','К разборам')}${hero('Новый разбор','Период и точки',true)}
         <form data-form="review-setup">
-          <label>Начало периода<input type="date" name="start" required value="${offsetDay(end,-6)}"></label>
-          <label>Конец периода<input type="date" name="end" required value="${end}"></label>
-          ${picker.picker(records().points,null,{name:'review-points',label:'Точки',escape,allLabel:'Выбрать все'})}
+          <label>Начало периода<input type="date" name="start" required value="${preset?.start ?? offsetDay(end,-6)}"></label>
+          <label>Конец периода<input type="date" name="end" required value="${preset?.end ?? end}"></label>
+          ${picker.picker(records().points,preset?.pointIds.length === records().points.length ? null : preset?.pointIds ?? null,
+            {name:'review-points',label:'Точки',escape,allLabel:'Выбрать все'})}
           <label class="check"><input type="checkbox" name="network"> Общие дела сети</label>
           ${warning}${submit('Начать разбор')}
         </form>`;
@@ -222,7 +234,9 @@ window.panel03NetworkReviews = (() => {
         review.step === 0 ? summary(review,comparison(review)) + carryover(review) + action('next','К отклонениям',{primary:true}) :
         review.step === 1 ? signalList(review) : decisionList(review) + action('close','Закрыть разбор',{primary:true});
       return `${back('home','К разборам')}${hero(heading,subtitle,true)}<div class="audit-layout">
-        <p class="record">${escape(scope)}</p>${review.closedAt ? '' : stageNavigation(review)}${body}
+        <p class="record">${escape(scope)}</p>
+        ${opensGoal(review) ? `<p class="record">Цель по фудкосту · Не выше ${formatRate(preset.limit)}</p>` : ''}
+        ${review.closedAt ? '' : stageNavigation(review)}${body}
         ${review.closedAt ? '' : action('home','Продолжить позже')}</div>`;
     }
 
@@ -357,7 +371,11 @@ window.panel03NetworkReviews = (() => {
         if (store({...review,closedAt:new Date().toISOString(),snapshot})) show('review','Разбор закрыт.');
         return;
       }
-      show(name === 'new' ? 'setup' : name);
+      if (name === 'new') {
+        preset = undefined;
+        return show('setup');
+      }
+      show(name);
     }
 
     return {open,draw,click,submit:submitForm,beforeLeave};

@@ -7,6 +7,7 @@ window.panel03PeriodReports = (() => {
   const unique = values => new Set(values).size === values.length;
   const emptyRow = pointId => ({pointId,revenue:null,cost:null});
   const from = (rows,id) => rows.find(row => row.pointId === id) ?? emptyRow(id);
+  const findPeriod = (periods,start,end) => periods.find(row => row.id === idFor(start,end));
 
   function validate(periods,points,validDay) {
     const ids = new Set(points.map(point => point.id));
@@ -66,7 +67,7 @@ window.panel03PeriodReports = (() => {
   }
 
   function rateFor(periods,start,end,pointIds) {
-    const period = periods.find(row => row.id === idFor(start,end));
+    const period = findPeriod(periods,start,end);
     const rows = period?.rows.filter(row => pointIds.includes(row.pointId)) ?? [];
     const rate = rows.length === pointIds.length ? percentage(totals(rows)) : null;
     return {filled:rows.length,rate:rate?.toString() ?? null};
@@ -88,11 +89,24 @@ window.panel03PeriodReports = (() => {
     const title = period => formatPeriod(period.start,period.end);
     const reportRows = period => period.draft.pointIds.map(id => from(period.draft.values,id));
     const scopeCount = rows => rows.filter(complete).length + ' из ' + rows.length;
-    let screen, currentId, pointId, shownIds;
+    let screen, currentId, pointId, shownIds, preset;
 
-    function open() {
+    function open(goal) {
       screen = 'home';
       currentId = pointId = shownIds = undefined;
+      preset = goal;
+      if (!goal) return;
+      const period = findPeriod(all(),goal.start,goal.end);
+      if (goal.pointIds.every(id => period?.rows.some(row => row.pointId === id))) {
+        currentId = period.id;
+        shownIds = goal.pointIds;
+        screen = 'closed';
+      } else if (goal.pointIds.every(id => period?.draft?.pointIds.includes(id))) {
+        currentId = period.id;
+        screen = 'draft';
+      } else {
+        screen = 'setup';
+      }
     }
 
     function show(next,message) {
@@ -131,9 +145,9 @@ window.panel03PeriodReports = (() => {
       const last = today();
       return `${back('home','К периодам')}${hero('Новый период','Даты включительно',true)}
         <form data-form="period-setup">
-          <label>Начало периода<input type="date" name="start" required value="${last.slice(0,7)}-01"></label>
-          <label>Конец периода<input type="date" name="end" required value="${last}"></label>
-          ${pointPicker(points(),null)}
+          <label>Начало периода<input type="date" name="start" required value="${preset?.start ?? last.slice(0,7) + '-01'}"></label>
+          <label>Конец периода<input type="date" name="end" required value="${preset?.end ?? last}"></label>
+          ${pointPicker(points(),preset?.pointIds.length === points().length ? null : preset?.pointIds ?? null)}
           ${warning}${submit('Начать заполнение')}
         </form>`;
     }
@@ -270,7 +284,9 @@ window.panel03PeriodReports = (() => {
     }
 
     function start(period,ids) {
-      const updated = {...period,draft:{pointIds:ids,values:period.rows}};
+      const values = new Map(period.rows.map(row => [row.pointId,row]));
+      for (const row of period.draft?.values ?? []) values.set(row.pointId,row);
+      const updated = {...period,draft:{pointIds:ids,values:[...values.values()]}};
       return store(updated);
     }
 
@@ -292,9 +308,7 @@ window.panel03PeriodReports = (() => {
         return show('closed');
       }
       if (form.dataset.form === 'period-scope') {
-        const values = new Map(period.rows.map(row => [row.pointId,row]));
-        for (const row of period.draft.values) values.set(row.pointId,row);
-        if (store({...period,draft:{pointIds:ids,values:[...values.values()]}})) show('draft');
+        if (start(period,ids)) show('draft');
         return;
       }
       const {start:starts,end:ends} = form.elements;
@@ -305,6 +319,11 @@ window.panel03PeriodReports = (() => {
       const id = idFor(startDate,endDate);
       const existing = all().find(item => item.id === id);
       if (existing?.draft) {
+        if (preset && startDate === preset.start && endDate === preset.end &&
+            ids.some(id => !existing.draft.pointIds.includes(id))) {
+          const scope = [...new Set([...existing.draft.pointIds,...ids])];
+          if (!start(existing,scope)) return;
+        }
         currentId = id;
         return show('draft','За эти даты уже есть черновик.');
       }
@@ -320,7 +339,10 @@ window.panel03PeriodReports = (() => {
       const {periodAction:name,periodId,pointId:id} = button.dataset;
       if (name === 'exit') return exit();
       if (name === 'home') return show('home');
-      if (name === 'new') return show('setup');
+      if (name === 'new') {
+        preset = undefined;
+        return show('setup');
+      }
       if (name === 'closed' || name === 'draft') {
         currentId = periodId;
         shownIds = undefined;
@@ -361,5 +383,5 @@ window.panel03PeriodReports = (() => {
     return {open,draw,submit:submitForm,click,input,beforeLeave};
   }
 
-  return {create,validate,merge,rateFor};
+  return {create,validate,merge,rateFor,findPeriod};
 })();
