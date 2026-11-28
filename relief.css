@@ -256,3 +256,15 @@ form[data-form^=rollout-] textarea { min-height:5rem; }
 #personal[data-keyboard]:has(form[data-form^=scenario-]) .bottom { position:static; }
 .scenario-steps { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
 .scenario-controls { display:flex; flex-wrap:wrap; gap:5px; }
+.network-points,.network-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; width:100%; text-align:left; }
+.network-points { background:var(--tint); }
+.network-points strong,.network-row strong { color:var(--ink); }
+.network-points span,.network-row small,.network-description { font-size:.85rem; }
+.network-filters { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px; }
+.network-filters .action { font-size:.85rem; padding:5px 10px; }
+.network-filters [aria-pressed=true] { background:var(--tint); border-color:var(--accent); }
+.network-list { display:grid; gap:8px; }
+.network-row { border-inline-start:4px solid var(--accent); }
+.network-row small,.network-row strong,.network-description { display:block; overflow-wrap:anywhere; }
+.network-description { color:var(--ink); font-weight:400; }
+.audit-result[data-audit-issue]:focus { outline:2px solid var(--accent); outline-offset:2px; }

@@ -42,6 +42,7 @@ window.panel03Audits = (() => {
   }
 
   const closed = check => check.rechecks.at(-1)?.result === 'pass';
+  const isOpenIssue = check => check.result === 'issue' && !closed(check);
 
   function issueAt(audit, drinkId, checkId) {
     const drink = audit?.drinks.find(row => row.id === drinkId);
@@ -192,7 +193,7 @@ window.panel03Audits = (() => {
       const event = work(check.workId);
       const refData = ref('drink-id', drink.id) + ' ' + ref('check-id', check.id);
       const isClosed = closed(check);
-      return `<li class="audit-result">
+      return `<li class="audit-result" tabindex="-1" data-audit-issue ${refData}>
         <div class="audit-result-title"><strong>${criterion(check.id).label}</strong><span class="audit-status" data-outcome="${isClosed ? 'pass' : 'issue'}">${isClosed ? 'Закрыто' : 'Отклонение'}</span></div>
         <p class="record">${escape(check.note)}</p>
         ${event ? action('work', 'Открыть связанное дело', {data:ref('work-id', event.id)}) :
@@ -231,6 +232,14 @@ window.panel03Audits = (() => {
       if (screen === 'recheck') return recheckForm();
       if (screen === 'standard') return standard();
       return summary();
+    }
+
+    function focusIssue(drinkId,checkId) {
+      const issue = [...getMain().querySelectorAll('[data-audit-issue]')].find(row =>
+        row.dataset.drinkId === drinkId && row.dataset.checkId === checkId);
+      if (!issue) return;
+      issue.focus({preventScroll:true});
+      issue.scrollIntoView({block:'nearest'});
     }
 
     function warn(form, message, field) {
@@ -380,8 +389,8 @@ window.panel03Audits = (() => {
       }
     }
 
-    return {open, draw, click, submit:submitForm, beforeLeave};
+    return {open, draw, click, submit:submitForm, beforeLeave, focusIssue};
   }
 
-  return {validate, issueAt, updateCheck, sourceForWork, create};
+  return {validate, issueAt, isOpenIssue, updateCheck, sourceForWork, create};
 })();

@@ -7,6 +7,9 @@ window.panel03Stock = (() => {
   const present = value => typeof value === 'string' && Boolean(value.trim());
   const quantity = value => Number.isSafeInteger(value) && value >= 0 && value <= limit;
   const unique = rows => new Set(rows).size === rows.length;
+  const formatter = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:3});
+  const valueText = value => formatter.format(value / scale);
+  const amount = (value,unit) => valueText(value) + ' ' + units[unit];
 
   function readQuantity(value) {
     const input = value.trim();
@@ -51,19 +54,19 @@ window.panel03Stock = (() => {
     return result;
   }
 
-  function lastCountDates(book) {
-    const dates = new Map();
+  function latestCounts(book) {
+    const latest = new Map();
     for (const row of book.journal) {
       if (row.kind !== 'count') continue;
       for (const line of row.lines) {
-        if (!dates.has(line.itemId) || dates.get(line.itemId) < row.date) dates.set(line.itemId,row.date);
+        const previous = latest.get(line.itemId);
+        if (!previous || previous.row.date <= row.date) latest.set(line.itemId,{row,line});
       }
     }
-    return dates;
+    return latest;
   }
 
   function create({records, hero, escape, options, getMain, today, validDay, commit, redraw, exit}) {
-    const formatter = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:3});
     const dateFormat = new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
     const dateText = date => dateFormat.format(new Date(date + 'T00:00:00Z'));
     const action = (name, label, {primary = false, data = ''} = {}) =>
@@ -76,16 +79,15 @@ window.panel03Stock = (() => {
     const book = () => books().find(row => row.id === pointId) ?? {id:pointId,items:[],journal:[]};
     const item = id => book().items.find(row => row.id === id);
     const items = () => [...book().items].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
-    const valueText = value => formatter.format(value / scale);
-    const amount = (value,unit) => valueText(value) + ' ' + units[unit];
     const expectedText = (value,unit) => value === null ? 'Нет начального остатка' : amount(value,unit);
     const diffText = (actual,expected,unit) => expected === null || actual === null ? '—' :
       (actual > expected ? '+' : '') + amount(actual - expected,unit);
     let screen, pointId, itemId, countId, expected;
 
-    function open(id) {
+    function open(id, count) {
       pointId = id;
-      screen = 'home';
+      countId = count;
+      screen = count ? 'details' : 'home';
     }
 
     function show(next,message) {
@@ -260,8 +262,8 @@ window.panel03Stock = (() => {
 
     function checkDate(row, date, ids, form) {
       if (!validDay(date) || date > today()) return warn(form,'Укажи дату не позже сегодняшнего дня.',form.elements.date);
-      const dates = lastCountDates(row);
-      if (ids.some(id => dates.has(id) && dates.get(id) > date)) {
+      const recent = latestCounts(row);
+      if (ids.some(id => recent.get(id)?.row.date > date)) {
         return warn(form,'Выбери дату не раньше последней подтверждённой инвентаризации по этому сырью.',form.elements.date);
       }
       return true;
@@ -382,5 +384,5 @@ window.panel03Stock = (() => {
     return {open,draw,submit:submitForm,click,change,input,beforeLeave};
   }
 
-  return {create,validate,readQuantity,units};
+  return {create,validate,readQuantity,units,latestCounts,amount};
 })();

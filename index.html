@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.9.0">
+<meta name="panel-build" content="3.10.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.9.0">
+<link rel="stylesheet" href="./relief.css?v=3.10.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.9.0</small>
+      <small>Сборка 3.10.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,18 +81,19 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.9.0" defer></script>
-<script src="./google-sync.js?v=3.9.0" defer></script>
-<script src="./point-picker.js?v=3.9.0"></script>
-<script src="./work-items.js?v=3.9.0"></script>
-<script src="./menu-recipes.js?v=3.9.0"></script>
-<script src="./point-audits.js?v=3.9.0"></script>
-<script src="./point-team.js?v=3.9.0"></script>
-<script src="./point-equipment.js?v=3.9.0"></script>
-<script src="./point-stock.js?v=3.9.0"></script>
-<script src="./point-economy.js?v=3.9.0"></script>
-<script src="./network-rollouts.js?v=3.9.0"></script>
-<script src="./scenario-builder.js?v=3.9.0"></script>
+<script src="./calendar-sync.js?v=3.10.0" defer></script>
+<script src="./google-sync.js?v=3.10.0" defer></script>
+<script src="./point-picker.js?v=3.10.0"></script>
+<script src="./work-items.js?v=3.10.0"></script>
+<script src="./menu-recipes.js?v=3.10.0"></script>
+<script src="./point-audits.js?v=3.10.0"></script>
+<script src="./point-team.js?v=3.10.0"></script>
+<script src="./point-equipment.js?v=3.10.0"></script>
+<script src="./point-stock.js?v=3.10.0"></script>
+<script src="./point-economy.js?v=3.10.0"></script>
+<script src="./network-rollouts.js?v=3.10.0"></script>
+<script src="./scenario-builder.js?v=3.10.0"></script>
+<script src="./network-overview.js?v=3.10.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -907,6 +908,7 @@
         <button type="button" class="action" data-action="back">${returnView?.type === 'audits' ? 'Назад к аудиту' :
           returnView?.type === 'team' ? 'Назад к проверке' : returnView?.type === 'equipment' ? 'Назад к оборудованию' :
           returnView?.type === 'rollouts' ? 'Назад к запуску' : returnView?.type === 'scenarios' ? 'Назад к сценарию' :
+          returnView?.type === 'network-overview' ? 'Назад к сводке' :
           returnView ? 'Назад к делам' :
           page === 'calendar' ? 'Назад к календарю' : 'Назад к обзору'}</button>
       </div>`;
@@ -939,9 +941,14 @@
     },
   });
 
-  function openAudits(pointId, auditId) {
+  function exitPointModule(point) {
+    if (view?.returnView?.type === 'network-overview') return openNetworkOverview();
+    view = {type:'point', record:point};
+    redrawTasks();
+  }
+  function openAudits(pointId, auditId, returnView) {
     page = 'points';
-    view = {type:'audits'};
+    view = {type:'audits',returnView};
     auditPanel.open(pointId, auditId);
     redrawTasks();
   }
@@ -954,10 +961,7 @@
       return true;
     },
     redraw:redrawTasks,
-    exit(point) {
-      view = {type:'point', record:point};
-      redrawTasks();
-    },
+    exit:exitPointModule,
     newWork(auditSource, pointId, title) {
       if (!storageReadable) return;
       view = {type:'edit', auditSource, title, workScope:[pointId], returnView:view};
@@ -995,9 +999,9 @@
       if (showWork(id, '', view)) redrawTasks();
     },
   });
-  function openEquipment(pointId, id, source) {
+  function openEquipment(pointId, id, source, returnView) {
     page = 'points';
-    view = {type:'equipment'};
+    view = {type:'equipment',returnView};
     equipmentPanel.open(pointId,id,source);
     redrawTasks();
   }
@@ -1018,10 +1022,7 @@
       return true;
     },
     redraw:redrawTasks,
-    exit(point) {
-      view = {type:'point', record:point};
-      redrawTasks();
-    },
+    exit:exitPointModule,
     newWork(equipmentSource, pointId, title) {
       if (!storageReadable) return;
       view = {type:'edit', equipmentSource, title, workScope:[pointId], returnView:view};
@@ -1040,14 +1041,18 @@
       return true;
     },
     redraw:redrawTasks,
-    exit(point) {
-      view = {type:'point', record:point};
-      redrawTasks();
-    },
+    exit:exitPointModule,
   });
-  function openStock(pointId) {
-    stockPanel.open(pointId);
-    view = {type:'stock'};
+  function openStock(pointId, countId, returnView) {
+    stockPanel.open(pointId,countId);
+    page = 'points';
+    view = {type:'stock',returnView};
+    redrawTasks();
+  }
+  function openEconomy(pointId, drinkId, returnView) {
+    economyPanel.open(pointId,drinkId);
+    page = 'points';
+    view = {type:'economy',returnView};
     redrawTasks();
   }
   const economyPanel = economy.create({
@@ -1058,11 +1063,8 @@
       data = next;
       return true;
     },
-    redraw:redrawTasks, openStock,
-    exit(point) {
-      view = {type:'point', record:point};
-      redrawTasks();
-    },
+    redraw:redrawTasks, openStock:pointId => openStock(pointId,undefined,view.returnView),
+    exit:exitPointModule,
   });
   const rolloutPanel = rollouts.create({
     records:() => data, getMain:() => main, today:() => today, validDay, hero, escape, options:optionList, picker:pointPicker,
@@ -1115,6 +1117,34 @@
     scenarioPanel.open(runId);
     redrawTasks();
   }
+  function openNetworkOverview() {
+    page = 'overview';
+    view = {type:'network-overview'};
+    networkOverview.open();
+    redrawTasks();
+  }
+  const networkOverview = window.panel03NetworkOverview.create({
+    records:() => data, workRows, picker:pointPicker, effective:menuRecipes.effective,
+    today:() => today, hero, help:pointHint, escape, showDay:day => shortDate.format(asDate(day)), getMain:() => main,
+    redraw:redrawTasks,
+    exit() {
+      view = null;
+      redrawTasks();
+    },
+    openSource(row) {
+      const returnView = view;
+      if (row.kind === 'audit') {
+        openAudits(row.pointId,row.id,returnView);
+        auditPanel.focusIssue(row.drinkId,row.checkId);
+      } else if (row.kind === 'equipment') {
+        openEquipment(row.pointId,row.id,undefined,returnView);
+      } else if (row.kind === 'stock') {
+        openStock(row.pointId,row.id,returnView);
+      } else if (row.kind === 'economy') {
+        openEconomy(row.pointId,row.id,returnView);
+      } else if (showWork(row.id,row.slot,returnView)) redrawTasks();
+    },
+  });
   function saveScenarioWork(event) {
     const records = scenarios.linkWork(data.scenarioBook,view.scenarioSource,event.id);
     if (!records) return showNotice('Это дело уже создано или выполнение сценария завершено.');
@@ -1163,6 +1193,8 @@
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
         ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'network-overview') {
+      main.innerHTML = networkOverview.draw();
     } else if (view?.type === 'scenarios') {
       main.innerHTML = scenarioPanel.draw();
     } else if (view?.type === 'rollouts') {
@@ -1215,6 +1247,7 @@
     } else if (page === 'overview') {
       main.innerHTML = `${hero('Обзор', capital(fullDate.format(asDate(today))), true)}
         <div class="overview-modules">
+          <button type="button" class="action" data-action="open-network-overview">Сводка сети</button>
           <button type="button" class="action" data-action="open-tasks">Открыть все дела</button>
           <button type="button" class="action" data-action="open-rollouts">Запуски</button>
           <button type="button" class="action" data-action="open-scenarios">Сценарии</button>
@@ -1230,6 +1263,9 @@
       main.innerHTML = pointList();
     } else {
       main.innerHTML = page === 'calendar' ? calendar() : `${hero('Заметки', 'Записей: ' + data.notes.length, true)}${noteList(false)}`;
+    }
+    if (view?.returnView?.type === 'network-overview' && ['audits','equipment','stock','economy'].includes(view.type)) {
+      main.insertAdjacentHTML('afterbegin','<button type="button" class="back" data-action="return-network-overview">← К сводке</button>');
     }
     pointPicker.refresh(main);
     refreshSyncSummary();
@@ -1307,6 +1343,7 @@
   main.addEventListener('submit', event => {
     event.preventDefault();
     const form = event.target;
+    if (view?.type === 'network-overview') return networkOverview.submit(form);
     if (!storageReadable) return;
     if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
     if (view?.type === 'audits') return auditPanel.submit(form);
@@ -1446,17 +1483,19 @@
       }
     }
     if (view?.type === 'audits') {
-      if ((destination || action === 'backups') && !auditPanel.beforeLeave()) return;
+      if ((destination || action === 'backups' || action === 'return-network-overview') && !auditPanel.beforeLeave()) return;
       if (button.dataset.auditAction) return auditPanel.click(button);
     }
     if (view?.type === 'team' && button.dataset.teamAction) return teamPanel.click(button);
     if (view?.type === 'equipment' && button.dataset.equipmentAction) return equipmentPanel.click(button);
     if (view?.type === 'stock') {
-      if ((destination || action === 'backups') && !stockPanel.beforeLeave()) return;
+      if ((destination || action === 'backups' || action === 'return-network-overview') && !stockPanel.beforeLeave()) return;
       if (button.dataset.stockAction) return stockPanel.click(button);
     }
     if (action === 'point-stock') return openStock(view.record.id);
     if (view?.type === 'economy' && button.dataset.economyAction) return economyPanel.click(button);
+    if (action === 'open-network-overview' || action === 'return-network-overview') return openNetworkOverview();
+    if (view?.type === 'network-overview' && button.dataset.networkAction) return networkOverview.click(button);
     if (view?.type === 'scenarios') {
       if ((destination || action === 'backups') && !scenarioPanel.beforeLeave()) return;
       if (button.dataset.scenarioAction) return scenarioPanel.click(button);
@@ -1474,12 +1513,7 @@
       redrawTasks();
       return;
     }
-    if (action === 'point-economy') {
-      economyPanel.open(view.record.id);
-      view = {type:'economy'};
-      redrawTasks();
-      return;
-    }
+    if (action === 'point-economy') return openEconomy(view.record.id);
     if (action === 'point-equipment') return openEquipment(view.record.id);
     if (action === 'open-equipment-source' || action === 'open-equipment-card') {
       const source = equipment.sourceForWork(data.equipment ?? [],view.record.id);

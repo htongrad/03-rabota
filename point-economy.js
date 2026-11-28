@@ -89,19 +89,21 @@ window.panel03Economy = (() => {
     return total ? (total*100n + denominator - 1n) / denominator : 1n;
   };
 
+  const number = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
+  function decimals(minor) {
+    const value = BigInt(minor);
+    const fraction = String(value % 100n).padStart(2,'0').replace(/0+$/,'');
+    return number.format(value / 100n) + (fraction ? ',' + fraction : '');
+  }
+  const formatRate = value => decimals(value) + ' %';
+
   function create({records, hero, escape, options, getMain, effective, commit, redraw, exit, openStock}) {
-    const number = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
     const date = new Intl.DateTimeFormat('ru',{dateStyle:'medium',timeZone:'Europe/Moscow'});
-    const decimals = minor => {
-      const value = BigInt(minor);
-      const fraction = String(value % 100n).padStart(2,'0').replace(/0+$/,'');
-      return number.format(value / 100n) + (fraction ? ',' + fraction : '');
-    };
     const money = cents => cents === null ? '—' : decimals(cents) + ' ₽';
     const asField = value => value === undefined ? '' : String(value / 100).replace('.',',');
     function percentages(calculation,sale) {
       const value = basisPoints(calculation,sale);
-      return value === null ? '—' : decimals(value) + ' %';
+      return value === null ? '—' : formatRate(value);
     }
     const roundedCost = ({total,divisor}) => total === null ? null : round(total,divisor);
     const economy = () => records().economy ?? [];
@@ -123,9 +125,10 @@ window.panel03Economy = (() => {
     const row = (label,value) => `<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`;
     let screen, pointId, drinkId, pricesFrom;
 
-    function open(id) {
+    function open(id, drink) {
       pointId = id;
-      screen = 'home';
+      drinkId = drink;
+      screen = drink ? 'drink' : 'home';
     }
 
     function show(next,message) {
@@ -338,5 +341,5 @@ window.panel03Economy = (() => {
     return {open,draw,submit:submitForm,click,input};
   }
 
-  return {create,validate,foodCost};
+  return {create,validate,foodCost,formatRate};
 })();

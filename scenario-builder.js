@@ -278,7 +278,7 @@ window.panel03Scenarios = (() => {
       }).reverse();
       if (type === 'audit') return (data.audits ?? []).filter(row=>row.completedAt).map(row=>({
         id:row.id,pointId:row.pointId,label:dateText(row.completedAt) + ' · ' + row.drinks.map(drink=>drink.title).join(', '),
-        count:row.drinks.flatMap(drink=>drink.checks).filter(check=>check.result === 'issue' && check.rechecks.at(-1)?.result !== 'pass').length,
+        count:row.drinks.flatMap(drink=>drink.checks).filter(window.panel03Audits.isOpenIssue).length,
       })).reverse();
       return (data.rollouts ?? []).flatMap(row=>row.sites.map(site=>({id:JSON.stringify([row.id,site.id]),pointId:site.id,
         label:row.title,count:rolloutRemaining(site)}))).reverse();
