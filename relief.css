@@ -274,3 +274,6 @@ form[data-form^=rollout-] textarea { min-height:5rem; }
 .period-total > strong { color:var(--accent); font-size:1.35rem; overflow-wrap:anywhere; }
 .period-total .point-details { margin:0; }
 .period-point-details dd small { display:block; margin-block-start:3px; }
+.review-decision + .review-decision { border-block-start:1px solid var(--edge); padding-block-start:12px; }
+.review-decision small { color:var(--muted); overflow-wrap:anywhere; }
+.review-decision strong { overflow-wrap:anywhere; }

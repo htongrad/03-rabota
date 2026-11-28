@@ -23,7 +23,7 @@ window.panel03NetworkOverview = (() => {
       groups.equipment.hasData = true;
       if (!asset.issue) continue;
       const report = asset.history.find(row => row.id === asset.issue.reportId);
-      groups.equipment.rows.push({kind:'equipment',pointId:asset.pointId,id:asset.id,at:report.day,
+      groups.equipment.rows.push({kind:'equipment',pointId:asset.pointId,id:asset.id,reportId:report.id,at:report.day,
         title:asset.name,note:'Нужна диагностика'});
     }
     for (const book of records.stock ?? []) {
@@ -34,7 +34,7 @@ window.panel03NetworkOverview = (() => {
         groups.stock.hasData = true;
         if (line.actual >= line.expected) continue;
         const item = items.get(line.itemId);
-        groups.stock.rows.push({kind:'stock',pointId:book.id,id:row.id,at:row.date,
+        groups.stock.rows.push({kind:'stock',pointId:book.id,id:row.id,itemId:item.id,at:row.date,
           title:item.name,note:'Недостача ' + stock.amount(line.expected - line.actual,item.unit)});
       }
     }
@@ -135,6 +135,7 @@ window.panel03NetworkOverview = (() => {
       return `<button type="button" class="back" data-network-action="exit">← Обзор</button>
         ${hero('Сводка сети','Открытые отклонения и последние сверки',true)}
         <button type="button" class="action network-period" data-action="open-period-reports">Факт за период</button>
+        <button type="button" class="action network-period" data-action="open-network-reviews">Разбор сети</button>
         <button type="button" class="action network-points" data-network-action="points">
           <strong>${caption}</strong><span>Изменить выбор</span></button>
         <div class="network-filters" role="group" aria-label="Категории сводки">${filters}</div>
@@ -169,5 +170,5 @@ window.panel03NetworkOverview = (() => {
     return {open() { editing = false; },draw,click,submit};
   }
 
-  return {create};
+  return {create,collect,categories};
 })();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.11.0">
+<meta name="panel-build" content="3.12.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.11.0">
+<link rel="stylesheet" href="./relief.css?v=3.12.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.11.0</small>
+      <small>Сборка 3.12.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,20 +81,21 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.11.0" defer></script>
-<script src="./google-sync.js?v=3.11.0" defer></script>
-<script src="./point-picker.js?v=3.11.0"></script>
-<script src="./work-items.js?v=3.11.0"></script>
-<script src="./menu-recipes.js?v=3.11.0"></script>
-<script src="./point-audits.js?v=3.11.0"></script>
-<script src="./point-team.js?v=3.11.0"></script>
-<script src="./point-equipment.js?v=3.11.0"></script>
-<script src="./point-stock.js?v=3.11.0"></script>
-<script src="./point-economy.js?v=3.11.0"></script>
-<script src="./network-rollouts.js?v=3.11.0"></script>
-<script src="./scenario-builder.js?v=3.11.0"></script>
-<script src="./network-overview.js?v=3.11.0"></script>
-<script src="./period-reports.js?v=3.11.0"></script>
+<script src="./calendar-sync.js?v=3.12.0" defer></script>
+<script src="./google-sync.js?v=3.12.0" defer></script>
+<script src="./point-picker.js?v=3.12.0"></script>
+<script src="./work-items.js?v=3.12.0"></script>
+<script src="./menu-recipes.js?v=3.12.0"></script>
+<script src="./point-audits.js?v=3.12.0"></script>
+<script src="./point-team.js?v=3.12.0"></script>
+<script src="./point-equipment.js?v=3.12.0"></script>
+<script src="./point-stock.js?v=3.12.0"></script>
+<script src="./point-economy.js?v=3.12.0"></script>
+<script src="./network-rollouts.js?v=3.12.0"></script>
+<script src="./scenario-builder.js?v=3.12.0"></script>
+<script src="./network-overview.js?v=3.12.0"></script>
+<script src="./period-reports.js?v=3.12.0"></script>
+<script src="./network-reviews.js?v=3.12.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -165,6 +166,7 @@
   const rollouts = window.panel03Rollouts;
   const scenarios = window.panel03Scenarios;
   const periodReports = window.panel03PeriodReports;
+  const reviews = window.panel03NetworkReviews;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -246,7 +248,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -332,12 +334,17 @@
       if (!periodReports.validate(records.periodReports, points, date)) throw new Error('Invalid period reports');
       validated.periodReports = records.periodReports;
     }
+    if (records.networkReviews !== undefined || version === 19) {
+      if (!reviews.validate(records.networkReviews, points, date)) throw new Error('Invalid network reviews');
+      validated.networkReviews = records.networkReviews;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.networkReviews !== undefined) return 19;
     if (records.periodReports !== undefined) return 18;
     if (records.scenarioBook !== undefined) return 17;
     if (records.rollouts !== undefined) return 16;
@@ -777,7 +784,8 @@
         <div class="controls"><button type="submit" class="action primary">Сохранить</button>
           <button type="button" data-action="cancel">Отмена</button></div>
       </form>`;
-    const linked = Boolean(view.auditSource || view.teamSource || view.equipmentSource || view.rolloutSource || view.scenarioSource);
+    const linked = Boolean(view.auditSource || view.teamSource || view.equipmentSource || view.rolloutSource ||
+      view.scenarioSource || view.reviewSource);
     const diagnosis = view.equipmentSource || (original && equipment.sourceForWork(data.equipment ?? [], original.id)?.kind === 'diagnosis');
     const value = view.entry ?? {title:view.title, date:view.suggestedDate ?? (linked ? '' : selected), allDay:linked,
       start:'09:00', end:'10:00', repeat:'none', ending:'never'};
@@ -789,6 +797,7 @@
           ${pointHint('область изменения','Можно изменить одно дело, следующие дела или всю серию.')}</div>` : ''}
         <label>Название<input name="title" required maxlength="200" value="${escape(value.title)}"></label>
         ${view.scenarioSource?.label ? `<p class="record">${escape(view.scenarioSource.label)}</p>` : ''}
+        ${view.reviewSource ? `<p class="record">${escape(view.reviewSource.caption)}</p>` : ''}
         <label class="check"><input type="checkbox" name="scheduled"${value.date ? ' checked' : ''}> В календаре</label>
         <div class="work-schedule" data-schedule>
           <label>Дата<input type="date" name="date" max="9999-12-30" value="${escape(value.date)}"></label>
@@ -916,6 +925,7 @@
           returnView?.type === 'team' ? 'Назад к проверке' : returnView?.type === 'equipment' ? 'Назад к оборудованию' :
           returnView?.type === 'rollouts' ? 'Назад к запуску' : returnView?.type === 'scenarios' ? 'Назад к сценарию' :
           returnView?.type === 'network-overview' ? 'Назад к сводке' :
+          returnView?.type === 'network-reviews' ? 'Назад к разбору' :
           returnView ? 'Назад к делам' :
           page === 'calendar' ? 'Назад к календарю' : 'Назад к обзору'}</button>
       </div>`;
@@ -950,6 +960,7 @@
 
   function exitPointModule(point) {
     if (view?.returnView?.type === 'network-overview') return openNetworkOverview();
+    if (view?.returnView?.type === 'network-reviews') return returnToReview();
     view = {type:'point', record:point};
     redrawTasks();
   }
@@ -1130,6 +1141,32 @@
     networkOverview.open();
     redrawTasks();
   }
+  function lookupReviewWork({id,slot}) {
+    const record = data.events.find(row => row.id === id);
+    if (!record) return null;
+    if (record.repeat === 'none') {
+      slot = record.date;
+      if (record.stopBefore && !occurs(record,slot)) return null;
+    } else if (!validDay(slot) || !occurs(record,slot)) return null;
+    const entry = eventEntry(record,slot);
+    return entry && {record,entry,slot,work:workItems.workFor(record,entry,slot)};
+  }
+  function openNetworkSource(row) {
+    const returnView = view;
+    if (row.kind === 'audit' && data.audits?.some(item => item.id === row.id && item.pointId === row.pointId)) {
+      openAudits(row.pointId,row.id,returnView);
+      auditPanel.focusIssue(row.drinkId,row.checkId);
+    } else if (row.kind === 'equipment' && data.equipment?.some(item => item.id === row.id && item.pointId === row.pointId)) {
+      openEquipment(row.pointId,row.id,undefined,returnView);
+    } else if (row.kind === 'stock' && data.stock?.some(book => book.id === row.pointId &&
+      book.journal.some(item => item.kind === 'count' && item.id === row.id))) {
+      openStock(row.pointId,row.id,returnView);
+    } else if (row.kind === 'economy' && data.recipes?.some(item => item.id === row.id && menuRecipes.effective(item,row.pointId))) {
+      openEconomy(row.pointId,row.id,returnView);
+    } else if (row.kind === 'work' && lookupReviewWork(row) && showWork(row.id,row.slot,returnView)) {
+      redrawTasks();
+    } else showNotice('Исходная запись больше недоступна.');
+  }
   const networkOverview = window.panel03NetworkOverview.create({
     records:() => data, workRows, picker:pointPicker, effective:menuRecipes.effective,
     today:() => today, hero, help:pointHint, escape, showDay:day => shortDate.format(asDate(day)), getMain:() => main,
@@ -1138,24 +1175,13 @@
       view = null;
       redrawTasks();
     },
-    openSource(row) {
-      const returnView = view;
-      if (row.kind === 'audit') {
-        openAudits(row.pointId,row.id,returnView);
-        auditPanel.focusIssue(row.drinkId,row.checkId);
-      } else if (row.kind === 'equipment') {
-        openEquipment(row.pointId,row.id,undefined,returnView);
-      } else if (row.kind === 'stock') {
-        openStock(row.pointId,row.id,returnView);
-      } else if (row.kind === 'economy') {
-        openEconomy(row.pointId,row.id,returnView);
-      } else if (showWork(row.id,row.slot,returnView)) redrawTasks();
-    },
+    openSource:openNetworkSource,
   });
   const reportDate = new Intl.DateTimeFormat('ru-RU',{dateStyle:'long',timeZone:'UTC'});
+  const reportRange = (start,end) => reportDate.formatRange(asDate(start),asDate(end));
   const reportPanel = periodReports.create({
     records:() => data, picker:pointPicker, validDay, today:() => today,
-    formatPeriod:(start,end) => reportDate.formatRange(asDate(start),asDate(end)),
+    formatPeriod:reportRange,
     hero, help:pointHint, escape, redraw:redrawTasks, exit:openNetworkOverview, getMain:() => main,
     commit(rows) {
       const next = {...data,periodReports:rows};
@@ -1169,6 +1195,41 @@
     view = {type:'period-reports'};
     reportPanel.open();
     redrawTasks();
+  }
+  const reviewPanel = reviews.create({
+    records:() => data, picker:pointPicker, validDay, today:() => today, offsetDay,
+    formatPeriod:reportRange, hero, help:pointHint, escape, options:optionList, getMain:() => main,
+    redraw:redrawTasks, exit:openNetworkOverview,
+    collectSignals(selected,includeNetwork) {
+      return window.panel03NetworkOverview.collect({records:data,workRows,scopeFor:pointPicker.scopeFor,
+        today,selected,includeNetwork,effective:menuRecipes.effective});
+    },
+    openSource:openNetworkSource, lookupWork:lookupReviewWork, workRows,
+    openWork(work) {
+      if (lookupReviewWork(work) && showWork(work.id,work.slot,view)) redrawTasks();
+      else showNotice('Связанное дело недоступно.');
+    },
+    newWork(reviewSource,title,workScope) {
+      if (!storageReadable) return;
+      view = {type:'edit',reviewSource,title,workScope,returnView:view};
+      redrawTasks();
+    },
+    commit(rows) {
+      const next = {...data,networkReviews:rows};
+      if (!save(next,'В браузере не хватает места для разбора.')) return false;
+      data = next;
+      return true;
+    },
+  });
+  function returnToReview() {
+    page = 'overview';
+    view = {type:'network-reviews'};
+    redrawTasks();
+  }
+  function saveReviewWork(event) {
+    const rows = reviews.linkWork(data.networkReviews ?? [],view.reviewSource,event);
+    if (!rows) return showNotice('Разбор закрыт или к отклонению уже привязано дело.');
+    saveLinkedWork(event,{networkReviews:rows},'Дело связано с разбором.');
   }
   function saveScenarioWork(event) {
     const records = scenarios.linkWork(data.scenarioBook,view.scenarioSource,event.id);
@@ -1216,10 +1277,12 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}, отчётных периодов — ${candidate.periodReports?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}, отчётных периодов — ${candidate.periodReports?.length ?? 0}, разборов сети — ${candidate.networkReviews?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
     } else if (view?.type === 'period-reports') {
       main.innerHTML = reportPanel.draw();
+    } else if (view?.type === 'network-reviews') {
+      main.innerHTML = reviewPanel.draw();
     } else if (view?.type === 'network-overview') {
       main.innerHTML = networkOverview.draw();
     } else if (view?.type === 'scenarios') {
@@ -1293,6 +1356,9 @@
     }
     if (view?.returnView?.type === 'network-overview' && ['audits','equipment','stock','economy'].includes(view.type)) {
       main.insertAdjacentHTML('afterbegin','<button type="button" class="back" data-action="return-network-overview">← К сводке</button>');
+    }
+    if (view?.returnView?.type === 'network-reviews' && ['audits','equipment','stock','economy'].includes(view.type)) {
+      main.insertAdjacentHTML('afterbegin','<button type="button" class="back" data-action="return-network-review">← К разбору</button>');
     }
     pointPicker.refresh(main);
     refreshSyncSummary();
@@ -1374,6 +1440,7 @@
     if (view?.type === 'network-overview') return networkOverview.submit(form);
     if (!storageReadable) return;
     if (view?.type === 'period-reports') return reportPanel.submit(form,event.submitter);
+    if (view?.type === 'network-reviews') return reviewPanel.submit(form);
     if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
     if (view?.type === 'audits') return auditPanel.submit(form);
     if (view?.type === 'team') return teamPanel.submit(form);
@@ -1454,6 +1521,7 @@
       if (view.equipmentSource) return saveDiagnosisWork(updated);
       if (view.rolloutSource) return saveRolloutWork(updated);
       if (view.scenarioSource) return saveScenarioWork(updated);
+      if (view.reviewSource) return saveReviewWork(updated);
       if (original?.legacyTaskId && scope !== 'following') updated.legacyTaskId = original.legacyTaskId;
       if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
       if (original) {
@@ -1512,19 +1580,28 @@
       }
     }
     if (view?.type === 'audits') {
-      if ((destination || action === 'backups' || action === 'return-network-overview') && !auditPanel.beforeLeave()) return;
+      if ((destination || ['backups','return-network-overview','return-network-review'].includes(action)) && !auditPanel.beforeLeave()) return;
       if (button.dataset.auditAction) return auditPanel.click(button);
     }
     if (view?.type === 'team' && button.dataset.teamAction) return teamPanel.click(button);
     if (view?.type === 'equipment' && button.dataset.equipmentAction) return equipmentPanel.click(button);
     if (view?.type === 'stock') {
-      if ((destination || action === 'backups' || action === 'return-network-overview') && !stockPanel.beforeLeave()) return;
+      if ((destination || ['backups','return-network-overview','return-network-review'].includes(action)) && !stockPanel.beforeLeave()) return;
       if (button.dataset.stockAction) return stockPanel.click(button);
     }
     if (action === 'point-stock') return openStock(view.record.id);
     if (view?.type === 'economy' && button.dataset.economyAction) return economyPanel.click(button);
     if (action === 'open-network-overview' || action === 'return-network-overview') return openNetworkOverview();
+    if (action === 'return-network-review') return returnToReview();
     if (view?.type === 'network-overview' && button.dataset.networkAction) return networkOverview.click(button);
+    if (action === 'open-network-reviews') {
+      reviewPanel.open();
+      return returnToReview();
+    }
+    if (view?.type === 'network-reviews') {
+      if ((destination || action === 'backups') && !reviewPanel.beforeLeave()) return;
+      if (button.dataset.reviewAction) return reviewPanel.click(button);
+    }
     if (action === 'open-period-reports') return openPeriodReports();
     if (view?.type === 'period-reports') {
       if ((destination || action === 'backups') && !reportPanel.beforeLeave()) return;
@@ -1600,6 +1677,9 @@
       };
       if (data.periodReports || candidate.periodReports) {
         merged.periodReports = periodReports.merge(data.periodReports ?? [],candidate.periodReports ?? []);
+      }
+      if (data.networkReviews || candidate.networkReviews) {
+        merged.networkReviews = addMissing(data.networkReviews ?? [],candidate.networkReviews ?? []);
       }
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
@@ -1724,6 +1804,7 @@
       if (view?.type === 'stock' && !stockPanel.beforeLeave()) return false;
       if (view?.type === 'scenarios' && !scenarioPanel.beforeLeave()) return false;
       if (view?.type === 'period-reports' && !reportPanel.beforeLeave()) return false;
+      if (view?.type === 'network-reviews' && !reviewPanel.beforeLeave()) return false;
       candidate = records;
       view = {type:'backups'};
       showNotice(message);

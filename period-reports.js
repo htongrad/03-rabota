@@ -65,6 +65,13 @@ window.panel03PeriodReports = (() => {
     return (BigInt(cost)*20000n + divisor) / (2n*divisor);
   }
 
+  function rateFor(periods,start,end,pointIds) {
+    const period = periods.find(row => row.id === idFor(start,end));
+    const rows = period?.rows.filter(row => pointIds.includes(row.pointId)) ?? [];
+    const rate = rows.length === pointIds.length ? percentage(totals(rows)) : null;
+    return {filled:rows.length,rate:rate?.toString() ?? null};
+  }
+
   function create({records,picker,validDay,today,formatPeriod,hero,help,escape,redraw,exit,commit,getMain}) {
     const inputMoney = decimal => decimal === null ? '' : formatMoney(decimal).replace(/\s*₽$/,'');
     const back = (name,label) => `<button type="button" class="back" data-period-action="${name}">← ${label}</button>`;
@@ -354,5 +361,5 @@ window.panel03PeriodReports = (() => {
     return {open,draw,submit:submitForm,click,input,beforeLeave};
   }
 
-  return {create,validate,merge};
+  return {create,validate,merge,rateFor};
 })();
