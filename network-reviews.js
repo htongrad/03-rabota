@@ -58,7 +58,7 @@ window.panel03NetworkReviews = (() => {
   }
 
   function create({records,picker,validDay,today,offsetDay,formatPeriod,hero,help,escape,options,getMain,redraw,exit,
-    collectSignals,openSource,lookupWork,workRows,openWork,newWork,commit}) {
+    collectSignals,openSource,lookupWork,workRows,openWork,newWork,commit,openOutcome,outcomeStatus}) {
     const list = () => records().networkReviews ?? [];
     const pointName = id => records().points.find(point => point.id === id)?.name ?? 'Точка';
     const current = () => list().find(row => row.id === id);
@@ -220,6 +220,8 @@ window.panel03NetworkReviews = (() => {
             ${decision.kind === 'work' ? workDetails(decision.work) :
               `<p><span class="task-badge">На контроле</span></p><p class="record">${escape(decision.note)}</p>`}
             ${!review.closedAt && decision.kind === 'watch' ? action('edit-note','Изменить пометку',{ref:ref('index',index)}) : ''}
+            ${review.closedAt ? `<p>Проверка результата · <span class="task-badge">${outcomeStatus(review,decision)}</span></p>
+              ${action('outcome','Проверить результат',{ref:ref('index',index)})}` : ''}
             ${action('open-decision-source','Открыть источник',{ref:ref('index',index)})}</article>`).join('')
         : '<p>Решений пока нет.</p>'}</section>`;
     }
@@ -351,6 +353,7 @@ window.panel03NetworkReviews = (() => {
       }
       if (name === 'open-source') return openSource(source);
       if (name === 'open-decision-source') return openSource(review.decisions[Number(index)].source);
+      if (name === 'outcome') return openOutcome(review,review.decisions[Number(index)]);
       if (name === 'open-work') {
         const [id,slot] = JSON.parse(workRef);
         return openWork({id,slot});
@@ -381,5 +384,5 @@ window.panel03NetworkReviews = (() => {
     return {open,draw,click,submit:submitForm,beforeLeave};
   }
 
-  return {create,validate,linkWork};
+  return {create,validate,linkWork,sourceKey};
 })();

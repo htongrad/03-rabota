@@ -198,7 +198,8 @@ window.panel03Audits = (() => {
         <p class="record">${escape(check.note)}</p>
         ${event ? action('work', 'Открыть связанное дело', {data:ref('work-id', event.id)}) :
           !isClosed ? action('new-work', 'Создать дело по отклонению', {primary:true,data:refData}) : ''}
-        ${check.rechecks.map((row, index) => `<div class="audit-recheck-log">
+        ${check.rechecks.map((row, index) => `<div class="audit-recheck-log" tabindex="-1"
+          ${ref('audit-recheck-index',index)} ${ref('audit-recheck-at',row.at)}>
           <p><strong>${escape(outcomes[row.result])}</strong> · ${escape(stamp(row.at))}</p>
           ${row.note ? `<p class="record">${escape(row.note)}</p>` : ''}
           ${action('recheck-standard', 'Техкарта перепроверки', {data:refData + ' ' + ref('recheck-index', index)})}
@@ -234,12 +235,15 @@ window.panel03Audits = (() => {
       return summary();
     }
 
-    function focusIssue(drinkId,checkId) {
+    function focusIssue(drinkId,checkId,recheck) {
       const issue = [...getMain().querySelectorAll('[data-audit-issue]')].find(row =>
         row.dataset.drinkId === drinkId && row.dataset.checkId === checkId);
       if (!issue) return;
-      issue.focus({preventScroll:true});
-      issue.scrollIntoView({block:'nearest'});
+      const savedCheck = recheck && [...issue.querySelectorAll('[data-audit-recheck-index]')].find(row =>
+        row.dataset.auditRecheckIndex === String(recheck.recordId) && row.dataset.auditRecheckAt === recheck.at);
+      const target = savedCheck || issue;
+      target.focus({preventScroll:true});
+      target.scrollIntoView({block:'nearest'});
     }
 
     function warn(form, message, field) {

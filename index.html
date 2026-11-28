@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.13.0">
+<meta name="panel-build" content="3.14.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.13.0">
+<link rel="stylesheet" href="./relief.css?v=3.14.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.13.0</small>
+      <small>Сборка 3.14.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,22 +81,23 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.13.0" defer></script>
-<script src="./google-sync.js?v=3.13.0" defer></script>
-<script src="./point-picker.js?v=3.13.0"></script>
-<script src="./work-items.js?v=3.13.0"></script>
-<script src="./menu-recipes.js?v=3.13.0"></script>
-<script src="./point-audits.js?v=3.13.0"></script>
-<script src="./point-team.js?v=3.13.0"></script>
-<script src="./point-equipment.js?v=3.13.0"></script>
-<script src="./point-stock.js?v=3.13.0"></script>
-<script src="./point-economy.js?v=3.13.0"></script>
-<script src="./network-rollouts.js?v=3.13.0"></script>
-<script src="./scenario-builder.js?v=3.13.0"></script>
-<script src="./network-overview.js?v=3.13.0"></script>
-<script src="./period-reports.js?v=3.13.0"></script>
-<script src="./network-reviews.js?v=3.13.0"></script>
-<script src="./network-goals.js?v=3.13.0"></script>
+<script src="./calendar-sync.js?v=3.14.0" defer></script>
+<script src="./google-sync.js?v=3.14.0" defer></script>
+<script src="./point-picker.js?v=3.14.0"></script>
+<script src="./work-items.js?v=3.14.0"></script>
+<script src="./menu-recipes.js?v=3.14.0"></script>
+<script src="./point-audits.js?v=3.14.0"></script>
+<script src="./point-team.js?v=3.14.0"></script>
+<script src="./point-equipment.js?v=3.14.0"></script>
+<script src="./point-stock.js?v=3.14.0"></script>
+<script src="./point-economy.js?v=3.14.0"></script>
+<script src="./network-rollouts.js?v=3.14.0"></script>
+<script src="./scenario-builder.js?v=3.14.0"></script>
+<script src="./network-overview.js?v=3.14.0"></script>
+<script src="./period-reports.js?v=3.14.0"></script>
+<script src="./network-reviews.js?v=3.14.0"></script>
+<script src="./network-goals.js?v=3.14.0"></script>
+<script src="./review-outcomes.js?v=3.14.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -169,6 +170,7 @@
   const periodReports = window.panel03PeriodReports;
   const reviews = window.panel03NetworkReviews;
   const goals = window.panel03NetworkGoals;
+  const outcomes = window.panel03ReviewOutcomes;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -250,7 +252,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -344,12 +346,17 @@
       if (!goals.validate(records.networkGoals, points, date)) throw new Error('Invalid network goals');
       validated.networkGoals = records.networkGoals;
     }
+    if (records.reviewOutcomes !== undefined || version === 21) {
+      if (!outcomes.validate(records.reviewOutcomes,validated.networkReviews ?? [],date)) throw new Error('Invalid review outcomes');
+      validated.reviewOutcomes = records.reviewOutcomes;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.reviewOutcomes !== undefined) return 21;
     if (records.networkGoals !== undefined) return 20;
     if (records.networkReviews !== undefined) return 19;
     if (records.periodReports !== undefined) return 18;
@@ -792,7 +799,7 @@
           <button type="button" data-action="cancel">Отмена</button></div>
       </form>`;
     const linked = Boolean(view.auditSource || view.teamSource || view.equipmentSource || view.rolloutSource ||
-      view.scenarioSource || view.reviewSource);
+      view.scenarioSource || view.reviewSource || view.outcomeSource);
     const diagnosis = view.equipmentSource || (original && equipment.sourceForWork(data.equipment ?? [], original.id)?.kind === 'diagnosis');
     const value = view.entry ?? {title:view.title, date:view.suggestedDate ?? (linked ? '' : selected), allDay:linked,
       start:'09:00', end:'10:00', repeat:'none', ending:'never'};
@@ -805,6 +812,7 @@
         <label>Название<input name="title" required maxlength="200" value="${escape(value.title)}"></label>
         ${view.scenarioSource?.label ? `<p class="record">${escape(view.scenarioSource.label)}</p>` : ''}
         ${view.reviewSource ? `<p class="record">${escape(view.reviewSource.caption)}</p>` : ''}
+        ${view.outcomeSource ? `<p class="record">${escape(view.outcomeSource.caption)}</p>` : ''}
         <label class="check"><input type="checkbox" name="scheduled"${value.date ? ' checked' : ''}> В календаре</label>
         <div class="work-schedule" data-schedule>
           <label>Дата<input type="date" name="date" max="9999-12-30" value="${escape(value.date)}"></label>
@@ -933,6 +941,7 @@
           returnView?.type === 'rollouts' ? 'Назад к запуску' : returnView?.type === 'scenarios' ? 'Назад к сценарию' :
           returnView?.type === 'network-overview' ? 'Назад к сводке' :
           returnView?.type === 'network-reviews' ? 'Назад к разбору' :
+          returnView?.type === 'review-outcome' ? 'Назад к проверке' :
           returnView ? 'Назад к делам' :
           page === 'calendar' ? 'Назад к календарю' : 'Назад к обзору'}</button>
       </div>`;
@@ -968,6 +977,7 @@
   function exitPointModule(point) {
     if (view?.returnView?.type === 'network-overview') return openNetworkOverview();
     if (view?.returnView?.type === 'network-reviews') return returnToReview(view.returnView);
+    if (view?.returnView?.type === 'review-outcome') return returnToOutcome();
     view = {type:'point', record:point};
     redrawTasks();
   }
@@ -1162,7 +1172,7 @@
     const returnView = view;
     if (row.kind === 'audit' && data.audits?.some(item => item.id === row.id && item.pointId === row.pointId)) {
       openAudits(row.pointId,row.id,returnView);
-      auditPanel.focusIssue(row.drinkId,row.checkId);
+      auditPanel.focusIssue(row.drinkId,row.checkId,row.recheck);
     } else if (row.kind === 'equipment' && data.equipment?.some(item => item.id === row.id && item.pointId === row.pointId)) {
       openEquipment(row.pointId,row.id,undefined,returnView);
     } else if (row.kind === 'stock' && data.stock?.some(book => book.id === row.pointId &&
@@ -1189,7 +1199,7 @@
   const reportPanel = periodReports.create({
     records:() => data, picker:pointPicker, validDay, today:() => today,
     formatPeriod:reportRange,
-    hero, help:pointHint, escape, redraw:redrawTasks, exit:exitGoalSource, getMain:() => main,
+    hero, help:pointHint, escape, redraw:redrawTasks, exit:exitNetworkSource, getMain:() => main,
     commit(rows) {
       const next = {...data,periodReports:rows};
       if (!save(next,'В браузере не хватает места для отчётов.')) return false;
@@ -1207,12 +1217,14 @@
   const reviewPanel = reviews.create({
     records:() => data, picker:pointPicker, validDay, today:() => today, offsetDay,
     formatPeriod:reportRange, hero, help:pointHint, escape, options:optionList, getMain:() => main,
-    redraw:redrawTasks, exit:exitGoalSource,
+    redraw:redrawTasks, exit:exitNetworkSource,
     collectSignals(selected,includeNetwork) {
       return window.panel03NetworkOverview.collect({records:data,workRows,scopeFor:pointPicker.scopeFor,
         today,selected,includeNetwork,effective:menuRecipes.effective});
     },
     openSource:openNetworkSource, lookupWork:lookupReviewWork, workRows,
+    openOutcome:openReviewOutcome,
+    outcomeStatus:(review,decision) => outcomes.statusFor(data,review,decision),
     openWork(work) {
       if (lookupReviewWork(work) && showWork(work.id,work.slot,view)) redrawTasks();
       else showNotice('Связанное дело недоступно.');
@@ -1243,8 +1255,9 @@
     view = {type:'network-goals'};
     redrawTasks();
   }
-  function exitGoalSource() {
+  function exitNetworkSource() {
     if (view?.returnView?.type === 'network-goals') return returnToGoals();
+    if (view?.returnView?.type === 'review-outcome') return returnToOutcome();
     openNetworkOverview();
   }
   const goalPanel = goals.create({
@@ -1258,6 +1271,42 @@
       return true;
     },
   });
+  const outcomePanel = outcomes.create({
+    records:() => data,validDay,offsetDay,formatPeriod:reportRange,hero,escape,options:optionList,
+    redraw:redrawTasks,exit:() => returnToReview(view.returnView),openReport:openPeriodReports,openSource:openNetworkSource,
+    lookupWork:lookupReviewWork,
+    openWork(work) {
+      if (lookupReviewWork(work) && showWork(work.id,work.slot,view)) redrawTasks();
+      else showNotice('Связанное дело недоступно.');
+    },
+    newWork(outcomeSource,title,workScope) {
+      if (!storageReadable) return;
+      view = {type:'edit',outcomeSource,title,workScope,returnView:view};
+      redrawTasks();
+    },
+    commit(rows) {
+      const next = {...data,reviewOutcomes:rows};
+      if (!save(next,'В браузере не хватает места для проверки.')) return false;
+      data = next;
+      return true;
+    },
+  });
+  function openReviewOutcome(review,decision) {
+    if (!review?.closedAt || !decision) return;
+    outcomePanel.open(review,decision);
+    view = {type:'review-outcome',returnView:view};
+    redrawTasks();
+  }
+  function returnToOutcome() {
+    page = 'overview';
+    view = view.returnView;
+    redrawTasks();
+  }
+  function saveOutcomeWork(event) {
+    const rows = outcomes.linkWork(data.reviewOutcomes ?? [],view.outcomeSource,event);
+    if (!rows) return showNotice('К этой проверке уже привязано следующее дело.');
+    saveLinkedWork(event,{reviewOutcomes:rows},'Следующее дело связано с проверкой.');
+  }
   function saveReviewWork(event) {
     const rows = reviews.linkWork(data.networkReviews ?? [],view.reviewSource,event);
     if (!rows) return showNotice('Разбор закрыт или к отклонению уже привязано дело.');
@@ -1309,7 +1358,7 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}, отчётных периодов — ${candidate.periodReports?.length ?? 0}, разборов сети — ${candidate.networkReviews?.length ?? 0}, целей сети — ${candidate.networkGoals?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}, отчётных периодов — ${candidate.periodReports?.length ?? 0}, разборов сети — ${candidate.networkReviews?.length ?? 0}, целей сети — ${candidate.networkGoals?.length ?? 0}, проверок решений — ${candidate.reviewOutcomes?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
     } else if (view?.type === 'period-reports') {
       main.innerHTML = reportPanel.draw();
@@ -1317,6 +1366,8 @@
       main.innerHTML = reviewPanel.draw();
     } else if (view?.type === 'network-goals') {
       main.innerHTML = goalPanel.draw();
+    } else if (view?.type === 'review-outcome') {
+      main.innerHTML = outcomePanel.draw();
     } else if (view?.type === 'network-overview') {
       main.innerHTML = networkOverview.draw();
     } else if (view?.type === 'scenarios') {
@@ -1397,6 +1448,9 @@
     if (view?.returnView?.type === 'network-goals' && ['period-reports','network-reviews'].includes(view.type)) {
       main.insertAdjacentHTML('afterbegin','<button type="button" class="back" data-action="return-network-goals">← К целям</button>');
     }
+    if (view?.returnView?.type === 'review-outcome' && ['period-reports','audits','stock'].includes(view.type)) {
+      main.insertAdjacentHTML('afterbegin','<button type="button" class="back" data-action="return-review-outcome">← К проверке</button>');
+    }
     pointPicker.refresh(main);
     refreshSyncSummary();
     pointSettingsButton.hidden = page !== 'points' || Boolean(view) || !storageReadable;
@@ -1434,12 +1488,14 @@
     if (view?.type === 'scenarios') return scenarioPanel.input(event.target);
     if (view?.type === 'period-reports') return reportPanel.input(event.target);
     if (view?.type === 'network-goals') return goalPanel.input(event.target);
+    if (view?.type === 'review-outcome') return outcomePanel.input(event.target);
     const input = event.target;
     if (input instanceof HTMLInputElement) input.setCustomValidity('');
     if (input.name === 'owner' && input.form?.dataset.form === 'edit') input.form.setAttribute('data-owner-edited', '');
   });
   main.addEventListener('change', event => {
     const target = event.target;
+    if (view?.type === 'review-outcome') return outcomePanel.change(target);
     if (view?.type === 'equipment') return equipmentPanel.change(target);
     if (view?.type === 'stock') return stockPanel.change(target);
     const selection = pointPicker.change(target);
@@ -1480,6 +1536,7 @@
     if (view?.type === 'period-reports') return reportPanel.submit(form,event.submitter);
     if (view?.type === 'network-reviews') return reviewPanel.submit(form);
     if (view?.type === 'network-goals') return goalPanel.submit(form);
+    if (view?.type === 'review-outcome') return outcomePanel.submit(form);
     if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
     if (view?.type === 'audits') return auditPanel.submit(form);
     if (view?.type === 'team') return teamPanel.submit(form);
@@ -1561,6 +1618,7 @@
       if (view.rolloutSource) return saveRolloutWork(updated);
       if (view.scenarioSource) return saveScenarioWork(updated);
       if (view.reviewSource) return saveReviewWork(updated);
+      if (view.outcomeSource) return saveOutcomeWork(updated);
       if (original?.legacyTaskId && scope !== 'following') updated.legacyTaskId = original.legacyTaskId;
       if (original?.stopBefore && repeat !== 'none') updated.stopBefore = original.stopBefore;
       if (original) {
@@ -1619,13 +1677,13 @@
       }
     }
     if (view?.type === 'audits') {
-      if ((destination || ['backups','return-network-overview','return-network-review'].includes(action)) && !auditPanel.beforeLeave()) return;
+      if ((destination || ['backups','return-network-overview','return-network-review','return-review-outcome'].includes(action)) && !auditPanel.beforeLeave()) return;
       if (button.dataset.auditAction) return auditPanel.click(button);
     }
     if (view?.type === 'team' && button.dataset.teamAction) return teamPanel.click(button);
     if (view?.type === 'equipment' && button.dataset.equipmentAction) return equipmentPanel.click(button);
     if (view?.type === 'stock') {
-      if ((destination || ['backups','return-network-overview','return-network-review'].includes(action)) && !stockPanel.beforeLeave()) return;
+      if ((destination || ['backups','return-network-overview','return-network-review','return-review-outcome'].includes(action)) && !stockPanel.beforeLeave()) return;
       if (button.dataset.stockAction) return stockPanel.click(button);
     }
     if (action === 'point-stock') return openStock(view.record.id);
@@ -1640,7 +1698,7 @@
     }
     if (action === 'open-period-reports') return openPeriodReports();
     if (view?.type === 'period-reports') {
-      if ((destination || ['backups','return-network-goals'].includes(action)) && !reportPanel.beforeLeave()) return;
+      if ((destination || ['backups','return-network-goals','return-review-outcome'].includes(action)) && !reportPanel.beforeLeave()) return;
       if (button.dataset.periodAction) return reportPanel.click(button);
     }
     if (action === 'open-network-goals') {
@@ -1648,6 +1706,11 @@
       return returnToGoals();
     }
     if (action === 'return-network-goals') return returnToGoals();
+    if (action === 'return-review-outcome') return returnToOutcome();
+    if (view?.type === 'review-outcome') {
+      if ((destination || action === 'backups') && !outcomePanel.beforeLeave()) return;
+      if (button.dataset.outcomeAction) return outcomePanel.click(button);
+    }
     if (view?.type === 'network-goals') {
       if ((destination || action === 'backups') && !goalPanel.beforeLeave()) return;
       if (button.dataset.goalAction) return goalPanel.click(button);
@@ -1728,6 +1791,9 @@
       }
       if (data.networkGoals || candidate.networkGoals) {
         merged.networkGoals = addMissing(data.networkGoals ?? [],candidate.networkGoals ?? []);
+      }
+      if (data.reviewOutcomes || candidate.reviewOutcomes) {
+        merged.reviewOutcomes = outcomes.merge(data.reviewOutcomes ?? [],candidate.reviewOutcomes ?? []);
       }
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
@@ -1854,6 +1920,7 @@
       if (view?.type === 'period-reports' && !reportPanel.beforeLeave()) return false;
       if (view?.type === 'network-reviews' && !reviewPanel.beforeLeave()) return false;
       if (view?.type === 'network-goals' && !goalPanel.beforeLeave()) return false;
+      if (view?.type === 'review-outcome' && !outcomePanel.beforeLeave()) return false;
       candidate = records;
       view = {type:'backups'};
       showNotice(message);

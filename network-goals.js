@@ -159,5 +159,5 @@ window.panel03NetworkGoals = (() => {
     return {open,draw:() => draft ? editor() : home(),click,submit,input,beforeLeave};
   }
 
-  return {create,validate};
+  return {create,validate,nextMonth,limitFrom};
 })();
