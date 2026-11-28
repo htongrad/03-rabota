@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="panel-build" content="3.10.0">
+<meta name="panel-build" content="3.11.0">
 <title>Работа</title>
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f2ee">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17201d">
@@ -11,7 +11,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png?v=2.1.0">
 <link rel="apple-touch-icon" href="./icon-192.png?v=2.1.0">
-<link rel="stylesheet" href="./relief.css?v=3.10.0">
+<link rel="stylesheet" href="./relief.css?v=3.11.0">
 </head>
 <body>
 <div id="personal">
@@ -25,7 +25,7 @@
       <button type="button" data-action="task-settings" hidden>Настроить поля дел</button>
       <button type="button" data-action="backups">Копии данных</button>
       <button type="button" data-action="install" hidden>Установить приложение</button>
-      <small>Сборка 3.10.0</small>
+      <small>Сборка 3.11.0</small>
     </div>
   </details></header>
   <p class="notice" role="status" hidden></p>
@@ -81,19 +81,20 @@
     </nav>
   </div>
 </div>
-<script src="./calendar-sync.js?v=3.10.0" defer></script>
-<script src="./google-sync.js?v=3.10.0" defer></script>
-<script src="./point-picker.js?v=3.10.0"></script>
-<script src="./work-items.js?v=3.10.0"></script>
-<script src="./menu-recipes.js?v=3.10.0"></script>
-<script src="./point-audits.js?v=3.10.0"></script>
-<script src="./point-team.js?v=3.10.0"></script>
-<script src="./point-equipment.js?v=3.10.0"></script>
-<script src="./point-stock.js?v=3.10.0"></script>
-<script src="./point-economy.js?v=3.10.0"></script>
-<script src="./network-rollouts.js?v=3.10.0"></script>
-<script src="./scenario-builder.js?v=3.10.0"></script>
-<script src="./network-overview.js?v=3.10.0"></script>
+<script src="./calendar-sync.js?v=3.11.0" defer></script>
+<script src="./google-sync.js?v=3.11.0" defer></script>
+<script src="./point-picker.js?v=3.11.0"></script>
+<script src="./work-items.js?v=3.11.0"></script>
+<script src="./menu-recipes.js?v=3.11.0"></script>
+<script src="./point-audits.js?v=3.11.0"></script>
+<script src="./point-team.js?v=3.11.0"></script>
+<script src="./point-equipment.js?v=3.11.0"></script>
+<script src="./point-stock.js?v=3.11.0"></script>
+<script src="./point-economy.js?v=3.11.0"></script>
+<script src="./network-rollouts.js?v=3.11.0"></script>
+<script src="./scenario-builder.js?v=3.11.0"></script>
+<script src="./network-overview.js?v=3.11.0"></script>
+<script src="./period-reports.js?v=3.11.0"></script>
 <script id="personal-script">
 (() => {
   const root = document.getElementById('personal');
@@ -163,6 +164,7 @@
   const economy = window.panel03Economy;
   const rollouts = window.panel03Rollouts;
   const scenarios = window.panel03Scenarios;
+  const periodReports = window.panel03PeriodReports;
   const menu = root.querySelector('.menu');
   const installButton = menu.querySelector('[data-action=install]');
   const pointSettingsButton = menu.querySelector('[data-action=point-settings]');
@@ -244,7 +246,7 @@
   function validate(value) {
     value = readLegacyCopy(value);
     const version = value?.format === '03-rabota-backup' ? value.version : undefined;
-    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].includes(version) ? value.data
+    const records = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(version) ? value.data
       : Number.isSafeInteger(value?.revision) ? value.data : value;
     const points = records?.points === undefined && !(version >= 4) ? [] : records?.points;
     const tasks = records?.tasks === undefined && (version === undefined || version < 6 || version >= 8) ? [] : records?.tasks;
@@ -326,12 +328,17 @@
       if (!scenarios.validate(records.scenarioBook)) throw new Error('Invalid scenarios');
       validated.scenarioBook = records.scenarioBook;
     }
+    if (records.periodReports !== undefined || version === 18) {
+      if (!periodReports.validate(records.periodReports, points, date)) throw new Error('Invalid period reports');
+      validated.periodReports = records.periodReports;
+    }
     // Preserve saved prototype data as an archive while running the restored interface.
     const archive = records.chef;
     if (archive && (archive.mode || archive.points?.length || archive.audits?.length)) validated.chef = archive;
     return validated;
   }
   function backupVersion(records = data) {
+    if (records.periodReports !== undefined) return 18;
     if (records.scenarioBook !== undefined) return 17;
     if (records.rollouts !== undefined) return 16;
     if (records.economy !== undefined) return 15;
@@ -1145,6 +1152,24 @@
       } else if (showWork(row.id,row.slot,returnView)) redrawTasks();
     },
   });
+  const reportDate = new Intl.DateTimeFormat('ru-RU',{dateStyle:'long',timeZone:'UTC'});
+  const reportPanel = periodReports.create({
+    records:() => data, picker:pointPicker, validDay, today:() => today,
+    formatPeriod:(start,end) => reportDate.formatRange(asDate(start),asDate(end)),
+    hero, help:pointHint, escape, redraw:redrawTasks, exit:openNetworkOverview, getMain:() => main,
+    commit(rows) {
+      const next = {...data,periodReports:rows};
+      if (!save(next,'В браузере не хватает места для отчётов.')) return false;
+      data = next;
+      return true;
+    },
+  });
+  function openPeriodReports() {
+    page = 'overview';
+    view = {type:'period-reports'};
+    reportPanel.open();
+    redrawTasks();
+  }
   function saveScenarioWork(event) {
     const records = scenarios.linkWork(data.scenarioBook,view.scenarioSource,event.id);
     if (!records) return showNotice('Это дело уже создано или выполнение сценария завершено.');
@@ -1191,8 +1216,10 @@
         <div class="help-title"><p>Локальная копия</p><button type="button" class="help" data-hint="Импорт добавляет отсутствующие записи. При совпадении сохраняется версия с телефона." aria-label="Подсказка: импорт записей" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
         <div class="controls"><button type="button" class="action" data-action="export">Скачать копию</button>
         <button type="button" class="action" data-action="import">Выбрать файл</button></div>
-        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
+        ${candidate ? `<p class="record">В файле: дел — ${candidate.events.length}, заметок — ${candidate.notes.length}, точек — ${candidate.points.length}, позиций меню — ${candidate.recipes?.length ?? 0}, аудитов — ${candidate.audits?.length ?? 0}, сотрудников — ${candidate.team?.length ?? 0}, оборудования — ${candidate.equipment?.length ?? 0}, складов точек — ${candidate.stock?.length ?? 0}, карточек экономики — ${candidate.economy?.length ?? 0}, запусков — ${candidate.rollouts?.length ?? 0}, сценариев — ${candidate.scenarioBook?.templates.length ?? 0}, выполнений сценариев — ${candidate.scenarioBook?.runs.length ?? 0}, отчётных периодов — ${candidate.periodReports?.length ?? 0}. Записи с совпадающими идентификаторами останутся в текущей версии.</p>
         <button type="button" class="action primary" data-action="restore">Добавить записи из копии</button>` : ''}`;
+    } else if (view?.type === 'period-reports') {
+      main.innerHTML = reportPanel.draw();
     } else if (view?.type === 'network-overview') {
       main.innerHTML = networkOverview.draw();
     } else if (view?.type === 'scenarios') {
@@ -1302,6 +1329,7 @@
     if (view?.type === 'stock') return stockPanel.input(event.target);
     if (view?.type === 'economy') return economyPanel.input(event.target);
     if (view?.type === 'scenarios') return scenarioPanel.input(event.target);
+    if (view?.type === 'period-reports') return reportPanel.input(event.target);
     const input = event.target;
     if (input instanceof HTMLInputElement) input.setCustomValidity('');
     if (input.name === 'owner' && input.form?.dataset.form === 'edit') input.form.setAttribute('data-owner-edited', '');
@@ -1345,6 +1373,7 @@
     const form = event.target;
     if (view?.type === 'network-overview') return networkOverview.submit(form);
     if (!storageReadable) return;
+    if (view?.type === 'period-reports') return reportPanel.submit(form,event.submitter);
     if (view?.type === 'recipes') return recipePanel.submit(form, event.submitter);
     if (view?.type === 'audits') return auditPanel.submit(form);
     if (view?.type === 'team') return teamPanel.submit(form);
@@ -1496,6 +1525,11 @@
     if (view?.type === 'economy' && button.dataset.economyAction) return economyPanel.click(button);
     if (action === 'open-network-overview' || action === 'return-network-overview') return openNetworkOverview();
     if (view?.type === 'network-overview' && button.dataset.networkAction) return networkOverview.click(button);
+    if (action === 'open-period-reports') return openPeriodReports();
+    if (view?.type === 'period-reports') {
+      if ((destination || action === 'backups') && !reportPanel.beforeLeave()) return;
+      if (button.dataset.periodAction) return reportPanel.click(button);
+    }
     if (view?.type === 'scenarios') {
       if ((destination || action === 'backups') && !scenarioPanel.beforeLeave()) return;
       if (button.dataset.scenarioAction) return scenarioPanel.click(button);
@@ -1564,6 +1598,9 @@
         templates:addMissing(data.scenarioBook?.templates ?? [],candidate.scenarioBook?.templates ?? []),
         runs:addMissing(data.scenarioBook?.runs ?? [],candidate.scenarioBook?.runs ?? []),
       };
+      if (data.periodReports || candidate.periodReports) {
+        merged.periodReports = periodReports.merge(data.periodReports ?? [],candidate.periodReports ?? []);
+      }
       const localSettings = data.pointSettings;
       const restoredSettings = candidate.pointSettings;
       if (localSettings && restoredSettings) {
@@ -1686,6 +1723,7 @@
       if (view?.type === 'audits' && !auditPanel.beforeLeave()) return false;
       if (view?.type === 'stock' && !stockPanel.beforeLeave()) return false;
       if (view?.type === 'scenarios' && !scenarioPanel.beforeLeave()) return false;
+      if (view?.type === 'period-reports' && !reportPanel.beforeLeave()) return false;
       candidate = records;
       view = {type:'backups'};
       showNotice(message);

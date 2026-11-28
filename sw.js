@@ -1,10 +1,10 @@
 'use strict';
 const prefix = 'panel-03-shell-';
-const version = '3.10.0';
+const version = '3.11.0';
 const cacheName = prefix + version;
 const scope = self.registration.scope;
 const shell = new URL('index.html', scope).href;
-const assets = ['relief.css', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'google-sync.js', 'calendar-sync.js', 'point-picker.js', 'work-items.js', 'menu-recipes.js', 'point-audits.js', 'point-team.js', 'point-equipment.js', 'point-stock.js', 'point-economy.js', 'network-rollouts.js', 'scenario-builder.js', 'network-overview.js'];
+const assets = ['relief.css', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'google-sync.js', 'calendar-sync.js', 'point-picker.js', 'work-items.js', 'menu-recipes.js', 'point-audits.js', 'point-team.js', 'point-equipment.js', 'point-stock.js', 'point-economy.js', 'network-rollouts.js', 'scenario-builder.js', 'network-overview.js', 'period-reports.js'];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const page = await fetch(shell, {cache: 'reload'});

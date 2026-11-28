@@ -258,6 +258,7 @@ form[data-form^=rollout-] textarea { min-height:5rem; }
 .scenario-controls { display:flex; flex-wrap:wrap; gap:5px; }
 .network-points,.network-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; width:100%; text-align:left; }
 .network-points { background:var(--tint); }
+.network-period { width:100%; margin-bottom:10px; text-align:left; }
 .network-points strong,.network-row strong { color:var(--ink); }
 .network-points span,.network-row small,.network-description { font-size:.85rem; }
 .network-filters { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px; }
@@ -268,3 +269,8 @@ form[data-form^=rollout-] textarea { min-height:5rem; }
 .network-row small,.network-row strong,.network-description { display:block; overflow-wrap:anywhere; }
 .network-description { color:var(--ink); font-weight:400; }
 .audit-result[data-audit-issue]:focus { outline:2px solid var(--accent); outline-offset:2px; }
+.period-total { background:var(--tint); }
+.period-total > p { margin:0 0 5px; }
+.period-total > strong { color:var(--accent); font-size:1.35rem; overflow-wrap:anywhere; }
+.period-total .point-details { margin:0; }
+.period-point-details dd small { display:block; margin-block-start:3px; }

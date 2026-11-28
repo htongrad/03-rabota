@@ -134,6 +134,7 @@ window.panel03NetworkOverview = (() => {
         active.some(group => group.hasData) ? 'По доступным данным отклонений нет.' : 'Пока нет данных для сводки.';
       return `<button type="button" class="back" data-network-action="exit">← Обзор</button>
         ${hero('Сводка сети','Открытые отклонения и последние сверки',true)}
+        <button type="button" class="action network-period" data-action="open-period-reports">Факт за период</button>
         <button type="button" class="action network-points" data-network-action="points">
           <strong>${caption}</strong><span>Изменить выбор</span></button>
         <div class="network-filters" role="group" aria-label="Категории сводки">${filters}</div>

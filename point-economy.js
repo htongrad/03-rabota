@@ -92,14 +92,16 @@ window.panel03Economy = (() => {
   const number = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
   function decimals(minor) {
     const value = BigInt(minor);
-    const fraction = String(value % 100n).padStart(2,'0').replace(/0+$/,'');
-    return number.format(value / 100n) + (fraction ? ',' + fraction : '');
+    const absolute = value < 0n ? -value : value;
+    const fraction = String(absolute % 100n).padStart(2,'0').replace(/0+$/,'');
+    return (value < 0n ? '−' : '') + number.format(absolute / 100n) + (fraction ? ',' + fraction : '');
   }
   const formatRate = value => decimals(value) + ' %';
+  const formatMoney = value => value === null ? '—' : decimals(value) + ' ₽';
 
   function create({records, hero, escape, options, getMain, effective, commit, redraw, exit, openStock}) {
     const date = new Intl.DateTimeFormat('ru',{dateStyle:'medium',timeZone:'Europe/Moscow'});
-    const money = cents => cents === null ? '—' : decimals(cents) + ' ₽';
+    const money = formatMoney;
     const asField = value => value === undefined ? '' : String(value / 100).replace('.',',');
     function percentages(calculation,sale) {
       const value = basisPoints(calculation,sale);
@@ -341,5 +343,5 @@ window.panel03Economy = (() => {
     return {open,draw,submit:submitForm,click,input};
   }
 
-  return {create,validate,foodCost,formatRate};
+  return {create,validate,foodCost,formatRate,formatMoney};
 })();
