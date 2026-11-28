@@ -440,5 +440,5 @@ window.panel03Rollouts = (() => {
     return {open,draw,click,change,submit:submitForm};
   }
 
-  return {create,validate,linkWork};
+  return {create,validate,linkWork,remaining:site => Object.keys(checks).length - site.checks.length};
 })();

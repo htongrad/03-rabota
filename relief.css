@@ -252,3 +252,7 @@ form[data-form^=rollout-] textarea { min-height:5rem; }
 #personal[data-keyboard]:has(form[data-form^=rollout-]) .bottom { position:static; }
 .rollout-pilot-row { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:5px 10px; padding:5px 0; }
 .rollout-pilot-row + .rollout-pilot-row { border-top:1px solid var(--edge); }
+
+#personal[data-keyboard]:has(form[data-form^=scenario-]) .bottom { position:static; }
+.scenario-steps { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.scenario-controls { display:flex; flex-wrap:wrap; gap:5px; }

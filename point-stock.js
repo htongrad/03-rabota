@@ -382,5 +382,5 @@ window.panel03Stock = (() => {
     return {open,draw,submit:submitForm,click,change,input,beforeLeave};
   }
 
-  return {create,validate};
+  return {create,validate,readQuantity,units};
 })();
